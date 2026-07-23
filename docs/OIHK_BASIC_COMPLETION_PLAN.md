@@ -127,4 +127,4 @@ The working repository is `Broskigx/OIHK-Basic`. The old `OIHKv/OIHK-Basic` dire
 - [x] Complete persistence, onboarding and diagnostics.
 - [x] Complete Windows installer and managed-sidecar smoke testing.
 - [x] Complete security, dependency, responsive-layout and interaction review.
-- [ ] Publish the final Basic branch and release-ready documentation.
+- [x] Publish the final Basic branch and release-ready documentation.
