@@ -51,8 +51,8 @@ def _extract_jpeg_info(data: bytes, fields: list[MetadataField]) -> None:
     try:
         idx = data.find(b"\xff\xc0")
         if idx != -1 and idx + 7 < len(data):
-            height = struct.unpack(">H", data[idx + 5: idx + 7])[0]
-            width = struct.unpack(">H", data[idx + 7: idx + 9])[0]
+            height = struct.unpack(">H", data[idx + 5 : idx + 7])[0]
+            width = struct.unpack(">H", data[idx + 7 : idx + 9])[0]
             fields.append(MetadataField(key="width", value=str(width), category="image"))
             fields.append(MetadataField(key="height", value=str(height), category="image"))
     except Exception:

@@ -1,19 +1,24 @@
-import React from "react";
+import type { ReactNode } from "react";
 
 export function WorkspaceHeader({
-  eyebrow, title, description, children,
+  eyebrow,
+  title,
+  description,
+  actions,
 }: {
   eyebrow?: string;
   title: string;
-  description?: string;
-  children?: React.ReactNode;
+  description: string;
+  actions?: ReactNode;
 }) {
   return (
-    <div className="workspace-header">
-      {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-      <h2>{title}</h2>
-      {description && <p>{description}</p>}
-      {children}
-    </div>
+    <header className="platform-workspace-header">
+      <div>
+        {eyebrow && <span className="platform-eyebrow">{eyebrow}</span>}
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+      {actions && <div className="platform-header-actions">{actions}</div>}
+    </header>
   );
 }

@@ -13,18 +13,36 @@ from app.core.deps import CurrentUser, get_current_user, require_admin, require_
 from app.database import get_session
 from app.forensic import analyze_file
 from app.schemas import (
-    CarvedArtifactRead, CarveResult, CorrelationHitRead, CorrelationIndexRequest,
-    CorrelationQueryResult, FileAnalysisRead, ForensicCoreRead, HashLookupRequest,
-    HashLookupResult, HashMatchRead, HashResultRead, HashSetImportRequest,
-    HashSetImportResult, HashSetInfoRead, InterestingRuleCreate, InterestingRuleRead,
-    IocMatchRead, IocReportRead, MetadataFieldRead, MetadataReportRead,
-    TextExtractionRead, TimelineEventRead, YaraMatchRead, YaraScanRead,
+    CarvedArtifactRead,
+    CarveResult,
+    CorrelationHitRead,
+    CorrelationIndexRequest,
+    CorrelationQueryResult,
+    FileAnalysisRead,
+    ForensicCoreRead,
+    HashLookupRequest,
+    HashLookupResult,
+    HashMatchRead,
+    HashResultRead,
+    HashSetImportRequest,
+    HashSetImportResult,
+    HashSetInfoRead,
+    InterestingRuleCreate,
+    InterestingRuleRead,
+    IocMatchRead,
+    IocReportRead,
+    MetadataFieldRead,
+    MetadataReportRead,
+    TextExtractionRead,
+    TimelineEventRead,
+    YaraMatchRead,
+    YaraScanRead,
 )
 from app.services import correlation, hash_intel, interesting_files
 from app.services.custody import seal_source
 from app.services.evidence_storage import store_evidence_bytes
 from app.services.forensic_evidence import carve_and_seal
-from app.services.repository import audit, ingest_source
+from app.services.repository import audit
 
 logger = logging.getLogger(__name__)
 
@@ -40,34 +58,90 @@ def _report_to_schema(core_report, *, source_id=None, stored_sha256=None, custod
         stored_sha256=stored_sha256,
         custody_sequence=custody_sequence,
         custody_sealed=custody_sealed,
-        hashes=[HashResultRead(algorithm=h.algorithm, digest=h.digest, size_bytes=h.size_bytes, elapsed_ms=h.elapsed_ms, target=h.target) for h in core_report.hashes],
+        hashes=[
+            HashResultRead(
+                algorithm=h.algorithm,
+                digest=h.digest,
+                size_bytes=h.size_bytes,
+                elapsed_ms=h.elapsed_ms,
+                target=h.target,
+            )
+            for h in core_report.hashes
+        ],
         file_analysis=FileAnalysisRead(
-            filename=core_report.file_analysis.filename, size_bytes=core_report.file_analysis.size_bytes,
-            extension=core_report.file_analysis.extension, mime_type=core_report.file_analysis.mime_type,
-            magic_bytes=core_report.file_analysis.magic_bytes, detected_type=core_report.file_analysis.detected_type,
-            detected_label=core_report.file_analysis.detected_label, entropy=core_report.file_analysis.entropy,
-            hashes=core_report.file_analysis.hashes, timestamps=core_report.file_analysis.timestamps,
-            permissions=core_report.file_analysis.permissions, discrepancies=core_report.file_analysis.discrepancies,
-        ) if core_report.file_analysis else None,
+            filename=core_report.file_analysis.filename,
+            size_bytes=core_report.file_analysis.size_bytes,
+            extension=core_report.file_analysis.extension,
+            mime_type=core_report.file_analysis.mime_type,
+            magic_bytes=core_report.file_analysis.magic_bytes,
+            detected_type=core_report.file_analysis.detected_type,
+            detected_label=core_report.file_analysis.detected_label,
+            entropy=core_report.file_analysis.entropy,
+            hashes=core_report.file_analysis.hashes,
+            timestamps=core_report.file_analysis.timestamps,
+            permissions=core_report.file_analysis.permissions,
+            discrepancies=core_report.file_analysis.discrepancies,
+        )
+        if core_report.file_analysis
+        else None,
         metadata=MetadataReportRead(
             format=core_report.metadata.format,
-            fields=[MetadataFieldRead(key=f.key, value=f.value, category=f.category) for f in core_report.metadata.fields],
-            raw=core_report.metadata.raw, errors=core_report.metadata.errors,
-        ) if core_report.metadata else None,
+            fields=[
+                MetadataFieldRead(key=f.key, value=f.value, category=f.category) for f in core_report.metadata.fields
+            ],
+            raw=core_report.metadata.raw,
+            errors=core_report.metadata.errors,
+        )
+        if core_report.metadata
+        else None,
         text_extraction=TextExtractionRead(
-            format=core_report.text_extraction.format, text=core_report.text_extraction.text,
-            char_count=core_report.text_extraction.char_count, word_count=core_report.text_extraction.word_count,
+            format=core_report.text_extraction.format,
+            text=core_report.text_extraction.text,
+            char_count=core_report.text_extraction.char_count,
+            word_count=core_report.text_extraction.word_count,
             errors=core_report.text_extraction.errors,
-        ) if core_report.text_extraction else None,
+        )
+        if core_report.text_extraction
+        else None,
         iocs=IocReportRead(
-            matches=[IocMatchRead(type=m.type, value=m.value, display=m.display, confidence=m.confidence, offset=m.offset, context=m.context) for m in core_report.iocs.matches],
+            matches=[
+                IocMatchRead(
+                    type=m.type,
+                    value=m.value,
+                    display=m.display,
+                    confidence=m.confidence,
+                    offset=m.offset,
+                    context=m.context,
+                )
+                for m in core_report.iocs.matches
+            ],
             asn_lookups=core_report.iocs.asn_lookups,
-        ) if core_report.iocs else None,
+        )
+        if core_report.iocs
+        else None,
         yara=YaraScanRead(
-            matches=[YaraMatchRead(rule=m.rule, namespace=m.namespace, tags=m.tags, strings=m.strings, meta=m.meta) for m in core_report.yara.matches],
-            rules_loaded=core_report.yara.rules_loaded, available=core_report.yara.available, error=core_report.yara.error,
-        ) if core_report.yara else None,
-        timeline_events=[TimelineEventRead(event_id=e.event_id, source_id=e.source_id, title=e.title, event_type=e.event_type, timestamp=e.timestamp, detail=e.detail, metadata=e.metadata) for e in core_report.timeline_events],
+            matches=[
+                YaraMatchRead(rule=m.rule, namespace=m.namespace, tags=m.tags, strings=m.strings, meta=m.meta)
+                for m in core_report.yara.matches
+            ],
+            rules_loaded=core_report.yara.rules_loaded,
+            available=core_report.yara.available,
+            error=core_report.yara.error,
+        )
+        if core_report.yara
+        else None,
+        timeline_events=[
+            TimelineEventRead(
+                event_id=e.event_id,
+                source_id=e.source_id,
+                title=e.title,
+                event_type=e.event_type,
+                timestamp=e.timestamp,
+                detail=e.detail,
+                metadata=e.metadata,
+            )
+            for e in core_report.timeline_events
+        ],
         errors=core_report.errors,
     )
 
@@ -88,15 +162,32 @@ async def core_analyze(
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"File exceeds {MAX_UPLOAD_BYTES} bytes")
 
-    report = analyze_file(data, filename=file.filename or "upload", content_type=file.content_type or "", run_yara=False)
+    report = analyze_file(
+        data, filename=file.filename or "upload", content_type=file.content_type or "", run_yara=False
+    )
 
-    stored = store_evidence_bytes(case_id, report.filename, data, content_type=file.content_type or "application/octet-stream", subdir="forensic-core")
+    stored = store_evidence_bytes(
+        case_id,
+        report.filename,
+        data,
+        content_type=file.content_type or "application/octet-stream",
+        subdir="forensic-core",
+    )
 
     body_lines = [f"Forensic Core Analysis: {report.filename}", "", "--- Hashes ---"]
     for h in report.hashes:
         body_lines.append(f"  {h.algorithm}: {h.digest} ({h.elapsed_ms} ms)")
     if report.file_analysis:
-        body_lines.extend(["", "--- File Analysis ---", f"  MIME: {report.file_analysis.mime_type}", f"  Detected: {report.file_analysis.detected_type} ({report.file_analysis.detected_label})", f"  Entropy: {report.file_analysis.entropy}", f"  Size: {report.file_analysis.size_bytes} bytes"])
+        body_lines.extend(
+            [
+                "",
+                "--- File Analysis ---",
+                f"  MIME: {report.file_analysis.mime_type}",
+                f"  Detected: {report.file_analysis.detected_type} ({report.file_analysis.detected_label})",
+                f"  Entropy: {report.file_analysis.entropy}",
+                f"  Size: {report.file_analysis.size_bytes} bytes",
+            ]
+        )
         if report.file_analysis.discrepancies:
             body_lines.extend(["  Discrepancies:", *[f"    - {d}" for d in report.file_analysis.discrepancies]])
     if report.iocs and report.iocs.matches:
@@ -115,24 +206,42 @@ async def core_analyze(
             body_lines.append(f"  {evt.timestamp} [{evt.event_type}] {evt.title}")
 
     source = models.Source(
-        case_id=case_id, title=f"Forensic Core: {report.filename}"[:240],
-        kind="forensic_core", body="\n".join(body_lines),
-        citation=f"sha256:{stored['sha256']}", license="forensic-analysis", reliability=0.85,
+        case_id=case_id,
+        title=f"Forensic Core: {report.filename}"[:240],
+        kind="forensic_core",
+        body="\n".join(body_lines),
+        citation=f"sha256:{stored['sha256']}",
+        license="forensic-analysis",
+        reliability=0.85,
     )
     session.add(source)
     await session.flush()
     seal = await seal_source(session, source, raw_bytes=data, storage_path=stored["storage_path"])
     await correlation.index_attribute(
-        session, organization_id=current.organization_id, case_id=case_id,
-        attr_type="file_hash", value=stored["sha256"], source_id=source.id,
+        session,
+        organization_id=current.organization_id,
+        case_id=case_id,
+        attr_type="file_hash",
+        value=stored["sha256"],
+        source_id=source.id,
     )
-    await audit(session, "forensic_core.analyzed", case_id,
-                {"source_id": source.id, "filename": report.filename, "hash_count": len(report.hashes),
-                 "ioc_count": len(report.iocs.matches) if report.iocs else 0, "errors": report.errors},
-                actor=current.username)
+    await audit(
+        session,
+        "forensic_core.analyzed",
+        case_id,
+        {
+            "source_id": source.id,
+            "filename": report.filename,
+            "hash_count": len(report.hashes),
+            "ioc_count": len(report.iocs.matches) if report.iocs else 0,
+            "errors": report.errors,
+        },
+        actor=current.username,
+    )
     await session.commit()
-    return _report_to_schema(report, source_id=source.id, stored_sha256=stored["sha256"],
-                              custody_sequence=seal.sequence, custody_sealed=True)
+    return _report_to_schema(
+        report, source_id=source.id, stored_sha256=stored["sha256"], custody_sequence=seal.sequence, custody_sealed=True
+    )
 
 
 @router.get("/iocs/{case_id}", response_model=IocReportRead)
@@ -143,11 +252,22 @@ async def list_case_iocs(
 ) -> IocReportRead:
     """Aggregate IOCs from all sources in a case."""
     from sqlalchemy import select
-    from app.forensic.ioc.extractor import extract_iocs
+
     from app import models
+    from app.forensic.ioc.extractor import extract_iocs
 
     await require_case_access(session, case_id, current)
-    sources = ((await session.execute(select(models.Source).where(models.Source.case_id == case_id).order_by(models.Source.collected_at.desc()))).scalars().all())
+    sources = (
+        (
+            await session.execute(
+                select(models.Source)
+                .where(models.Source.case_id == case_id)
+                .order_by(models.Source.collected_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
     all_matches = []
     asn_lookups = []
     for source in sources:
@@ -165,7 +285,10 @@ async def list_case_iocs(
             seen.add(key)
             deduped.append(m)
     return IocReportRead(
-        matches=[IocMatchRead(type=m.type, value=m.value, display=m.display, confidence=m.confidence, context=m.context) for m in deduped[:200]],
+        matches=[
+            IocMatchRead(type=m.type, value=m.value, display=m.display, confidence=m.confidence, context=m.context)
+            for m in deduped[:200]
+        ],
         asn_lookups=asn_lookups[:50],
     )
 
@@ -177,16 +300,35 @@ async def import_hash_set(
     session: AsyncSession = Depends(get_session),
 ) -> HashSetImportResult:
     summary = await hash_intel.import_hash_entries(
-        session, organization_id=current.organization_id, set_name=payload.set_name,
-        category=payload.category, severity=payload.severity, text=payload.hashes, created_by=current.id,
+        session,
+        organization_id=current.organization_id,
+        set_name=payload.set_name,
+        category=payload.category,
+        severity=payload.severity,
+        text=payload.hashes,
+        created_by=current.id,
     )
-    await audit(session, "forensic_core.hashset_import", None,
-                {"set_name": summary.set_name, "category": summary.category,
-                 "added": summary.added, "skipped": summary.skipped, "invalid": summary.invalid},
-                actor=current.username)
+    await audit(
+        session,
+        "forensic_core.hashset_import",
+        None,
+        {
+            "set_name": summary.set_name,
+            "category": summary.category,
+            "added": summary.added,
+            "skipped": summary.skipped,
+            "invalid": summary.invalid,
+        },
+        actor=current.username,
+    )
     await session.commit()
-    return HashSetImportResult(set_name=summary.set_name, category=summary.category,
-                                added=summary.added, skipped=summary.skipped, invalid=summary.invalid)
+    return HashSetImportResult(
+        set_name=summary.set_name,
+        category=summary.category,
+        added=summary.added,
+        skipped=summary.skipped,
+        invalid=summary.invalid,
+    )
 
 
 @router.get("/hashsets", response_model=list[HashSetInfoRead])
@@ -205,9 +347,21 @@ async def lookup_hash(
     session: AsyncSession = Depends(get_session),
 ) -> HashLookupResult:
     matches = await hash_intel.lookup_value(session, organization_id=current.organization_id, value=payload.value)
-    return HashLookupResult(value=payload.value.strip(), matched=bool(matches),
-                             matches=[HashMatchRead(set_name=m.set_name, category=m.category, severity=m.severity,
-                                                     algorithm=m.algorithm, digest=m.digest, label=m.label) for m in matches])
+    return HashLookupResult(
+        value=payload.value.strip(),
+        matched=bool(matches),
+        matches=[
+            HashMatchRead(
+                set_name=m.set_name,
+                category=m.category,
+                severity=m.severity,
+                algorithm=m.algorithm,
+                digest=m.digest,
+                label=m.label,
+            )
+            for m in matches
+        ],
+    )
 
 
 @router.post("/correlate/index", status_code=200)
@@ -217,10 +371,15 @@ async def correlation_index(
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     from app.core.deps import require_case_access
+
     await require_case_access(session, payload.case_id, current)
     added = await correlation.index_attribute(
-        session, organization_id=current.organization_id, case_id=payload.case_id,
-        attr_type=payload.attr_type, value=payload.value, source_id=payload.source_id,
+        session,
+        organization_id=current.organization_id,
+        case_id=payload.case_id,
+        attr_type=payload.attr_type,
+        value=payload.value,
+        source_id=payload.source_id,
     )
     await session.commit()
     return {"indexed": added, "attr_type": payload.attr_type.strip().lower(), "value": payload.value.strip()}
@@ -235,14 +394,29 @@ async def correlation_query(
     session: AsyncSession = Depends(get_session),
 ) -> CorrelationQueryResult:
     hits = await correlation.correlate(
-        session, organization_id=current.organization_id, attr_type=attr_type,
-        value=value, exclude_case_id=exclude_case_id,
+        session,
+        organization_id=current.organization_id,
+        attr_type=attr_type,
+        value=value,
+        exclude_case_id=exclude_case_id,
     )
-    return CorrelationQueryResult(attr_type=attr_type.strip().lower(), value=value.strip(),
-                                   count=len(hits), hits=[CorrelationHitRead(case_id=h.case_id, case_title=h.case_title,
-                                                                              source_id=h.source_id, attr_type=h.attr_type,
-                                                                              attr_value=h.attr_value, display=h.display,
-                                                                              first_seen_at=h.first_seen_at) for h in hits])
+    return CorrelationQueryResult(
+        attr_type=attr_type.strip().lower(),
+        value=value.strip(),
+        count=len(hits),
+        hits=[
+            CorrelationHitRead(
+                case_id=h.case_id,
+                case_title=h.case_title,
+                source_id=h.source_id,
+                attr_type=h.attr_type,
+                attr_value=h.attr_value,
+                display=h.display,
+                first_seen_at=h.first_seen_at,
+            )
+            for h in hits
+        ],
+    )
 
 
 @router.post("/carve", response_model=CarveResult, status_code=200)
@@ -260,18 +434,34 @@ async def carve_file(
         raise HTTPException(status_code=413, detail=f"File exceeds {MAX_UPLOAD_BYTES} bytes")
     parent_sha256 = hashlib.sha256(data).hexdigest()
     sealed = await carve_and_seal(
-        session, case_id=case_id, parent_sha256=parent_sha256,
-        parent_source_id=None, data=data, actor=current.username,
+        session,
+        case_id=case_id,
+        parent_sha256=parent_sha256,
+        parent_source_id=None,
+        data=data,
+        actor=current.username,
         organization_id=current.organization_id,
     )
     await session.commit()
-    return CarveResult(parent_sha256=parent_sha256, count=len(sealed),
-                        artifacts=[CarvedArtifactRead(offset=s.artifact.offset, size=s.artifact.size,
-                                                       carved_type=s.artifact.carved_type, label=s.artifact.label,
-                                                       sha256=s.artifact.sha256, entropy=s.artifact.entropy,
-                                                       reason=s.artifact.reason, source_id=s.source.id,
-                                                       hash_matches=len(s.hash_matches),
-                                                       correlation_hits=len(s.correlation_hits)) for s in sealed])
+    return CarveResult(
+        parent_sha256=parent_sha256,
+        count=len(sealed),
+        artifacts=[
+            CarvedArtifactRead(
+                offset=s.artifact.offset,
+                size=s.artifact.size,
+                carved_type=s.artifact.carved_type,
+                label=s.artifact.label,
+                sha256=s.artifact.sha256,
+                entropy=s.artifact.entropy,
+                reason=s.artifact.reason,
+                source_id=s.source.id,
+                hash_matches=len(s.hash_matches),
+                correlation_hits=len(s.correlation_hits),
+            )
+            for s in sealed
+        ],
+    )
 
 
 @router.post("/interesting-rules", response_model=InterestingRuleRead, status_code=201)
@@ -282,11 +472,19 @@ async def create_interesting_rule(
 ) -> InterestingRuleRead:
     try:
         rule = await interesting_files.create_rule(
-            session, organization_id=current.organization_id, name=payload.name,
-            severity=payload.severity, name_contains=payload.name_contains,
-            name_glob=payload.name_glob, extensions=payload.extensions, types=payload.types,
-            min_size=payload.min_size, max_size=payload.max_size, min_entropy=payload.min_entropy,
-            description=payload.description, created_by=current.id,
+            session,
+            organization_id=current.organization_id,
+            name=payload.name,
+            severity=payload.severity,
+            name_contains=payload.name_contains,
+            name_glob=payload.name_glob,
+            extensions=payload.extensions,
+            types=payload.types,
+            min_size=payload.min_size,
+            max_size=payload.max_size,
+            min_entropy=payload.min_entropy,
+            description=payload.description,
+            created_by=current.id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

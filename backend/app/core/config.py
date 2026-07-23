@@ -7,8 +7,13 @@ from typing import Annotated
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-DEFAULT_JWT_SECRET = "change-me-in-production-oihk-basic-secret"
-DEFAULT_CUSTODY_SIGNING_KEY = "change-me-in-production-oihk-basic-custody-secret"
+from app.core.first_run import get_custody_key_id as _fr_custody_key_id
+from app.core.first_run import get_custody_signing_key as _fr_custody
+from app.core.first_run import get_jwt_secret as _fr_jwt
+
+_DEFAULT_JWT_SECRET = _fr_jwt()
+_DEFAULT_CUSTODY_SIGNING_KEY = _fr_custody()
+_DEFAULT_CUSTODY_KEY_ID = _fr_custody_key_id()
 _SQLITE_URL_PREFIXES = ("sqlite+aiosqlite:///", "sqlite:///")
 
 
@@ -35,8 +40,8 @@ class Settings(BaseSettings):
     )
 
     # --- Application ---
-    app_name: str = "OIHK Basic"
-    environment: str = "development"
+    app_name: Annotated[str, Field(alias="OIHK_APP_NAME")] = "OIHK Basic"
+    environment: Annotated[str, Field(alias="OIHK_ENVIRONMENT")] = "development"
     database_url: str = Field(default="", alias="OIHK_DATABASE_URL")
     cors_origins: Annotated[str, Field(alias="OIHK_CORS_ORIGINS")] = "http://127.0.0.1:5173,http://localhost:5173"
     api_log_level: str = "INFO"
@@ -56,8 +61,9 @@ class Settings(BaseSettings):
 
     @staticmethod
     def _default_data_dir() -> Path:
-        import platform as _platform
         import os as _os
+        import platform as _platform
+
         system = _platform.system()
         if system == "Windows":
             base = _os.environ.get("APPDATA", _os.path.expanduser("~"))
@@ -87,16 +93,19 @@ class Settings(BaseSettings):
     search_max_results_per_query: Annotated[int, Field(alias="OIHK_SEARCH_MAX_RESULTS_PER_QUERY")] = 5
     search_target_results: Annotated[int, Field(alias="OIHK_SEARCH_TARGET_RESULTS")] = 50
     max_fetch_bytes: Annotated[int, Field(alias="OIHK_MAX_FETCH_BYTES")] = 1_048_576
+    max_evidence_bytes: Annotated[int, Field(alias="OIHK_MAX_EVIDENCE_BYTES")] = 262_144_000
     search_deep_read: Annotated[bool, Field(alias="OIHK_SEARCH_DEEP_READ")] = True
     search_max_pages: Annotated[int, Field(alias="OIHK_SEARCH_MAX_PAGES")] = 10
     search_link_depth: Annotated[int, Field(alias="OIHK_SEARCH_LINK_DEPTH")] = 1
     search_links_per_page: Annotated[int, Field(alias="OIHK_SEARCH_LINKS_PER_PAGE")] = 2
 
     # --- Authentication ---
-    auth_enabled: Annotated[bool, Field(alias="OIHK_AUTH_ENABLED")] = True
-    jwt_secret: Annotated[str, Field(alias="OIHK_JWT_SECRET")] = DEFAULT_JWT_SECRET
-    custody_signing_key: Annotated[str, Field(alias="OIHK_CUSTODY_SIGNING_KEY")] = DEFAULT_CUSTODY_SIGNING_KEY
-    custody_key_id: Annotated[str, Field(alias="OIHK_CUSTODY_KEY_ID")] = "oihk-basic-dev"
+    # The desktop edition is single-user and exposes its API only on loopback.
+    # Authentication remains available as an explicit opt-in for custom deployments.
+    auth_enabled: Annotated[bool, Field(alias="OIHK_AUTH_ENABLED")] = False
+    jwt_secret: Annotated[str, Field(alias="OIHK_JWT_SECRET")] = _DEFAULT_JWT_SECRET
+    custody_signing_key: Annotated[str, Field(alias="OIHK_CUSTODY_SIGNING_KEY")] = _DEFAULT_CUSTODY_SIGNING_KEY
+    custody_key_id: Annotated[str, Field(alias="OIHK_CUSTODY_KEY_ID")] = _DEFAULT_CUSTODY_KEY_ID
     auto_create_tables: Annotated[bool | None, Field(alias="OIHK_AUTO_CREATE_TABLES")] = None
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: Annotated[int, Field(alias="OIHK_ACCESS_TOKEN_TTL_MINUTES")] = 720
@@ -129,11 +138,11 @@ class Settings(BaseSettings):
 
     @property
     def jwt_secret_is_default(self) -> bool:
-        return self.jwt_secret == DEFAULT_JWT_SECRET
+        return not self.jwt_secret or self.jwt_secret.startswith("change-me-")
 
     @property
     def custody_signing_key_is_default(self) -> bool:
-        return self.custody_signing_key == DEFAULT_CUSTODY_SIGNING_KEY
+        return not self.custody_signing_key or self.custody_signing_key.startswith("change-me-")
 
     @property
     def should_create_tables(self) -> bool:
@@ -145,7 +154,7 @@ class Settings(BaseSettings):
     def public_registration_enabled(self) -> bool:
         if self.public_registration is not None:
             return self.public_registration
-        return not self.is_production
+        return False
 
     @property
     def ai_configured(self) -> bool:

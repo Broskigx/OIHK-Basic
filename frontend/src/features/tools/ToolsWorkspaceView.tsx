@@ -1,169 +1,202 @@
-import React, { useState } from "react";
-import type { SourceRead, CustodyReport, ForensicCoreReport, ForensicReport, CarveResult } from "../../types";
+import {
+  Binary,
+  CheckCircle2,
+  Database,
+  FileArchive,
+  FileSearch,
+  Fingerprint,
+  FlaskConical,
+  History,
+  Image,
+  LockKeyhole,
+  Microscope,
+  ScanSearch,
+  ShieldAlert,
+} from "lucide-react";
+import { lazy, Suspense, useMemo, useState } from "react";
+import type { CustodyReport, SourceRead } from "../../types";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
-import { EmptyState } from "../../shared/ui/EmptyState";
-import { analyzeForensics, analyzeForensicCore, getCustody, carveFile } from "../../api";
+import { ForensicAnalysisWorkspace } from "./ForensicAnalysisWorkspace";
+import { forensicArtifactSources, forensicSourceLabel } from "./forensicModel";
 
-export function ToolsWorkspaceView({
-  caseId, isAdmin, sources, custody, onRefresh, onOpenEvidence,
-}: {
-  caseId: string | null;
-  isAdmin: boolean;
-  sources: SourceRead[];
-  custody: CustodyReport | null;
-  onRefresh: () => void;
-  onOpenEvidence: () => void;
-}) {
-  const [tab, setTab] = useState<"forensics" | "hashsets" | "carving">("forensics");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ForensicCoreReport | ForensicReport | null>(null);
-  const [carveResult, setCarveResult] = useState<CarveResult | null>(null);
-  const [error, setError] = useState("");
+const ForensicLab = lazy(() =>
+  import("../../ForensicLab").then((module) => ({ default: module.ForensicLab })),
+);
+const ForensicsPanel = lazy(() =>
+  import("../../ForensicsPanel").then((module) => ({ default: module.ForensicsPanel })),
+);
 
-  const handleFileAnalysis = async (file: File) => {
-    if (!caseId) return;
-    setLoading(true);
-    setError("");
-    setResult(null);
-    try {
-      const res = await analyzeForensicCore(caseId, file);
-      setResult(res);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Analysis failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+type ForensicTab = "analyze" | "media" | "artifacts" | "lab";
 
-  const handleCarve = async (file: File) => {
-    if (!caseId) return;
-    setLoading(true);
-    setError("");
-    setCarveResult(null);
-    try {
-      const res = await carveFile(caseId, file);
-      setCarveResult(res);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Carving failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
 
-  if (!caseId) {
+function ArtifactHistory({ sources, custody, onOpenEvidence }: { sources: SourceRead[]; custody: CustodyReport | null; onOpenEvidence: () => void }) {
+  const artifacts = useMemo(() => forensicArtifactSources(sources), [sources]);
+  const [selectedId, setSelectedId] = useState("");
+  const selected = artifacts.find((item) => item.id === selectedId) ?? artifacts[0];
+  const seal = custody?.entries.find((entry) => entry.source_id === selected?.id);
+
+  if (artifacts.length === 0) {
     return (
-      <div className="platform-view">
-        <EmptyState title="No active case" description="Open an investigation to use forensic tools." />
+      <div className="forensic-empty-result forensic-artifact-empty">
+        <FileArchive size={24} />
+        <strong>No forensic artifacts in this investigation</strong>
+        <p>Run a full analysis, media inspection, IOC scan, or carving operation to create sealed evidence.</p>
       </div>
     );
   }
 
   return (
-    <div className="platform-view">
-      <WorkspaceHeader eyebrow="Forensic Analysis" title="Tools" description="File analysis, hash lookup, and data carving." />
-
-      <div className="tabs">
-        <button className={`tab ${tab === "forensics" ? "active" : ""}`} onClick={() => setTab("forensics")}>File Analysis</button>
-        <button className={`tab ${tab === "carving" ? "active" : ""}`} onClick={() => setTab("carving")}>Carving</button>
+    <div className="forensic-artifact-layout">
+      <div className="forensic-artifact-list" aria-label="Persisted forensic artifacts">
+        {artifacts.map((artifact) => {
+          const artifactSeal = custody?.entries.find((entry) => entry.source_id === artifact.id);
+          return (
+            <button
+              type="button"
+              key={artifact.id}
+              className={selected?.id === artifact.id ? "active" : ""}
+              onClick={() => setSelectedId(artifact.id)}
+            >
+              <span className="forensic-artifact-icon">
+                {artifact.kind === "forensic_media" ? <Image size={16} /> : artifact.kind === "carved_artifact" ? <FileArchive size={16} /> : <FileSearch size={16} />}
+              </span>
+              <div>
+                <strong>{artifact.title}</strong>
+                <small>{forensicSourceLabel(artifact.kind)} · {formatDate(artifact.collected_at)}</small>
+              </div>
+              <span className={artifactSeal?.ok ? "forensic-artifact-seal good" : "forensic-artifact-seal"}>
+                <LockKeyhole size={12} />{artifactSeal?.ok ? `#${artifactSeal.sequence}` : "No seal loaded"}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {error && <div className="error-banner" style={{ marginBottom: "1rem" }}>{error}</div>}
+      {selected && (
+        <aside className="forensic-artifact-inspector">
+          <span className="platform-eyebrow">Persisted evidence record</span>
+          <h3>{selected.title}</h3>
+          <p>{forensicSourceLabel(selected.kind)}</p>
+          <dl>
+            <div><dt>Source ID</dt><dd className="platform-mono">{selected.id}</dd></div>
+            <div><dt>Citation</dt><dd className="platform-mono">{selected.citation || "Internal evidence reference"}</dd></div>
+            <div><dt>Reliability</dt><dd>{Math.round(selected.reliability * 100)}%</dd></div>
+            <div><dt>Collected</dt><dd>{formatDate(selected.collected_at)}</dd></div>
+            <div><dt>Custody</dt><dd>{seal ? (seal.ok ? `Verified · sequence #${seal.sequence}` : `Review sequence #${seal.sequence}`) : "Seal not present in loaded custody report"}</dd></div>
+            {seal && <div><dt>Content SHA-256</dt><dd className="platform-mono">{seal.content_sha256}</dd></div>}
+          </dl>
+          <div className={seal?.ok ? "forensic-integrity-note good" : "forensic-integrity-note"}>
+            {seal?.ok ? <CheckCircle2 size={15} /> : <ShieldAlert size={15} />}
+            <span>{seal?.ok ? "Stored content and custody chain verify correctly." : "Open Evidence to inspect the complete custody chain."}</span>
+          </div>
+          <button type="button" onClick={onOpenEvidence}>Open Evidence Vault</button>
+          <small>The artifact inventory exposes provenance and seal state. Raw evidence remains in protected backend storage.</small>
+        </aside>
+      )}
+    </div>
+  );
+}
 
-      {tab === "forensics" && (
-        <div className="card">
-          <h3 style={{ marginBottom: "1rem" }}>File Analysis</h3>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "1rem" }}>
-            Upload a file for hashing, MIME detection, metadata extraction, and IOC scanning.
-          </p>
-          <input
-            type="file"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileAnalysis(f); }}
-            style={{ marginBottom: "1rem" }}
-          />
-          {loading && <p>Analyzing...</p>}
-          {result && (
-            <div>
-              <div className="stat-row" style={{ marginBottom: "1rem" }}>
-                <div className="stat-card">
-                  <div className="stat-label">Filename</div>
-                  <div className="stat-value" style={{ fontSize: "1rem" }}>{result.filename}</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-label">SHA256</div>
-                  <div style={{ fontSize: "0.75rem", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>
-                    {"stored_sha256" in result ? result.stored_sha256 : result.sha256}
-                  </div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-label">Size</div>
-                  <div className="stat-value" style={{ fontSize: "1rem" }}>{(result.size_bytes / 1024).toFixed(1)} KB</div>
-                </div>
-              </div>
-              {"file_analysis" in result && result.file_analysis && (
-                <div>
-                  <h4 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>File Analysis</h4>
-                  <table className="data-table">
-                    <tbody>
-                      <tr><td>MIME Type</td><td>{result.file_analysis.mime_type}</td></tr>
-                      <tr><td>Detected</td><td>{result.file_analysis.detected_type} ({result.file_analysis.detected_label})</td></tr>
-                      <tr><td>Entropy</td><td>{result.file_analysis.entropy}</td></tr>
-                      {result.file_analysis.discrepancies.length > 0 && (
-                        <tr><td>Discrepancies</td><td>{result.file_analysis.discrepancies.join(", ")}</td></tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {"iocs" in result && result.iocs && result.iocs.matches.length > 0 && (
-                <div style={{ marginTop: "1rem" }}>
-                  <h4 style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>IOCs Found ({result.iocs.matches.length})</h4>
-                  <table className="data-table">
-                    <thead>
-                      <tr><th>Type</th><th>Value</th><th>Confidence</th></tr>
-                    </thead>
-                    <tbody>
-                      {result.iocs.matches.slice(0, 20).map((m, i) => (
-                        <tr key={i}>
-                          <td><span className="badge badge-warning">{m.type}</span></td>
-                          <td style={{ fontFamily: "var(--font-mono)", fontSize: "0.8rem" }}>{m.value}</td>
-                          <td>{(m.confidence * 100).toFixed(0)}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
+export function ToolsWorkspaceView({
+  caseId,
+  isAdmin,
+  sources,
+  custody,
+  onRefresh,
+  onOpenEvidence,
+}: {
+  caseId: string;
+  isAdmin: boolean;
+  sources: SourceRead[];
+  custody: CustodyReport | null;
+  onRefresh: () => Promise<void>;
+  onOpenEvidence: () => void;
+}) {
+  const [tab, setTab] = useState<ForensicTab>("analyze");
+  const artifactCount = useMemo(() => forensicArtifactSources(sources).length, [sources]);
+  const tabs: Array<{ id: ForensicTab; label: string; count?: number; icon: typeof Microscope }> = [
+    { id: "analyze", label: "Full analysis", icon: Microscope },
+    { id: "media", label: "Media / stego", icon: ScanSearch },
+    { id: "artifacts", label: "Artifact history", count: artifactCount, icon: History },
+    { id: "lab", label: "Intelligence lab", icon: FlaskConical },
+  ];
+
+  return (
+    <div className="platform-view forensic-workspace-view">
+      <WorkspaceHeader
+        eyebrow="Investigation workspace"
+        title="Forensics"
+        description="Local artifact analysis, forensic intelligence, and cryptographic custody. Operations run on the configured OIHK backend without external enrichment."
+        actions={
+          <div className="forensic-header-states">
+            <span><Database size={14} />Local execution</span>
+            <span className={custody?.intact ? "good" : "warning"}>
+              {custody?.intact ? <CheckCircle2 size={14} /> : <ShieldAlert size={14} />}
+              {custody ? (custody.intact ? "Custody intact" : "Custody review") : "Custody unavailable"}
+            </span>
+          </div>
+        }
+      />
+
+      <div className="forensic-capability-strip" aria-label="Local forensic pipeline capabilities">
+        <div><Fingerprint size={16} /><span>Identity</span><strong>SHA-256 · SHA-1 · MD5</strong></div>
+        <div><Binary size={16} /><span>Structure</span><strong>MIME · magic · entropy</strong></div>
+        <div><FileSearch size={16} /><span>Extraction</span><strong>Metadata · text · IOC</strong></div>
+        <div><LockKeyhole size={16} /><span>Integrity</span><strong>Persisted · sealed · auditable</strong></div>
+      </div>
+
+      <div className="platform-tabs forensic-workspace-tabs" role="tablist" aria-label="Forensic workspaces">
+        {tabs.map(({ id, label, count, icon: Icon }) => (
+          <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+            <Icon size={14} />{label}{count !== undefined && <span>{count}</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab === "analyze" && (
+        <section className="platform-section forensic-primary-section">
+          <div className="platform-section-heading">
+            <div><span className="platform-eyebrow">Deterministic local pipeline</span><h2>Analyze, persist, and seal one artifact</h2></div>
+          </div>
+          <p className="platform-footnote">Supported extraction depends on the file format. A successful run always returns backend-authored results and a persisted custody reference.</p>
+          <ForensicAnalysisWorkspace caseId={caseId} onCompleted={onRefresh} />
+        </section>
       )}
 
-      {tab === "carving" && (
-        <div className="card">
-          <h3 style={{ marginBottom: "1rem" }}>Data Carving</h3>
-          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "1rem" }}>
-            Extract embedded files (PNG, JPEG, ZIP) from binary data.
-          </p>
-          <input
-            type="file"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCarve(f); }}
-            style={{ marginBottom: "1rem" }}
-          />
-          {loading && <p>Carving...</p>}
-          {carveResult && (
-            <div>
-              <p>Found {carveResult.count} embedded artifacts.</p>
-              {carveResult.artifacts.map((a, i) => (
-                <div key={i} style={{ padding: "0.5rem", margin: "0.5rem 0", background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)" }}>
-                  <div><strong>{a.label}</strong> ({a.carved_type})</div>
-                  <div style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>
-                    Offset: {a.offset} · Size: {a.size} bytes · SHA256: {a.sha256.slice(0, 16)}…
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {tab === "media" && (
+        <section className="platform-section platform-forensics-host forensic-media-section">
+          <div className="platform-section-heading">
+            <div><span className="platform-eyebrow">Media-specific inspection</span><h2>Steganography and appended-data signals</h2></div>
+          </div>
+          <p className="platform-footnote">Runs OIHK's media heuristics, stores the uploaded bytes, creates a provenance source, and seals the original content.</p>
+          <Suspense fallback={<p className="platform-muted">Loading media analyzer…</p>}>
+            <ForensicsPanel caseId={caseId} onAnalyzed={() => void onRefresh()} />
+          </Suspense>
+        </section>
+      )}
+
+      {tab === "artifacts" && (
+        <section className="platform-section forensic-history-section">
+          <div className="platform-section-heading">
+            <div><span className="platform-eyebrow">Case-scoped inventory</span><h2>Persisted forensic artifacts</h2></div>
+          </div>
+          <ArtifactHistory sources={sources} custody={custody} onOpenEvidence={onOpenEvidence} />
+        </section>
+      )}
+
+      {tab === "lab" && (
+        <section className="platform-section platform-forensics-host forensic-lab-section">
+          <div className="platform-section-heading">
+            <div><span className="platform-eyebrow">Local forensic intelligence</span><h2>Hash sets, case correlation, carving, and rules</h2></div>
+          </div>
+          <p className="platform-footnote">Correlation uses OIHK's organization-scoped local index. Hash sets and rules are administered locally; carving seals every recovered child artifact.</p>
+          <Suspense fallback={<p className="platform-muted">Loading forensic intelligence lab…</p>}>
+            <ForensicLab caseId={caseId} isAdmin={isAdmin} />
+          </Suspense>
+        </section>
       )}
     </div>
   );

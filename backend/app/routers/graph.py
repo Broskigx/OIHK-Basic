@@ -1,5 +1,8 @@
 """Graph router for OIHK Basic."""
 
+import hashlib
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy import delete, select
@@ -26,6 +29,11 @@ from app.schemas import (
     GraphNode,
     GraphRead,
     GraphRelationshipCreate,
+    GraphRelationshipUpdate,
+    GraphSnapshotCreate,
+    GraphSnapshotRead,
+    GraphWorkspaceRead,
+    GraphWorkspaceWrite,
 )
 from app.services.analyzer import ExtractedEntity, normalize_value
 from app.services.custody import seal_source
@@ -99,6 +107,180 @@ async def _case_graph(session: AsyncSession, case_id: str) -> tuple[list[models.
         .all()
     )
     return entities, edges
+
+
+def _workspace_read(row: models.GraphWorkspace | None, case_id: str) -> GraphWorkspaceRead:
+    if row is None:
+        return GraphWorkspaceRead(case_id=case_id)
+    return GraphWorkspaceRead(
+        id=row.id,
+        case_id=row.case_id,
+        positions=row.positions or {},
+        camera=row.camera or {},
+        view_mode=row.view_mode,
+        filters=row.filters or {},
+        updated_at=row.updated_at,
+    )
+
+
+@router.get("/{case_id}/workspace", response_model=GraphWorkspaceRead)
+async def get_graph_workspace(
+    case_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> GraphWorkspaceRead:
+    await require_case_access(session, case_id, current)
+    row = (
+        await session.execute(select(models.GraphWorkspace).where(models.GraphWorkspace.case_id == case_id))
+    ).scalar_one_or_none()
+    return _workspace_read(row, case_id)
+
+
+@router.put("/{case_id}/workspace", response_model=GraphWorkspaceRead)
+async def save_graph_workspace(
+    case_id: str,
+    payload: GraphWorkspaceWrite,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> GraphWorkspaceRead:
+    await require_case_access(session, case_id, current)
+    valid_ids = set(
+        (await session.execute(select(models.Entity.id).where(models.Entity.case_id == case_id))).scalars().all()
+    )
+    positions = {
+        node_id: position.model_dump() for node_id, position in payload.positions.items() if node_id in valid_ids
+    }
+    row = (
+        await session.execute(select(models.GraphWorkspace).where(models.GraphWorkspace.case_id == case_id))
+    ).scalar_one_or_none()
+    if row is None:
+        row = models.GraphWorkspace(case_id=case_id)
+        session.add(row)
+    row.positions = positions
+    row.camera = payload.camera.model_dump()
+    row.view_mode = payload.view_mode
+    row.filters = payload.filters
+    await session.commit()
+    await session.refresh(row)
+    return _workspace_read(row, case_id)
+
+
+@router.get("/{case_id}/snapshots", response_model=list[GraphSnapshotRead])
+async def list_graph_snapshots(
+    case_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[GraphSnapshotRead]:
+    await require_case_access(session, case_id, current)
+    rows = (
+        await session.execute(
+            select(models.GraphSnapshot)
+            .where(models.GraphSnapshot.case_id == case_id)
+            .order_by(models.GraphSnapshot.created_at.desc())
+            .limit(100)
+        )
+    ).scalars()
+    return [
+        GraphSnapshotRead(
+            id=row.id,
+            case_id=row.case_id,
+            name=row.name,
+            workspace=GraphWorkspaceWrite.model_validate(row.workspace),
+            graph_digest=row.graph_digest,
+            node_count=row.node_count,
+            edge_count=row.edge_count,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
+@router.post("/{case_id}/snapshots", response_model=GraphSnapshotRead, status_code=201)
+async def create_graph_snapshot(
+    case_id: str,
+    payload: GraphSnapshotCreate,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> GraphSnapshotRead:
+    await require_case_access(session, case_id, current)
+    workspace = (
+        await session.execute(select(models.GraphWorkspace).where(models.GraphWorkspace.case_id == case_id))
+    ).scalar_one_or_none()
+    workspace_payload = GraphWorkspaceWrite(
+        positions=workspace.positions if workspace else {},
+        camera=workspace.camera if workspace else {},
+        view_mode=workspace.view_mode if workspace else "network",
+        filters=workspace.filters if workspace else {},
+    )
+    entities, edges = await _case_graph(session, case_id)
+    digest_input = json.dumps(
+        {"nodes": sorted(item.id for item in entities), "edges": sorted(item.id for item in edges)},
+        separators=(",", ":"),
+    )
+    row = models.GraphSnapshot(
+        case_id=case_id,
+        name=payload.name.strip(),
+        workspace=workspace_payload.model_dump(),
+        graph_digest=hashlib.sha256(digest_input.encode()).hexdigest(),
+        node_count=len(entities),
+        edge_count=len(edges),
+    )
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return GraphSnapshotRead(
+        id=row.id,
+        case_id=row.case_id,
+        name=row.name,
+        workspace=workspace_payload,
+        graph_digest=row.graph_digest,
+        node_count=row.node_count,
+        edge_count=row.edge_count,
+        created_at=row.created_at,
+    )
+
+
+@router.post("/{case_id}/snapshots/{snapshot_id}/restore", response_model=GraphWorkspaceRead)
+async def restore_graph_snapshot(
+    case_id: str,
+    snapshot_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> GraphWorkspaceRead:
+    await require_case_access(session, case_id, current)
+    snapshot = await session.get(models.GraphSnapshot, snapshot_id)
+    if snapshot is None or snapshot.case_id != case_id:
+        raise HTTPException(status_code=404, detail="Graph snapshot not found")
+    payload = GraphWorkspaceWrite.model_validate(snapshot.workspace)
+    row = (
+        await session.execute(select(models.GraphWorkspace).where(models.GraphWorkspace.case_id == case_id))
+    ).scalar_one_or_none()
+    if row is None:
+        row = models.GraphWorkspace(case_id=case_id)
+        session.add(row)
+    row.positions = {node_id: position.model_dump() for node_id, position in payload.positions.items()}
+    row.camera = payload.camera.model_dump()
+    row.view_mode = payload.view_mode
+    row.filters = payload.filters
+    await session.commit()
+    await session.refresh(row)
+    return _workspace_read(row, case_id)
+
+
+@router.delete("/{case_id}/snapshots/{snapshot_id}")
+async def delete_graph_snapshot(
+    case_id: str,
+    snapshot_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, bool]:
+    await require_case_access(session, case_id, current)
+    snapshot = await session.get(models.GraphSnapshot, snapshot_id)
+    if snapshot is None or snapshot.case_id != case_id:
+        raise HTTPException(status_code=404, detail="Graph snapshot not found")
+    await session.delete(snapshot)
+    await session.commit()
+    return {"deleted": True}
 
 
 @router.post("/{case_id}/import/csv", response_model=CsvImportResult, status_code=201)
@@ -229,7 +411,9 @@ async def create_graph_entity(
         session.add(relationship)
 
     await audit(
-        session, "graph.entity.created", payload.case_id,
+        session,
+        "graph.entity.created",
+        payload.case_id,
         {"entity_id": entity.id, "type": entity.type, "connected_to": payload.connect_to_id},
         actor="analyst",
     )
@@ -299,12 +483,68 @@ async def create_graph_relationship(
     session.add(relationship)
     await session.flush()
     await audit(
-        session, "graph.relationship.created", payload.case_id,
-        {"relationship_id": relationship.id, "source_id": source_entity.id, "target_id": target_entity.id, "label": predicate},
+        session,
+        "graph.relationship.created",
+        payload.case_id,
+        {
+            "relationship_id": relationship.id,
+            "source_id": source_entity.id,
+            "target_id": target_entity.id,
+            "label": predicate,
+        },
         actor=current.username,
     )
     await session.commit()
     return _edge(relationship)
+
+
+@router.patch("/relationships/{relationship_id}", response_model=GraphEdge)
+async def update_graph_relationship(
+    relationship_id: str,
+    payload: GraphRelationshipUpdate,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> GraphEdge:
+    relationship = await session.get(models.Relationship, relationship_id)
+    if relationship is None:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    await require_case_access(session, relationship.case_id, current)
+    if payload.label is not None:
+        relationship.predicate = payload.label.strip().lower().replace(" ", "_")[:80]
+    if payload.confidence is not None:
+        relationship.confidence = payload.confidence
+    await audit(
+        session,
+        "graph.relationship.updated",
+        relationship.case_id,
+        {"relationship_id": relationship.id},
+        actor=current.username,
+    )
+    await session.commit()
+    return _edge(relationship)
+
+
+@router.delete("/relationships/{relationship_id}")
+async def delete_graph_relationship(
+    relationship_id: str,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, bool]:
+    relationship = await session.get(models.Relationship, relationship_id)
+    if relationship is None:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+    await require_case_access(session, relationship.case_id, current)
+    case_id = relationship.case_id
+    await session.delete(relationship)
+    await audit(
+        session,
+        "graph.relationship.deleted",
+        case_id,
+        {"relationship_id": relationship_id},
+        actor=current.username,
+    )
+    await session.commit()
+    return {"deleted": True}
 
 
 def _excerpt(body: str, limit: int = 600) -> str:
@@ -397,7 +637,9 @@ async def rename_graph_entity(
         entity.last_seen = models.utcnow()
         result = entity
 
-    await audit(session, "graph.entity.renamed", result.case_id, {"entity_id": result.id, "label": label[:120]}, actor="analyst")
+    await audit(
+        session, "graph.entity.renamed", result.case_id, {"entity_id": result.id, "label": label[:120]}, actor="analyst"
+    )
     await session.commit()
     return _node(result)
 
@@ -447,7 +689,9 @@ async def update_entity_details(
             changed["type"] = new_type
 
     entity.last_seen = models.utcnow()
-    await audit(session, "graph.entity.details_updated", entity.case_id, {"entity_id": entity.id, **changed}, actor="analyst")
+    await audit(
+        session, "graph.entity.details_updated", entity.case_id, {"entity_id": entity.id, **changed}, actor="analyst"
+    )
     await session.commit()
     return _node(entity)
 
@@ -495,7 +739,9 @@ async def delete_graph_entity(
                     (models.Relationship.subject_id == entity_id) | (models.Relationship.object_id == entity_id)
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     await session.execute(
         delete(models.Relationship).where(
@@ -505,7 +751,13 @@ async def delete_graph_entity(
     case_id = entity.case_id
     entity_label = entity.display
     await session.delete(entity)
-    await audit(session, "graph.entity.deleted", case_id, {"entity_id": entity_id, "label": entity_label[:120], "relationship_count": len(relationship_ids)}, actor=current.username)
+    await audit(
+        session,
+        "graph.entity.deleted",
+        case_id,
+        {"entity_id": entity_id, "label": entity_label[:120], "relationship_count": len(relationship_ids)},
+        actor=current.username,
+    )
     await session.commit()
     return {"deleted": True, "entity_id": entity_id, "relationship_count": len(relationship_ids)}
 
@@ -528,17 +780,26 @@ async def entity_dossier(
         for src in rows:
             sources.append(
                 DossierSource(
-                    source_id=src.id, title=src.title, kind=src.kind, url=src.url,
-                    citation=src.citation, reliability=src.reliability, excerpt=_excerpt(src.body),
+                    source_id=src.id,
+                    title=src.title,
+                    kind=src.kind,
+                    url=src.url,
+                    citation=src.citation,
+                    reliability=src.reliability,
+                    excerpt=_excerpt(src.body),
                 )
             )
 
     rel_rows = (
-        (await session.execute(
-            select(models.Relationship).where(
-                (models.Relationship.subject_id == entity_id) | (models.Relationship.object_id == entity_id)
+        (
+            await session.execute(
+                select(models.Relationship).where(
+                    (models.Relationship.subject_id == entity_id) | (models.Relationship.object_id == entity_id)
+                )
             )
-        )).scalars().all()
+        )
+        .scalars()
+        .all()
     )
     neighbour_ids = {(rel.object_id if rel.subject_id == entity_id else rel.subject_id) for rel in rel_rows}
     neighbours: dict[str, models.Entity] = {}
@@ -557,16 +818,21 @@ async def entity_dossier(
             continue
         connections.append(
             DossierConnection(
-                relationship_id=rel.id, relation=rel.predicate,
+                relationship_id=rel.id,
+                relation=rel.predicate,
                 direction="outgoing" if outgoing else "incoming",
-                confidence=rel.confidence, entity=_node(neighbour),
+                confidence=rel.confidence,
+                entity=_node(neighbour),
             )
         )
     connections.sort(key=lambda c: c.confidence, reverse=True)
 
     return EntityDossier(
-        entity=_node(entity), first_seen=entity.first_seen, last_seen=entity.last_seen,
-        sources=sources, connections=connections,
+        entity=_node(entity),
+        first_seen=entity.first_seen,
+        last_seen=entity.last_seen,
+        sources=sources,
+        connections=connections,
     )
 
 
@@ -584,7 +850,9 @@ async def expand_graph_entity(
     result = await expand_entity(session, entity)
     await session.commit()
     return GraphExpandResult(
-        entity_id=entity_id, strategy=result.strategy, summary=result.summary,
+        entity_id=entity_id,
+        strategy=result.strategy,
+        summary=result.summary,
         new_nodes=[_node(item) for item in result.new_entities],
         new_edges=[_edge(item) for item in result.new_relationships],
     )

@@ -47,7 +47,6 @@ def _extract_html(data: bytes) -> str:
 
 def _extract_pdf(data: bytes, errors: list[str]) -> str:
     try:
-        text = data.decode("latin-1")
         # Simple PDF text extraction - find text between parentheses in PDF streams
         texts: list[str] = []
         for match in re.finditer(rb"\((.*?)\)", data):
@@ -65,8 +64,8 @@ def _extract_pdf(data: bytes, errors: list[str]) -> str:
 
 def _extract_ooxml(data: bytes, errors: list[str]) -> str:
     try:
-        import zipfile
         import io
+        import zipfile
 
         texts: list[str] = []
         with zipfile.ZipFile(io.BytesIO(data)) as z:
@@ -92,6 +91,7 @@ def _extract_ooxml(data: bytes, errors: list[str]) -> str:
 def _extract_json(data: bytes) -> str:
     try:
         import json
+
         obj = json.loads(data)
         return json.dumps(obj, indent=2)
     except Exception:

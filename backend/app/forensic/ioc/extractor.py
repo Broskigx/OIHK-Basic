@@ -1,7 +1,6 @@
 """IOC extraction for OIHK Basic."""
 
 import re
-from dataclasses import dataclass, field
 
 from app.forensic.types import IocMatch, IocReport
 
@@ -25,19 +24,21 @@ def extract_iocs(text: str) -> IocReport:
     seen: set[tuple[str, str]] = set()
     asn_lookups: list[dict[str, str]] = []
 
-    for ioc_type, label, pattern in _IOC_PATTERNS:
+    for ioc_type, _label, pattern in _IOC_PATTERNS:
         for match in pattern.finditer(text):
             value = match.group().strip().lower() if ioc_type in ("email", "url", "domain") else match.group().strip()
             key = (ioc_type, value)
             if key not in seen:
                 seen.add(key)
-                matches.append(IocMatch(
-                    type=ioc_type,
-                    value=value,
-                    display=match.group().strip(),
-                    confidence=_confidence(ioc_type),
-                    offset=match.start(),
-                ))
+                matches.append(
+                    IocMatch(
+                        type=ioc_type,
+                        value=value,
+                        display=match.group().strip(),
+                        confidence=_confidence(ioc_type),
+                        offset=match.start(),
+                    )
+                )
 
     matches.sort(key=lambda m: m.confidence, reverse=True)
     return IocReport(matches=matches[:200], asn_lookups=asn_lookups)
@@ -45,7 +46,14 @@ def extract_iocs(text: str) -> IocReport:
 
 def _confidence(ioc_type: str) -> float:
     return {
-        "email": 0.9, "ipv4": 0.9, "md5": 0.85, "sha1": 0.85,
-        "sha256": 0.85, "cve": 0.85, "btc": 0.8, "eth": 0.8,
-        "url": 0.7, "domain": 0.6,
+        "email": 0.9,
+        "ipv4": 0.9,
+        "md5": 0.85,
+        "sha1": 0.85,
+        "sha256": 0.85,
+        "cve": 0.85,
+        "btc": 0.8,
+        "eth": 0.8,
+        "url": 0.7,
+        "domain": 0.6,
     }.get(ioc_type, 0.5)
