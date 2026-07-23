@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
-from app.services.analyzer import ExtractedEntity, normalize_value
+from app.services.analyzer import ExtractedEntity
 from app.services.osint_lookups import lookup_domain, lookup_email, lookup_ip
 from app.services.repository import upsert_entity
 
@@ -47,7 +47,9 @@ async def _expand_domain(session: AsyncSession, entity: models.Entity) -> Expand
 
     if result.ip_address:
         ip_entity = await upsert_entity(
-            session, entity.case_id, entity.source_ids[0] if entity.source_ids else "",
+            session,
+            entity.case_id,
+            entity.source_ids[0] if entity.source_ids else "",
             ExtractedEntity(type="ip", value=result.ip_address, display=result.ip_address, confidence=0.7),
         )
         new_entities.append(ip_entity)
@@ -60,9 +62,12 @@ async def _expand_domain(session: AsyncSession, entity: models.Entity) -> Expand
         )
         if not existing.scalar_one_or_none():
             rel = models.Relationship(
-                case_id=entity.case_id, subject_id=entity.id,
-                predicate="resolves_to", object_id=ip_entity.id,
-                confidence=0.7, source_ids=entity.source_ids or [],
+                case_id=entity.case_id,
+                subject_id=entity.id,
+                predicate="resolves_to",
+                object_id=ip_entity.id,
+                confidence=0.7,
+                source_ids=entity.source_ids or [],
             )
             session.add(rel)
             new_relationships.append(rel)
@@ -96,7 +101,7 @@ async def _expand_email(session: AsyncSession, entity: models.Entity) -> ExpandR
     new_relationships: list[models.Relationship] = []
 
     return ExpandResult(
-        strategy="email_breach",
+        strategy="email_domain_lookup",
         summary=f"Email {value}: {len(result.findings)} findings",
         new_entities=new_entities,
         new_relationships=new_relationships,

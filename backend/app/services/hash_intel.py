@@ -117,12 +117,15 @@ async def list_hash_sets(
             models.ForensicHashEntry.set_name,
             models.ForensicHashEntry.category,
             func.count(models.ForensicHashEntry.id).label("entries"),
-        ).where(
+        )
+        .where(
             models.ForensicHashEntry.organization_id == organization_id,
-        ).group_by(
+        )
+        .group_by(
             models.ForensicHashEntry.set_name,
             models.ForensicHashEntry.category,
-        ).order_by(models.ForensicHashEntry.set_name)
+        )
+        .order_by(models.ForensicHashEntry.set_name)
     )
     infos = []
     for row in result.all():
@@ -140,14 +143,18 @@ async def lookup_value(
     digest = value.strip().lower()
 
     entries = (
-        await session.execute(
-            select(models.ForensicHashEntry).where(
-                models.ForensicHashEntry.organization_id == organization_id,
-                models.ForensicHashEntry.algorithm == algorithm,
-                models.ForensicHashEntry.digest == digest,
+        (
+            await session.execute(
+                select(models.ForensicHashEntry).where(
+                    models.ForensicHashEntry.organization_id == organization_id,
+                    models.ForensicHashEntry.algorithm == algorithm,
+                    models.ForensicHashEntry.digest == digest,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     return [
         HashMatch(

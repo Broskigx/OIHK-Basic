@@ -1,69 +1,460 @@
-"""Reports router for OIHK Basic."""
+"""Persistent local report generation for Markdown, safe HTML, and JSON."""
 
-from fastapi import APIRouter, Depends, Response
+from __future__ import annotations
+
+import html
+import json
+from datetime import UTC, datetime
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.core.deps import CurrentUser, get_current_user, require_case_access
 from app.database import get_session
+from app.schemas import (
+    ReportAiDraftRequest,
+    ReportDocumentRead,
+    ReportGenerateRequest,
+    ReportTemplateRead,
+    ReportTemplateWrite,
+)
+from app.services.local_models import build_local_provider
+from app.services.repository import audit
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+VERSION = "0.1.0"
+
+
+async def _dataset(session: AsyncSession, case: models.Case) -> dict:
+    sources = list(
+        (
+            await session.execute(
+                select(models.Source).where(models.Source.case_id == case.id).order_by(models.Source.collected_at)
+            )
+        ).scalars()
+    )
+    entities = list(
+        (
+            await session.execute(
+                select(models.Entity)
+                .where(models.Entity.case_id == case.id)
+                .order_by(models.Entity.type, models.Entity.value)
+            )
+        ).scalars()
+    )
+    relationships = list(
+        (await session.execute(select(models.Relationship).where(models.Relationship.case_id == case.id))).scalars()
+    )
+    evidence = list(
+        (await session.execute(select(models.EvidenceItem).where(models.EvidenceItem.case_id == case.id))).scalars()
+    )
+    timeline = list(
+        (
+            await session.execute(
+                select(models.AuditEvent)
+                .where(models.AuditEvent.case_id == case.id)
+                .order_by(models.AuditEvent.created_at)
+                .limit(2000)
+            )
+        ).scalars()
+    )
+    labels = {entity.id: entity.display for entity in entities}
+    return {
+        "metadata": {
+            "product": "OIHK Basic",
+            "version": VERSION,
+            "generated_at": datetime.now(UTC).isoformat(),
+        },
+        "investigation": {
+            "id": case.id,
+            "title": case.title,
+            "status": case.status,
+            "priority": case.priority,
+            "legal_basis": case.legal_basis,
+            "scope": case.scope_statement,
+            "created_at": case.created_at.isoformat(),
+            "updated_at": case.updated_at.isoformat(),
+        },
+        "summary": case.summary,
+        "notes": case.notes,
+        "entities": [
+            {
+                "id": entity.id,
+                "type": entity.type,
+                "label": entity.display,
+                "confidence": entity.confidence,
+                "source_count": len(entity.source_ids or []),
+            }
+            for entity in entities
+        ],
+        "relationships": [
+            {
+                "id": relation.id,
+                "source": labels.get(relation.subject_id, relation.subject_id),
+                "label": relation.predicate,
+                "target": labels.get(relation.object_id, relation.object_id),
+                "confidence": relation.confidence,
+            }
+            for relation in relationships
+        ],
+        "sources": [
+            {
+                "id": source.id,
+                "title": source.title,
+                "kind": source.kind,
+                "citation": source.citation or source.url or source.id,
+                "reliability": source.reliability,
+                "collected_at": source.collected_at.isoformat(),
+            }
+            for source in sources
+        ],
+        "evidence": [
+            {
+                "id": item.id,
+                "name": item.original_name,
+                "mime_type": item.mime_type,
+                "size_bytes": item.size_bytes,
+                "sha256": item.sha256,
+                "verified_at": item.verified_at.isoformat() if item.verified_at else None,
+            }
+            for item in evidence
+        ],
+        "timeline": [
+            {"at": event.created_at.isoformat(), "actor": event.actor, "action": event.action} for event in timeline
+        ],
+    }
+
+
+def _selected(dataset: dict, request: ReportGenerateRequest) -> dict:
+    payload = {"metadata": dataset["metadata"]}
+    for section in request.sections:
+        if section == "methodology":
+            payload[section] = request.methodology
+        elif section == "limitations":
+            payload[section] = request.limitations
+        else:
+            payload[section] = dataset.get(section)
+    return payload
+
+
+def _markdown(title: str, payload: dict) -> str:
+    lines = [f"# {title}", "", f"Generated by OIHK Basic {VERSION} at {payload['metadata']['generated_at']}", ""]
+    if investigation := payload.get("investigation"):
+        lines.extend(
+            [
+                "## Investigation",
+                f"- ID: {investigation['id']}",
+                f"- Status: {investigation['status']}",
+                f"- Priority: {investigation['priority']}",
+                f"- Legal basis: {investigation['legal_basis']}",
+                f"- Scope: {investigation['scope']}",
+                "",
+            ]
+        )
+    if "summary" in payload:
+        lines.extend(["## Summary", str(payload.get("summary") or "No summary recorded."), ""])
+    for key, heading in (
+        ("entities", "Entities"),
+        ("relationships", "Relationships"),
+        ("sources", "Sources"),
+        ("evidence", "Evidence"),
+        ("timeline", "Timeline"),
+    ):
+        if key not in payload:
+            continue
+        lines.extend([f"## {heading}", ""])
+        rows = payload.get(key) or []
+        if not rows:
+            lines.extend(["No records.", ""])
+        elif key == "entities":
+            lines.extend(
+                f"- {row['type']}: {row['label']} (confidence {row['confidence']:.2f}, sources {row['source_count']})"
+                for row in rows
+            )
+        elif key == "relationships":
+            lines.extend(
+                f"- {row['source']} --{row['label']}--> {row['target']} (confidence {row['confidence']:.2f})"
+                for row in rows
+            )
+        elif key == "sources":
+            lines.extend(
+                f"- {row['title']} ({row['kind']}, reliability {row['reliability']:.2f}) - {row['citation']}"
+                for row in rows
+            )
+        elif key == "evidence":
+            lines.extend(
+                f"- {row['name']} ({row['mime_type']}, {row['size_bytes']} bytes) SHA-256 `{row['sha256']}`"
+                for row in rows
+            )
+        else:
+            lines.extend(f"- {row['at']} - {row['action']} ({row['actor']})" for row in rows)
+        lines.append("")
+    for key, heading in (
+        ("notes", "Investigation Notes"),
+        ("methodology", "Methodology"),
+        ("limitations", "Limitations"),
+    ):
+        if key in payload:
+            lines.extend([f"## {heading}", str(payload.get(key) or "Not recorded."), ""])
+    lines.extend(["## Review notice", "Verify identities, context, source terms, and legal basis before external use."])
+    return "\n".join(lines)
+
+
+def _safe_html(title: str, payload: dict) -> str:
+    markdown = _markdown(title, payload)
+    blocks: list[str] = []
+    for line in markdown.splitlines():
+        escaped = html.escape(line)
+        if line.startswith("# "):
+            blocks.append(f"<h1>{escaped[2:]}</h1>")
+        elif line.startswith("## "):
+            blocks.append(f"<h2>{escaped[3:]}</h2>")
+        elif line.startswith("- "):
+            blocks.append(f'<p class="item">{escaped[2:]}</p>')
+        elif line:
+            blocks.append(f"<p>{escaped}</p>")
+    return (
+        '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'"><title>'
+        + html.escape(title)
+        + "</title><style>body{font:14px system-ui;max-width:920px;margin:48px auto;padding:0 28px;color:#17202a}h1{border-bottom:3px solid #159d7c;padding-bottom:12px}h2{margin-top:30px;color:#126f5b}.item{margin:6px 0 6px 18px}p{line-height:1.55;white-space:pre-wrap}</style></head><body>"
+        + "".join(blocks)
+        + "</body></html>"
+    )
+
+
+def _render(title: str, format_name: str, payload: dict) -> str:
+    if format_name == "json":
+        return json.dumps({"title": title, **payload}, indent=2, ensure_ascii=False)
+    if format_name == "html":
+        return _safe_html(title, payload)
+    return _markdown(title, payload)
+
+
+@router.get("/case/{case_id}", response_model=list[ReportDocumentRead])
+async def list_reports(
+    case_id: str, current: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+) -> list[models.ReportDocument]:
+    await require_case_access(session, case_id, current)
+    rows = await session.execute(
+        select(models.ReportDocument)
+        .where(models.ReportDocument.case_id == case_id)
+        .order_by(models.ReportDocument.updated_at.desc())
+    )
+    return list(rows.scalars())
+
+
+@router.post("/{case_id}/generate", response_model=ReportDocumentRead, status_code=201)
+async def generate_report(
+    case_id: str,
+    request: ReportGenerateRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> models.ReportDocument:
+    case = await require_case_access(session, case_id, current)
+    payload = _selected(await _dataset(session, case), request)
+    document = models.ReportDocument(
+        case_id=case_id,
+        user_id=current.id,
+        title=request.title.strip(),
+        format=request.format,
+        sections=request.sections,
+        content=_render(request.title, request.format, payload),
+    )
+    session.add(document)
+    await audit(
+        session,
+        "report.generated",
+        case_id,
+        {"report_id": document.id, "format": request.format},
+        actor=current.username,
+    )
+    await session.commit()
+    await session.refresh(document)
+    return document
+
+
+@router.post("/{case_id}/ai-draft", response_model=ReportDocumentRead, status_code=201)
+async def generate_ai_report_draft(
+    case_id: str,
+    request: ReportAiDraftRequest,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> models.ReportDocument:
+    case = await require_case_access(session, case_id, current)
+    configuration = (
+        await session.execute(
+            select(models.LocalModelConfiguration).where(models.LocalModelConfiguration.user_id == current.id)
+        )
+    ).scalar_one_or_none()
+    if configuration is None or not configuration.endpoint or not configuration.model:
+        raise HTTPException(status_code=409, detail="Configure a local model before creating a report draft.")
+    data = await _dataset(session, case)
+    context = json.dumps(
+        {
+            "investigation": data["investigation"],
+            "summary": data["summary"],
+            "entities": data["entities"][:60],
+            "relationships": data["relationships"][:100],
+            "sources": data["sources"][:80],
+            "evidence": data["evidence"][:80],
+        },
+        ensure_ascii=False,
+    )
+    provider = build_local_provider(configuration.provider, configuration.endpoint, configuration.timeout_seconds)
+    try:
+        reply = await provider.complete(
+            model=configuration.role_models.get("summary") or configuration.model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Draft an evidence-first investigation report in Markdown. Use only the supplied records. Clearly label inference and missing evidence. Never invent a source. The output is an unverified draft.",
+                },
+                {"role": "user", "content": f"Focus: {request.focus}\nRecords: {context[:50000]}"},
+            ],
+            temperature=configuration.temperature,
+            max_tokens=min(configuration.max_tokens, 4000),
+        )
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(
+            status_code=503, detail=f"The local model did not produce a report draft ({type(exc).__name__})."
+        ) from exc
+    content = "# UNVERIFIED LOCAL MODEL DRAFT\n\nReview and approve every claim before export.\n\n" + reply.strip()
+    document = models.ReportDocument(
+        case_id=case_id,
+        user_id=current.id,
+        title=request.title.strip(),
+        format="markdown",
+        sections=["summary", "entities", "relationships", "sources", "evidence", "limitations"],
+        content=content,
+        status="draft",
+        ai_generated=True,
+    )
+    session.add(document)
+    await audit(
+        session,
+        "report.ai_draft_generated",
+        case_id,
+        {"report_id": document.id, "provider": configuration.provider},
+        actor=current.username,
+    )
+    await session.commit()
+    await session.refresh(document)
+    return document
+
+
+@router.post("/documents/{document_id}/approve", response_model=ReportDocumentRead)
+async def approve_report(
+    document_id: str, current: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+) -> models.ReportDocument:
+    document = await session.get(models.ReportDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    await require_case_access(session, document.case_id, current)
+    document.status = "approved"
+    await session.commit()
+    return document
+
+
+@router.get("/documents/{document_id}/export")
+async def export_report(
+    document_id: str, current: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+) -> Response:
+    document = await session.get(models.ReportDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    await require_case_access(session, document.case_id, current)
+    media = {"markdown": "text/markdown", "html": "text/html", "json": "application/json"}[document.format]
+    suffix = {"markdown": "md", "html": "html", "json": "json"}[document.format]
+    return Response(
+        document.content,
+        media_type=media,
+        headers={
+            "Content-Disposition": f'attachment; filename="oihk-basic-report-{document.id}.{suffix}"',
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+        },
+    )
+
+
+@router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_report(
+    document_id: str, current: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+) -> Response:
+    document = await session.get(models.ReportDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Report not found")
+    await require_case_access(session, document.case_id, current)
+    await session.delete(document)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/templates", response_model=list[ReportTemplateRead])
+async def list_templates(
+    current: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+) -> list[models.ReportTemplate]:
+    return list(
+        (
+            await session.execute(
+                select(models.ReportTemplate)
+                .where(models.ReportTemplate.user_id == current.id)
+                .order_by(models.ReportTemplate.updated_at.desc())
+            )
+        ).scalars()
+    )
+
+
+@router.post("/templates", response_model=ReportTemplateRead, status_code=201)
+async def save_template(
+    payload: ReportTemplateWrite,
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> models.ReportTemplate:
+    row = models.ReportTemplate(user_id=current.id, **payload.model_dump())
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return row
+
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_template(
+    template_id: str, current: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_session)
+) -> Response:
+    row = await session.get(models.ReportTemplate, template_id)
+    if row is None or row.user_id != current.id:
+        raise HTTPException(status_code=404, detail="Report template not found")
+    await session.delete(row)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{case_id}.md")
 async def markdown_report(
-    case_id: str,
-    current: CurrentUser = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
+    case_id: str, current: CurrentUser = Depends(get_current_user), session: AsyncSession = Depends(get_session)
 ) -> Response:
     case = await require_case_access(session, case_id, current)
-
-    sources = (
-        (await session.execute(
-            select(models.Source).where(models.Source.case_id == case_id).order_by(models.Source.collected_at)
-        )).scalars().all()
+    request = ReportGenerateRequest(
+        title=case.title,
+        sections=[
+            "investigation",
+            "summary",
+            "entities",
+            "relationships",
+            "sources",
+            "evidence",
+            "notes",
+            "timeline",
+            "limitations",
+        ],
+        limitations="Verify identities, context, source terms, and legal basis before external use.",
     )
-    entities = (
-        (await session.execute(
-            select(models.Entity).where(models.Entity.case_id == case_id).order_by(models.Entity.type, models.Entity.value)
-        )).scalars().all()
+    content = _render(case.title, "markdown", _selected(await _dataset(session, case), request))
+    return Response(
+        content,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="oihk-basic-{case_id}.md"'},
     )
-    relationships = (
-        (await session.execute(select(models.Relationship).where(models.Relationship.case_id == case_id))).scalars().all()
-    )
-
-    lines = [
-        f"# {case.title}",
-        "",
-        f"Status: {case.status}",
-        f"Legal basis: {case.legal_basis}",
-        "",
-        "## Scope",
-        case.scope_statement,
-        "",
-        "## Sources",
-    ]
-    for source in sources:
-        lines.append(
-            f"- {source.title} ({source.kind}, reliability {source.reliability:.2f}) - {source.citation or source.url or source.id}"
-        )
-
-    lines.extend(["", "## Entities"])
-    for entity in entities:
-        source_count = len(entity.source_ids or [])
-        lines.append(f"- {entity.type}: {entity.display} (confidence {entity.confidence:.2f}, sources {source_count})")
-
-    lines.extend(["", "## Relationships"])
-    label_by_id = {entity.id: f"{entity.display} [{entity.type}]" for entity in entities}
-    for relationship in relationships:
-        subject = label_by_id.get(relationship.subject_id, relationship.subject_id)
-        obj = label_by_id.get(relationship.object_id, relationship.object_id)
-        lines.append(f"- {subject} — {relationship.predicate} → {obj} (confidence {relationship.confidence:.2f})")
-
-    lines.extend([
-        "",
-        "## Review note",
-        "This report is machine-assisted. Verify identities, context, and legal basis before external use.",
-    ])
-    return Response("\n".join(lines), media_type="text/markdown")

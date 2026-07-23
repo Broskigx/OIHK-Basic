@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,8 +41,7 @@ async def run_transform_on_entity(
         raise TransformError(f"Transform '{transform_id}' is not enabled")
     if entity.type not in spec.input_types:
         raise TransformError(
-            f"Transform '{spec.title}' requires input type(s) {spec.input_types}, "
-            f"but entity is '{entity.type}'"
+            f"Transform '{spec.title}' requires input type(s) {spec.input_types}, but entity is '{entity.type}'"
         )
 
     new_entities: list[models.Entity] = []
@@ -63,7 +62,9 @@ async def run_transform_on_entity(
             )
             if ex_entity.value:
                 new_entity = await upsert_entity(
-                    session, entity.case_id, entity.source_ids[0] if entity.source_ids else "",
+                    session,
+                    entity.case_id,
+                    entity.source_ids[0] if entity.source_ids else "",
                     ex_entity,
                 )
                 new_entities.append(new_entity)

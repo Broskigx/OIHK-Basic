@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import socket
 from dataclasses import dataclass, field
-from typing import List
 
 import httpx
 
@@ -42,6 +41,7 @@ class LookupResult:
 async def identify_kind(value: str) -> str:
     """Identify the kind of value: domain, ip, email, or unknown."""
     import re
+
     value = value.strip().lower()
     if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", value):
         return "ip"
@@ -79,7 +79,12 @@ async def lookup_domain(domain: str) -> LookupResult:
                             if cn and cn not in seen_names and cn.endswith("." + domain):
                                 seen_names.add(cn)
                                 findings.append(
-                                    LookupFinding(source="crt.sh", type="subdomain", value=cn, detail=f"SSL certificate subject alternative name")
+                                    LookupFinding(
+                                        source="crt.sh",
+                                        type="subdomain",
+                                        value=cn,
+                                        detail="SSL certificate subject alternative name",
+                                    )
                                 )
     except Exception as e:
         errors.append(f"crt.sh lookup failed: {e}")
@@ -104,15 +109,26 @@ async def lookup_ip(ip: str) -> LookupResult:
             if resp.status_code == 200:
                 data = resp.json()
                 if "name" in data:
-                    findings.append(LookupFinding(source="arin-rdap", type="net_name", value=data["name"],
-                                                   detail="Network name registered with ARIN"))
+                    findings.append(
+                        LookupFinding(
+                            source="arin-rdap",
+                            type="net_name",
+                            value=data["name"],
+                            detail="Network name registered with ARIN",
+                        )
+                    )
                 for entity in data.get("entities", []):
                     if "vcardArray" in entity:
                         for item in entity["vcardArray"][1]:
                             if item[0] == "fn":
                                 findings.append(
-                                    LookupFinding(source="arin-rdap", type="org", value=item[3],
-                                                   detail="Organization registered with ARIN"))
+                                    LookupFinding(
+                                        source="arin-rdap",
+                                        type="org",
+                                        value=item[3],
+                                        detail="Organization registered with ARIN",
+                                    )
+                                )
             elif resp.status_code in (404, 422):
                 # Try RDAP from other RIRs
                 resp2 = await client.get(f"https://rdap.db.ripe.net/ip/{ip}")
@@ -123,8 +139,13 @@ async def lookup_ip(ip: str) -> LookupResult:
                             for item in entity["vcardArray"][1]:
                                 if item[0] == "fn":
                                     findings.append(
-                                        LookupFinding(source="ripe-rdap", type="org", value=item[3],
-                                                       detail="Organization registered with RIPE"))
+                                        LookupFinding(
+                                            source="ripe-rdap",
+                                            type="org",
+                                            value=item[3],
+                                            detail="Organization registered with RIPE",
+                                        )
+                                    )
     except Exception as e:
         errors.append(f"RDAP lookup failed: {e}")
 
@@ -137,7 +158,6 @@ async def lookup_email(email: str) -> LookupResult:
 
     domain = email.split("@")[-1] if "@" in email else ""
     if domain:
-        findings.append(LookupFinding(source="parsed", type="domain", value=domain,
-                                       detail=f"Email domain: {domain}"))
+        findings.append(LookupFinding(source="parsed", type="domain", value=domain, detail=f"Email domain: {domain}"))
 
     return LookupResult(value=email, kind="email", findings=findings, errors=errors)

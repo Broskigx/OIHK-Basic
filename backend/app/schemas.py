@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import BaseModel, Field, HttpUrl
 
 
 # --- Health ---
@@ -44,12 +44,176 @@ class TokenResponse(BaseModel):
     user: UserRead
 
 
+# --- Local Copilot and model servers ---
+class LocalModelConfigurationWrite(BaseModel):
+    provider: Literal["lmstudio", "ollama", "openai_compatible"]
+    endpoint: str = Field(min_length=1, max_length=500)
+    model: str = Field(default="", max_length=240)
+    context_length: int = Field(default=8192, ge=256, le=2_000_000)
+    temperature: float = Field(default=0.2, ge=0, le=2)
+    max_tokens: int = Field(default=900, ge=1, le=131_072)
+    timeout_seconds: int = Field(default=150, ge=2, le=600)
+    streaming: bool = True
+    system_prompt: str = Field(default="", max_length=16_000)
+    capabilities: list[str] = Field(default_factory=list)
+    tools_enabled: list[str] = Field(default_factory=list)
+    role_models: dict[str, str] = Field(default_factory=dict)
+    fallback_model: str = Field(default="", max_length=240)
+
+
+class LocalModelConfigurationRead(LocalModelConfigurationWrite):
+    id: str
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class LocalModelProbeRequest(BaseModel):
+    provider: Literal["lmstudio", "ollama", "openai_compatible"]
+    endpoint: str = Field(min_length=1, max_length=500)
+
+
+class LocalModelTestRequest(LocalModelProbeRequest):
+    model: str = Field(min_length=1, max_length=240)
+    prompt: str = Field(default="Respond with: OIHK Basic local model ready", min_length=1, max_length=2000)
+    temperature: float = Field(default=0.1, ge=0, le=2)
+    max_tokens: int = Field(default=80, ge=1, le=2048)
+
+
+class GeneralSettings(BaseModel):
+    language: Literal["en", "es"] = "en"
+    default_start: str = Field(default="dashboard", max_length=40)
+    default_case_id: str = Field(default="", max_length=36)
+    confirmations: bool = True
+    check_updates: bool = True
+
+
+class AppearanceSettings(BaseModel):
+    dark_mode: bool = True
+    density: Literal["comfortable", "compact"] = "comfortable"
+    text_scale: float = Field(default=1, ge=0.85, le=1.3)
+    reduce_motion: bool = False
+    restore_layout: bool = True
+
+
+class StorageSettings(BaseModel):
+    data_directory: str = Field(default="", max_length=2000)
+    backup_on_exit: bool = False
+    retention_days: int = Field(default=0, ge=0, le=36500)
+
+
+class ToolSettings(BaseModel):
+    executable_paths: dict[str, str] = Field(default_factory=dict)
+    timeout_seconds: int = Field(default=120, ge=1, le=3600)
+    max_file_mb: int = Field(default=250, ge=1, le=4096)
+
+
+class PrivacySettings(BaseModel):
+    telemetry_enabled: bool = False
+    public_osint_enabled: bool = True
+    redact_logs: bool = True
+    log_retention_days: int = Field(default=14, ge=1, le=365)
+
+
+class PerformanceSettings(BaseModel):
+    max_visible_nodes: int = Field(default=2500, ge=100, le=100000)
+    worker_enabled: bool = True
+    quality: Literal["balanced", "quality", "performance"] = "balanced"
+    low_power_mode: bool = False
+
+
+class ApplicationSettingsWrite(BaseModel):
+    onboarding_complete: bool = False
+    general: GeneralSettings = Field(default_factory=GeneralSettings)
+    appearance: AppearanceSettings = Field(default_factory=AppearanceSettings)
+    storage: StorageSettings = Field(default_factory=StorageSettings)
+    tools: ToolSettings = Field(default_factory=ToolSettings)
+    privacy: PrivacySettings = Field(default_factory=PrivacySettings)
+    performance: PerformanceSettings = Field(default_factory=PerformanceSettings)
+
+
+class ApplicationSettingsRead(ApplicationSettingsWrite):
+    id: str = ""
+    schema_version: int = 1
+    updated_at: datetime | None = None
+
+
+class StorageStatusRead(BaseModel):
+    data_directory: str
+    database_path: str
+    storage_path: str
+    database_bytes: int
+    evidence_bytes: int
+    total_bytes: int
+    writable: bool
+    timeout_seconds: int = Field(default=60, ge=2, le=600)
+
+
+class ConversationCreate(BaseModel):
+    case_id: str | None = None
+    title: str = Field(default="New conversation", min_length=1, max_length=160)
+
+
+class ConversationUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    archived: bool | None = None
+
+
+class ConversationRead(BaseModel):
+    id: str
+    case_id: str | None
+    title: str
+    archived: bool
+    created_at: datetime
+    updated_at: datetime
+    message_count: int = 0
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationMessageCreate(BaseModel):
+    content: str = Field(min_length=1, max_length=16_000)
+
+
+class ConversationMessageRead(BaseModel):
+    id: str
+    conversation_id: str
+    case_id: str | None
+    role: Literal["user", "assistant"]
+    content: str
+    provider: str
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ConversationReply(BaseModel):
+    user_message: ConversationMessageRead
+    assistant_message: ConversationMessageRead
+
+
 # --- Cases ---
 class CaseCreate(BaseModel):
     title: str = Field(min_length=3, max_length=200)
     summary: str = ""
     legal_basis: str = Field(min_length=3, max_length=120)
     scope_statement: str = Field(min_length=12)
+    priority: Literal["low", "normal", "high", "critical"] = "normal"
+    tags: list[str] = Field(default_factory=list, max_length=30)
+    notes: str = Field(default="", max_length=50_000)
+
+
+class CaseUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=3, max_length=200)
+    summary: str | None = Field(default=None, max_length=20_000)
+    legal_basis: str | None = Field(default=None, min_length=3, max_length=120)
+    scope_statement: str | None = Field(default=None, min_length=12, max_length=20_000)
+    status: Literal["active", "paused", "closed", "archived"] | None = None
+    priority: Literal["low", "normal", "high", "critical"] | None = None
+    tags: list[str] | None = Field(default=None, max_length=30)
+    notes: str | None = Field(default=None, max_length=50_000)
+    graph_config: dict[str, Any] | None = None
 
 
 class CaseRead(BaseModel):
@@ -61,10 +225,57 @@ class CaseRead(BaseModel):
     legal_basis: str
     scope_statement: str
     status: str
+    priority: str = "normal"
+    tags: list[str] = Field(default_factory=list)
+    notes: str = ""
+    graph_config: dict[str, Any] = Field(default_factory=dict)
+    archived_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    entity_count: int = 0
+    relationship_count: int = 0
+    source_count: int = 0
+    conversation_count: int = 0
+    query_count: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class CaseImportSource(BaseModel):
+    id: str = Field(max_length=80)
+    title: str = Field(min_length=1, max_length=240)
+    kind: str = Field(min_length=1, max_length=40)
+    body: str = Field(default="", max_length=250_000)
+    citation: str = Field(default="", max_length=4000)
+    license: str = Field(default="unknown", max_length=120)
+    reliability: float = Field(default=0.5, ge=0, le=1)
+
+
+class CaseImportEntity(BaseModel):
+    id: str = Field(max_length=80)
+    type: str = Field(min_length=1, max_length=40)
+    value: str = Field(min_length=1, max_length=500)
+    display: str = Field(min_length=1, max_length=500)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    source_ids: list[str] = Field(default_factory=list, max_length=1000)
+    properties: dict[str, Any] = Field(default_factory=dict)
+    notes: str = Field(default="", max_length=50_000)
+
+
+class CaseImportRelationship(BaseModel):
+    subject_id: str = Field(max_length=80)
+    predicate: str = Field(min_length=1, max_length=80)
+    object_id: str = Field(max_length=80)
+    confidence: float = Field(default=0.5, ge=0, le=1)
+    source_ids: list[str] = Field(default_factory=list, max_length=1000)
+
+
+class CaseImportDocument(BaseModel):
+    schema_version: int = Field(default=1, ge=1, le=1)
+    case: CaseCreate
+    sources: list[CaseImportSource] = Field(default_factory=list, max_length=5000)
+    entities: list[CaseImportEntity] = Field(default_factory=list, max_length=10000)
+    relationships: list[CaseImportRelationship] = Field(default_factory=list, max_length=20000)
 
 
 # --- Sources ---
@@ -98,6 +309,99 @@ class SourceRead(BaseModel):
     collected_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class EvidenceItemRead(BaseModel):
+    id: str
+    case_id: str
+    source_id: str
+    original_name: str
+    mime_type: str
+    size_bytes: int
+    sha256: str
+    notes: str
+    tags: list[str]
+    entity_ids: list[str]
+    ingested_by: str
+    original_reference: str
+    export_count: int
+    created_at: datetime
+    updated_at: datetime
+    verified_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class EvidenceItemUpdate(BaseModel):
+    notes: str | None = Field(default=None, max_length=50_000)
+    tags: list[str] | None = Field(default=None, max_length=100)
+    entity_ids: list[str] | None = Field(default=None, max_length=1000)
+
+
+class EvidenceVerifyRead(BaseModel):
+    id: str
+    expected_sha256: str
+    actual_sha256: str
+    intact: bool
+    verified_at: datetime
+
+
+ReportSection = Literal[
+    "investigation",
+    "summary",
+    "entities",
+    "relationships",
+    "sources",
+    "evidence",
+    "notes",
+    "timeline",
+    "methodology",
+    "limitations",
+]
+
+
+class ReportGenerateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    format: Literal["markdown", "html", "json"] = "markdown"
+    sections: list[ReportSection] = Field(min_length=1, max_length=10)
+    methodology: str = Field(default="", max_length=50_000)
+    limitations: str = Field(default="", max_length=50_000)
+
+
+class ReportDocumentRead(BaseModel):
+    id: str
+    case_id: str
+    title: str
+    format: str
+    sections: list[str]
+    content: str
+    status: str
+    ai_generated: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ReportTemplateWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    format: Literal["markdown", "html", "json"] = "markdown"
+    sections: list[ReportSection] = Field(min_length=1, max_length=10)
+    methodology: str = Field(default="", max_length=50_000)
+    limitations: str = Field(default="", max_length=50_000)
+
+
+class ReportTemplateRead(ReportTemplateWrite):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ReportAiDraftRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=240)
+    focus: str = Field(default="", max_length=4000)
 
 
 # --- Entities & Graph ---
@@ -161,6 +465,46 @@ class GraphRead(BaseModel):
     edges: list[GraphEdge]
 
 
+class GraphPosition(BaseModel):
+    x: float = Field(ge=-1_000_000, le=1_000_000)
+    y: float = Field(ge=-1_000_000, le=1_000_000)
+    pinned: bool = False
+
+
+class GraphCamera(BaseModel):
+    x: float = Field(default=0, ge=-1_000_000, le=1_000_000)
+    y: float = Field(default=0, ge=-1_000_000, le=1_000_000)
+    zoom: float = Field(default=1, ge=0.1, le=4)
+
+
+class GraphWorkspaceWrite(BaseModel):
+    positions: dict[str, GraphPosition] = Field(default_factory=dict, max_length=100_000)
+    camera: GraphCamera = Field(default_factory=GraphCamera)
+    view_mode: Literal["network", "hierarchy", "connections"] = "network"
+    filters: dict[str, str] = Field(default_factory=dict, max_length=100)
+
+
+class GraphWorkspaceRead(GraphWorkspaceWrite):
+    id: str = ""
+    case_id: str
+    updated_at: datetime | None = None
+
+
+class GraphSnapshotCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+
+
+class GraphSnapshotRead(BaseModel):
+    id: str
+    case_id: str
+    name: str
+    workspace: GraphWorkspaceWrite
+    graph_digest: str
+    node_count: int
+    edge_count: int
+    created_at: datetime
+
+
 class GraphEntityCreate(BaseModel):
     case_id: str
     label: str = Field(min_length=1, max_length=500)
@@ -176,6 +520,11 @@ class GraphRelationshipCreate(BaseModel):
     target_id: str
     label: str = Field(min_length=2, max_length=80)
     confidence: float = Field(default=0.68, ge=0, le=1)
+
+
+class GraphRelationshipUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=2, max_length=80)
+    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class GraphExpandResult(BaseModel):
@@ -448,6 +797,7 @@ class OsintFindingRead(BaseModel):
 
 
 class OsintLookupResult(BaseModel):
+    query_id: str
     value: str
     kind: str
     summary: str
@@ -455,7 +805,21 @@ class OsintLookupResult(BaseModel):
     errors: list[str]
     entities: list[EntityRead]
     relationships: list[RelationshipRead]
-    source: SourceRead
+    source: SourceRead | None = None
+    promoted: bool = False
+
+
+class OsintQueryRead(BaseModel):
+    id: str
+    case_id: str
+    value: str
+    kind: str
+    findings: list[OsintFindingRead]
+    errors: list[str]
+    promoted: bool
+    source_id: str | None
+    created_at: datetime
+    promoted_at: datetime | None
 
 
 # --- Forensics ---

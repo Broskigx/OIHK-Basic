@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
-from app.services.analyzer import ExtractedEntity, analyze_text, normalize_value
+from app.services.analyzer import ExtractedEntity, analyze_text
 
 
 async def create_case(
@@ -19,6 +20,9 @@ async def create_case(
     scope_statement: str,
     owner_id: str,
     organization_id: str = "default",
+    priority: str = "normal",
+    tags: list[str] | None = None,
+    notes: str = "",
 ) -> models.Case:
     case = models.Case(
         owner_id=owner_id,
@@ -27,6 +31,9 @@ async def create_case(
         summary=summary.strip(),
         legal_basis=legal_basis.strip(),
         scope_statement=scope_statement.strip(),
+        priority=priority,
+        tags=tags or [],
+        notes=notes.strip(),
     )
     session.add(case)
     await session.flush()

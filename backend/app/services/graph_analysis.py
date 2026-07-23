@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from collections import defaultdict
+from dataclasses import dataclass
 
 from app import models
 
@@ -94,24 +94,28 @@ def analyze_graph(
         if len(component_nodes) == 1 and not adjacency.get(e.id):
             isolated_count += 1
 
-        components.append(GraphComponent(
-            index=len(components),
-            size=len(component_nodes),
-            sample_node_ids=component_nodes[:5],
-        ))
+        components.append(
+            GraphComponent(
+                index=len(components),
+                size=len(component_nodes),
+                sample_node_ids=component_nodes[:5],
+            )
+        )
 
     # Hubs (sorted by degree)
     hubs = []
     for entity_id, deg in degree.items():
         entity = entity_map.get(entity_id)
         if entity:
-            hubs.append(GraphHub(
-                entity_id=entity_id,
-                label=entity.display,
-                type=entity.type,
-                degree=deg,
-                score=deg / max(m, 1),
-            ))
+            hubs.append(
+                GraphHub(
+                    entity_id=entity_id,
+                    label=entity.display,
+                    type=entity.type,
+                    degree=deg,
+                    score=deg / max(m, 1),
+                )
+            )
     hubs.sort(key=lambda h: h.score, reverse=True)
 
     # Density

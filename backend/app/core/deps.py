@@ -36,6 +36,11 @@ class CurrentUser:
     def is_system(self) -> bool:
         return self.id == "system"
 
+    @property
+    def database_user_id(self) -> str | None:
+        """Return a real FK-safe user id, or no owner in loopback single-user mode."""
+        return None if self.is_system else self.id
+
 
 _SYSTEM_USER = CurrentUser(
     id="system", email="system@oihk-basic.local", username="system", role="admin", organization_id="system"

@@ -1,60 +1,90 @@
-import React from "react";
+import { ShieldCheck, X } from "lucide-react";
+import { FormEvent, useEffect, useState } from "react";
+import type { InvestigationDraft } from "../../types";
+
+const EMPTY_DRAFT: InvestigationDraft = {
+  title: "",
+  summary: "",
+  legal_basis: "Authorized open-source research",
+  scope_statement: "",
+  priority: "normal",
+  tags: [],
+  notes: "",
+};
 
 export function NewInvestigationDialog({
-  open, intake, loading, onChange, onClose, onSubmit,
+  open,
+  loading,
+  initial,
+  title = "New investigation",
+  onClose,
+  onSubmit,
 }: {
   open: boolean;
-  intake: { first_name: string; last_name: string; aliases: string; notes: string; legal_basis: string; scope_statement: string; consent_basis: string; auto_search: boolean; photos: File[] };
   loading: boolean;
-  onChange: (patch: Partial<typeof intake>) => void;
+  initial?: InvestigationDraft;
+  title?: string;
   onClose: () => void;
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: (draft: InvestigationDraft) => Promise<void>;
 }) {
+  const [draft, setDraft] = useState<InvestigationDraft>(initial ?? EMPTY_DRAFT);
+  const [tags, setTags] = useState((initial?.tags ?? []).join(", "));
+
+  useEffect(() => {
+    if (!open) return;
+    setDraft(initial ?? EMPTY_DRAFT);
+    setTags((initial?.tags ?? []).join(", "));
+  }, [initial, open]);
+
   if (!open) return null;
 
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    await onSubmit({
+      ...draft,
+      tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 30),
+    });
+  }
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h2>New Investigation</h2>
-        <form onSubmit={onSubmit}>
-          <div className="form-group">
-            <label>First Name *</label>
-            <input type="text" value={intake.first_name} onChange={(e) => onChange({ first_name: e.target.value })} required minLength={1} maxLength={120} />
-          </div>
-          <div className="form-group">
-            <label>Last Name *</label>
-            <input type="text" value={intake.last_name} onChange={(e) => onChange({ last_name: e.target.value })} required minLength={1} maxLength={120} />
-          </div>
-          <div className="form-group">
-            <label>Aliases</label>
-            <textarea value={intake.aliases} onChange={(e) => onChange({ aliases: e.target.value })} rows={2} placeholder="One per line or comma-separated" />
-          </div>
-          <div className="form-group">
-            <label>Notes</label>
-            <textarea value={intake.notes} onChange={(e) => onChange({ notes: e.target.value })} rows={3} />
-          </div>
-          <div className="form-group">
-            <label>Legal Basis</label>
-            <input type="text" value={intake.legal_basis} onChange={(e) => onChange({ legal_basis: e.target.value })} />
-          </div>
-          <div className="form-group">
-            <label>Scope Statement</label>
-            <textarea value={intake.scope_statement} onChange={(e) => onChange({ scope_statement: e.target.value })} rows={2} required minLength={12} />
-          </div>
-          <div className="form-group">
-            <label>
-              <input type="checkbox" checked={intake.auto_search} onChange={(e) => onChange({ auto_search: e.target.checked })} style={{ width: "auto", marginRight: "0.5rem" }} />
-              Auto-run initial search
+    <div className="platform-dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="platform-dialog" role="dialog" aria-modal="true" aria-labelledby="investigation-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+        <header>
+          <div><span className="platform-eyebrow">Local investigation</span><h2 id="investigation-dialog-title">{title}</h2></div>
+          <button type="button" className="platform-icon-button" onClick={onClose} aria-label="Close dialog"><X size={16} /></button>
+        </header>
+        <form onSubmit={(event) => void submit(event)}>
+          <label>Investigation name
+            <input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} required minLength={3} maxLength={200} autoFocus />
+          </label>
+          <label>Description
+            <textarea value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} rows={2} maxLength={20000} />
+          </label>
+          <div className="platform-form-grid two">
+            <label>Legal basis
+              <input value={draft.legal_basis} onChange={(event) => setDraft({ ...draft, legal_basis: event.target.value })} required minLength={3} maxLength={120} />
+            </label>
+            <label>Priority
+              <select value={draft.priority} onChange={(event) => setDraft({ ...draft, priority: event.target.value as InvestigationDraft["priority"] })}>
+                <option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option>
+              </select>
             </label>
           </div>
-          <div className="modal-actions">
-            <button type="button" onClick={onClose}>Cancel</button>
-            <button type="submit" className="primary" disabled={loading}>
-              {loading ? "Creating..." : "Create Investigation"}
-            </button>
-          </div>
+          <label>Authorized scope
+            <textarea value={draft.scope_statement} onChange={(event) => setDraft({ ...draft, scope_statement: event.target.value })} rows={3} required minLength={12} maxLength={20000} />
+          </label>
+          <label>Tags
+            <input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="fraud, domain research, priority" />
+          </label>
+          <label>Investigation notes
+            <textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })} rows={3} maxLength={50000} />
+          </label>
+          <footer>
+            <span><ShieldCheck size={14} /> Scope and authorization are stored with the investigation.</span>
+            <button type="submit" className="platform-primary" disabled={loading}>{loading ? "Saving…" : title.startsWith("Edit") ? "Save changes" : "Create investigation"}</button>
+          </footer>
         </form>
-      </div>
+      </section>
     </div>
   );
 }

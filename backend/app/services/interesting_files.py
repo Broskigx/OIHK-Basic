@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import fnmatch
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,9 +58,11 @@ async def list_rules(
     organization_id: str,
 ) -> list[models.InterestingFileRule]:
     result = await session.execute(
-        select(models.InterestingFileRule).where(
+        select(models.InterestingFileRule)
+        .where(
             models.InterestingFileRule.organization_id == organization_id,
-        ).order_by(models.InterestingFileRule.name)
+        )
+        .order_by(models.InterestingFileRule.name)
     )
     return list(result.scalars().all())
 
