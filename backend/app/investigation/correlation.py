@@ -1,6 +1,6 @@
 """Correlation logic for OIHK Basic."""
 
-from app.investigation.types import InvestigationNode, InvestigationEdge
+from app.investigation.types import InvestigationEdge, InvestigationNode
 
 
 def correlate_findings(
@@ -18,7 +18,7 @@ def correlate_findings(
             value_index[key].append(node.id)
 
     new_edges: list[InvestigationEdge] = []
-    for key, ids in value_index.items():
+    for _key, ids in value_index.items():
         if len(ids) > 1:
             for i in range(len(ids) - 1):
                 edge = InvestigationEdge(

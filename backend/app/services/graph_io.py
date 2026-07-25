@@ -69,7 +69,9 @@ async def import_entities_csv(
             await seal_source(session, source)
 
             entity = await upsert_entity(
-                session, case_id, source.id,
+                session,
+                case_id,
+                source.id,
                 ExtractedEntity(type=type_, value=value, display=label, confidence=confidence),
             )
             nodes += 1
@@ -115,8 +117,15 @@ def export_edges_csv(relationships: list[models.Relationship], labels: dict[str,
     writer = csv.writer(output)
     writer.writerow(["id", "source", "target", "label", "confidence"])
     for r in relationships:
-        writer.writerow([r.id, labels.get(r.subject_id, r.subject_id),
-                        labels.get(r.object_id, r.object_id), r.predicate, r.confidence])
+        writer.writerow(
+            [
+                r.id,
+                labels.get(r.subject_id, r.subject_id),
+                labels.get(r.object_id, r.object_id),
+                r.predicate,
+                r.confidence,
+            ]
+        )
     return output.getvalue()
 
 
@@ -129,8 +138,8 @@ def export_graphml(entities: list[models.Entity], relationships: list[models.Rel
     graph = ET.SubElement(graphml, "graph", edgedefault="directed")
 
     # Node attributes
-    key_type = ET.SubElement(graphml, "key", id="k_type", for_="node", attr_name="type", attr_type="string")
-    key_conf = ET.SubElement(graphml, "key", id="k_conf", for_="node", attr_name="confidence", attr_type="double")
+    ET.SubElement(graphml, "key", id="k_type", for_="node", attr_name="type", attr_type="string")
+    ET.SubElement(graphml, "key", id="k_conf", for_="node", attr_name="confidence", attr_type="double")
 
     node_elements: dict[str, ET.Element] = {}
     for e in entities:

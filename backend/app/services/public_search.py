@@ -44,12 +44,14 @@ async def _search_searxng(query: str, max_results: int) -> list[dict]:
             data = resp.json()
             results = []
             for r in data.get("results", [])[:max_results]:
-                results.append({
-                    "title": r.get("title", ""),
-                    "url": r.get("url", ""),
-                    "snippet": r.get("content", ""),
-                    "source_name": r.get("engine", "searxng"),
-                })
+                results.append(
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                        "snippet": r.get("content", ""),
+                        "source_name": r.get("engine", "searxng"),
+                    }
+                )
             return results
     return []
 
@@ -63,17 +65,23 @@ async def _search_brave(query: str, max_results: int) -> list[dict]:
         resp = await client.get(
             "https://api.search.brave.com/res/v1/web/search",
             params={"q": query, "count": max_results},
-            headers={"Accept": "application/json", "Accept-Encoding": "gzip", "X-Subscription-Token": settings.brave_api_key},
+            headers={
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+                "X-Subscription-Token": settings.brave_api_key,
+            },
         )
         if resp.status_code == 200:
             data = resp.json()
             results = []
             for r in data.get("web", {}).get("results", [])[:max_results]:
-                results.append({
-                    "title": r.get("title", ""),
-                    "url": r.get("url", ""),
-                    "snippet": r.get("description", ""),
-                    "source_name": "brave",
-                })
+                results.append(
+                    {
+                        "title": r.get("title", ""),
+                        "url": r.get("url", ""),
+                        "snippet": r.get("description", ""),
+                        "source_name": "brave",
+                    }
+                )
             return results
     return []

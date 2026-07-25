@@ -27,12 +27,16 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         if path in _EXEMPT_PATHS:
             response: Response = await call_next(request)
-            _ensure_csrf_cookie(response, current_token=request.cookies.get(_CSRF_COOKIE), secure=settings.is_production)
+            _ensure_csrf_cookie(
+                response, current_token=request.cookies.get(_CSRF_COOKIE), secure=settings.is_production
+            )
             return response
 
         if request.method in _SAFE_METHODS:
             response = await call_next(request)
-            _ensure_csrf_cookie(response, current_token=request.cookies.get(_CSRF_COOKIE), secure=settings.is_production)
+            _ensure_csrf_cookie(
+                response, current_token=request.cookies.get(_CSRF_COOKIE), secure=settings.is_production
+            )
             return response
 
         cookie_token = request.cookies.get(_CSRF_COOKIE, "")
@@ -41,7 +45,9 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         if not cookie_token or not header_token:
             return JSONResponse(
                 status_code=403,
-                content={"detail": "CSRF token missing. Set the X-CSRF-Token header from the oihk_basic_csrf_token cookie."},
+                content={
+                    "detail": "CSRF token missing. Set the X-CSRF-Token header from the oihk_basic_csrf_token cookie."
+                },
             )
 
         if not secrets.compare_digest(cookie_token, header_token):

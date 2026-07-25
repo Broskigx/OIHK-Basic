@@ -7,10 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.core.deps import CurrentUser, get_current_user
 from app.database import get_session
-from app.schemas import (
-    CaseRead, SourceRead, CaseMemoryRead, SearchRunRead, TargetPhotoRead,
-    TargetProfileRead,
-)
 
 router = APIRouter(prefix="/operations", tags=["operations"])
 
@@ -54,12 +50,8 @@ async def get_case_monitor(
 
     case = await require_case_access(session, case_id, current)
 
-    source_count = (
-        await session.execute(select(models.Source.id).where(models.Source.case_id == case_id))
-    ).scalar()
-    entity_count = (
-        await session.execute(select(models.Entity.id).where(models.Entity.case_id == case_id))
-    ).scalar()
+    source_count = (await session.execute(select(models.Source.id).where(models.Source.case_id == case_id))).scalar()
+    entity_count = (await session.execute(select(models.Entity.id).where(models.Entity.case_id == case_id))).scalar()
     relationship_count = (
         await session.execute(select(models.Relationship.id).where(models.Relationship.case_id == case_id))
     ).scalar()

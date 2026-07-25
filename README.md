@@ -1,250 +1,100 @@
 # OIHK Basic
 
-**Local-first investigation and OSINT platform.**
+OIHK Basic es la edición comunitaria, local-first y monousuario de OIHK. Organiza investigaciones autorizadas, fuentes, evidencia y relaciones sin requerir una cuenta, una nube ni un modelo de IA.
 
-> Subido por **Broskigx** — Edición comunitaria de OIHK con funciones limitadas pero completamente funcional.
+Este proyecto vive en su repositorio propio: `Broskigx/OIHK-Basic`. No importa código ni datos de OIHKv durante la ejecución y utiliza su propia base SQLite, almacenamiento, configuración e instaladores.
 
-OIHK Basic es una edición ligera y respetuosa con la privacidad de la plataforma OIHK. Se ejecuta completamente de forma local — sin servicios cloud, sin telemetría, sin dependencias externas.
+## Producto
 
-## Features
+La aplicación incluye once áreas principales:
 
-- **Case Management** — Create and manage local investigations with full legal scoping
-- **Source Ingestion** — Add text and URL sources to your cases
-- **Target Profiles** — Create target profiles with photos and aliases
-- **Intelligence Graph** — Visualize entities and relationships in a graph database
-- **Graph Analytics** — Network analysis with hubs, components, and degree metrics
-- **Entity Management** — Browse, search, and manage all entities in your cases
-- **Evidence Vault** — Track sealed evidence with tamper-evident chain of custody
-- **OSINT Enrichment** — Free public lookups (DNS, RDAP/WHOIS, crt.sh)
-- **Forensic Analysis** — File hashing, MIME detection, metadata extraction, IOC scanning
-- **Data Carving** — Extract embedded files (PNG, JPEG, ZIP) from binary data
-- **Interesting Files** — Declarative rules to flag files of interest
-- **Hash Sets** — Import known-file hashes for matching (notable/known-good)
-- **Cross-Case Correlation** — Find overlaps between investigations
-- **Transforms** — One-click entity enrichment (DNS, WHOIS, certificate search)
-- **Machines** — Deterministic transform chains
-- **Reports** — Generate markdown investigation reports
-- **Timeline** — Chronological view of case activity
-- **Data Export** — Export cases as JSON for backup
-- **Graph Import/Export** — CSV and GraphML formats
-- **Local Authentication** — User accounts with PBKDF2 password hashing
-- **CSRF Protection** — Double-submit cookie pattern
-- **Rate Limiting** — In-process sliding window rate limiter
+1. Dashboard operativo con investigaciones recientes, cola de revisión, recursos y accesos rápidos.
+2. Investigations con crear, editar, duplicar, archivar, restaurar, eliminar, importar y exportar.
+3. Intelligence Graph con Canvas 2D, selección múltiple, cámara, minimapa, layouts, filtros, pinning, undo/redo y snapshots persistentes.
+4. OSINT Workspace con consultas explícitas, historial SQLite, cancelación y promoción controlada al grafo.
+5. Evidence Lab con carga por streaming, almacenamiento administrado, SHA-256, verificación, asociaciones, manifiesto y análisis forense.
+6. Reports con constructor por secciones, plantillas, historial, Markdown, HTML seguro, JSON y aprobación de borradores.
+7. Copilot con conversaciones persistentes y uso exclusivo de un modelo local configurado por el usuario.
+8. Local Models para detectar y configurar LM Studio, Ollama o un endpoint compatible en una red privada.
+9. Data Sources para revisar y mantener procedencia, citas y confiabilidad.
+10. Settings con apariencia, almacenamiento, privacidad, rendimiento, backups y diagnósticos sanitizados.
+11. About con límites, privacidad, versión y alcance de la edición.
 
-## Architecture
+También incluye gestión de entidades y relaciones, timeline, cadena de custodia, transforms deterministas, análisis de hashes, MIME, metadatos e indicadores, importación CSV/GraphML y exportación de investigaciones versionada.
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   Frontend (React + Vite)            │
-│  Port 5173 (127.0.0.1 only)                         │
-└──────────────────────┬──────────────────────────────┘
-                       │ HTTP (JSON)
-                       ▼
-┌─────────────────────────────────────────────────────┐
-│              Backend (FastAPI + Uvicorn)              │
-│  Port 8000 (127.0.0.1 only)                         │
-├─────────────────────────────────────────────────────┤
-│  SQLAlchemy ORM → SQLite (local file)                │
-│  Local file storage (./storage/)                     │
-│  In-process rate limiter (no Redis)                  │
-└─────────────────────────────────────────────────────┘
+## Principios
+
+- SQLite y archivos locales son la fuente de verdad.
+- La API escucha únicamente en loopback cuando la autenticación está desactivada.
+- No hay telemetría, sincronización cloud, licencias, Redis, GraphQL ni infraestructura enterprise.
+- Copilot e informes asistidos son opcionales y nunca usan un proveedor cloud: aceptan solo endpoints loopback, privados o link-local.
+- Una consulta OSINT no modifica el grafo hasta que el usuario promueve el resultado.
+- La evidencia nunca se ejecuta; se copia a almacenamiento administrado, se limita por tamaño y se verifica por hash.
+- No se fabrican resultados, fuentes ni métricas.
+
+## Instalación de escritorio
+
+El instalador Windows incorpora la interfaz Tauri y el backend FastAPI compilado. No requiere Python ni Node.js en el equipo de destino.
+
+```text
+dist/windows/OIHK Basic_0.1.0_x64-setup.exe
 ```
 
-**Key design decisions:**
-- All data stored locally in SQLite
-- No Redis, no cloud services, no telemetry
-- Authentication via local JWT tokens
-- File storage on local filesystem
-- No MCP servers, no licensing system, no enterprise features
+En el primer inicio se abre un onboarding de ocho pasos. El modelo local es opcional y se puede omitir. Los datos se guardan, por defecto, en:
 
-## Prerequisites
+- Windows: `%APPDATA%/OIHK-Basic/`
+- macOS: `~/Library/Application Support/OIHK-Basic/`
+- Linux: `$XDG_DATA_HOME/OIHK-Basic/` o `~/.local/share/OIHK-Basic/`
 
-- Python 3.11 or later
-- Node.js 18 or later (for frontend development)
-- pip (Python package manager)
+Los secretos de firma y autenticación opcional se generan de forma atómica en el directorio de configuración del sistema operativo.
 
-## Quick Start
+## Desarrollo
 
-### 1. Backend Setup
+Requisitos: Python 3.11+, Node.js 18+ y, para escritorio, Rust/Tauri 2.
 
-```bash
-# Navigate to the backend directory
-cd OIHK-Basic/backend
+```powershell
+# Backend
+cd backend
+python -m pip install -e ".[dev]"
+python run.py
 
-# Create a virtual environment
-python -m venv venv
-
-# Activate it
-# On Windows:
-venv\Scripts\activate
-# On Linux/macOS:
-source venv/bin/activate
-
-# Install dependencies
-pip install -e .
-
-# Copy and configure environment
-cp ../.env.example .env
-# Edit .env if needed (defaults work for development)
-
-# Start the server
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-```
-
-### 2. Frontend Setup
-
-```bash
-# Open a new terminal
-cd OIHK-Basic/frontend
-
-# Install dependencies
-npm install
-
-# Start the development server
+# Frontend, en otra terminal
+cd frontend
+npm ci
 npm run dev
 ```
 
-### 3. Access the Application
+La interfaz queda en `http://127.0.0.1:5173` y la API, por defecto, en `http://127.0.0.1:8000`.
 
-- **Frontend:** http://127.0.0.1:5173
-- **API Docs:** http://127.0.0.1:8000/docs
-- **API:** http://127.0.0.1:8000
+## Calidad
 
-### 4. First-Run Setup
+```powershell
+python -m pytest -q
 
-On first run, the application will:
-1. Create the SQLite database file (`oihk-basic.db`)
-2. Create the storage directory (`./storage/`)
-3. Create all database tables
+cd backend
+python -m ruff check app tests
+python -m pytest -q
 
-To create an admin account, either:
-- Set `OIHK_BOOTSTRAP_ADMIN_EMAIL` and `OIHK_BOOTSTRAP_ADMIN_PASSWORD` in `.env`
-- Or register via the UI (if `OIHK_PUBLIC_REGISTRATION=true`)
-
-## Environment Variables
-
-Copy `.env.example` to `.env` and configure as needed. All variables are optional.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OIHK_APP_NAME` | OIHK Basic | Application name |
-| `OIHK_ENVIRONMENT` | development | Runtime environment |
-| `OIHK_DATABASE_URL` | sqlite+aiosqlite:///./oihk-basic.db | Database connection |
-| `OIHK_CORS_ORIGINS` | http://127.0.0.1:5173,... | Allowed CORS origins |
-| `OIHK_STORAGE_DIR` | ./storage | Local file storage path |
-| `OIHK_JWT_SECRET` | (default) | JWT signing key |
-| `OIHK_CUSTODY_SIGNING_KEY` | (default) | Evidence signing key |
-| `OIHK_AUTH_ENABLED` | true | Enable authentication |
-| `OIHK_BOOTSTRAP_ADMIN_EMAIL` | — | First admin email |
-| `OIHK_BOOTSTRAP_ADMIN_PASSWORD` | — | First admin password |
-| `OIHK_PUBLIC_REGISTRATION` | true in dev | Enable self-registration |
-| `OIHK_SEARXNG_URL` | — | Self-hosted SearXNG instance |
-| `OIHK_BRAVE_API_KEY` | — | Brave Search API key |
-| `OIHK_AI_BASE_URL` | — | Local/cloud AI endpoint |
-| `OIHK_AI_API_KEY` | — | AI provider API key |
-| `OIHK_AI_MODEL` | — | AI model name |
-| `OIHK_AI_LOCAL` | false | Keyless local AI server |
-
-## Development
-
-### Backend
-
-```bash
-cd OIHK-Basic/backend
-pip install -e ".[dev]"
-ruff check .
-pytest
-```
-
-### Frontend
-
-```bash
-cd OIHK-Basic/frontend
-npm run dev     # Development server
-npm run build   # Production build
-npm run lint    # Lint
-npm test        # Run tests
-```
-
-## Build for Production
-
-### Backend
-
-```bash
-cd OIHK-Basic/backend
-pip install -e .
-uvicorn app.main:app --host 127.0.0.1 --port 8000
-```
-
-### Frontend
-
-```bash
-cd OIHK-Basic/frontend
+cd ../frontend
+npm run lint
+npm run test -- --run
 npm run build
-# Serve the dist/ directory with any static file server
+
+cd ../src-tauri
+cargo fmt --check
+cargo check
 ```
 
-## Security
+La compilación completa por plataforma se explica en [docs/BUILDING.md](docs/BUILDING.md). La arquitectura y el modelo de seguridad están en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) y [SECURITY.md](SECURITY.md).
 
-- All ports bind to `127.0.0.1` only (not exposed to the network)
-- CSRF protection via double-submit cookie pattern
-- Rate limiting on all API endpoints
-- Passwords hashed with PBKDF2-HMAC-SHA256
-- JWTs with HS256 signing
-- Input validation on all API endpoints
-- File path sanitization to prevent path traversal
-- Content Security Policy in HTML template
-- No telemetry, no external data transmission
+## Autenticación opcional
 
-## Data Storage
+Basic funciona por defecto como aplicación monousuario sin login y obliga al backend a permanecer en loopback. Para un despliegue personalizado se puede activar `OIHK_AUTH_ENABLED=true`, configurar un administrador y conservar las protecciones JWT/CSRF. El modo `production` rechaza el arranque sin autenticación o con secretos inseguros.
 
-All data is stored locally:
+## Diferencia frente a OIHK normal
 
-| Data | Location |
-|------|----------|
-| Database | `./oihk-basic.db` (configurable via `OIHK_DATABASE_URL`) |
-| Uploaded files | `./storage/` (configurable via `OIHK_STORAGE_DIR`) |
-| Configuration | `.env` file in project root |
+OIHK Basic conserva el flujo profesional local de investigación y el canvas premium, pero no incluye colaboración multiusuario, administración de organizaciones, conectores privados, sincronización cloud, facturación, licencias ni infraestructura distribuida. OIHK normal y OIHK Basic se desarrollan y publican en repositorios separados.
 
-To change the storage location, use absolute paths in the `.env` file:
-```
-OIHK_DATABASE_URL=sqlite+aiosqlite:////home/user/.oihk-basic/data.db
-OIHK_STORAGE_DIR=/home/user/.oihk-basic/storage
-```
+## Licencia
 
-## What's Different from Full OIHK
-
-| Feature | OIHK (Full) | OIHK Basic |
-|---------|-------------|------------|
-| MCP Servers | ✓ | ✗ Removed |
-| AI Assistant | ✓ | ✗ Removed |
-| Licensing System | ✓ | ✗ Removed |
-| Enterprise Features | ✓ | ✗ Removed |
-| Cloud Infrastructure | ✓ | ✗ Removed |
-| Redis Cache | ✓ | ✗ Removed |
-| GraphQL API | ✓ | ✗ Removed |
-| Desktop (Tauri) | ✓ | ✗ Removed |
-| Update System | ✓ | ✗ Removed |
-| Billing | ✓ | ✗ Removed |
-| Streaming Events | ✓ | ✗ Removed |
-| Policy Service | Full | Simplified |
-| Data Portability | Full | JSON Export |
-| Authentication | Cloud-ready | Local JWT Only |
-| File Storage | Configurable | Local Filesystem |
-| Web Search | Multiple providers | Simplified |
-
-## Créditos
-
-**Publicado por:** Broskigx
-
-Esta edición OIHK Basic fue preparada y distribuida por Broskigx como una versión comunitaria de OIHK, con funciones limitadas para ejecución local.
-
-## License
-
-OIHK Basic is distributed under the MIT License. See the [LICENSE](./LICENSE) file for details.
-
-## Acknowledgments
-
-Built on open-source technologies: FastAPI, SQLAlchemy, React, Vite, and more.
-
-OIHK Basic is a community edition derived from the OIHK platform.
+MIT. Véase [LICENSE](LICENSE).

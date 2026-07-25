@@ -1,0 +1,5 @@
+{
+  "bundle": {
+    "externalBin": ["../dist/sidecar/oihk-basic-backend"]
+  }
+}

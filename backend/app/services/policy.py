@@ -24,6 +24,7 @@ def enforce_case_scope(scope_statement: str) -> None:
 async def fetch_public_url(url: str) -> FetchedPage:
     """Fetch a public URL and return its content."""
     import httpx
+
     from app.services.page_reader import extract_body_text
 
     settings = get_settings()
@@ -53,6 +54,7 @@ async def fetch_public_url(url: str) -> FetchedPage:
 def _extract_title(html_content: bytes) -> str | None:
     """Extract the <title> from HTML content."""
     import re
+
     match = re.search(rb"<title[^>]*>(.*?)</title>", html_content, re.IGNORECASE | re.DOTALL)
     if match:
         title = match.group(1).decode("utf-8", errors="replace").strip()
