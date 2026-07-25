@@ -119,6 +119,9 @@ jobs:
     name: Security · Secret scan
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - name: Check out complete history
@@ -132,18 +135,12 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload Gitleaks report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gitleaks-report-${{ github.sha }}
-          path: results.sarif
-          if-no-files-found: ignore
-          retention-days: 7
+          GITLEAKS_CONFIG: .gitleaks.toml
+          GITLEAKS_ENABLE_COMMENTS: "true"
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "true"
 
       - name: Fail when Gitleaks detects a secret
         if: steps.gitleaks.outcome == 'failure'
         run: |
-          echo "Gitleaks detected one or more findings. Inspect the uploaded SARIF report."
+          echo "Gitleaks detected one or more findings. Inspect the PR comment or uploaded SARIF report."
           exit 1
