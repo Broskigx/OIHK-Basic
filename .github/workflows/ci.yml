@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - master
-      - "agent/**"
 
 permissions:
   contents: read
@@ -82,22 +81,13 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
   desktop:
-    name: Desktop · Rust/Tauri
-    runs-on: ubuntu-24.04
+    name: Desktop · Windows Rust/Tauri
+    runs-on: windows-2022
     timeout-minutes: 30
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Install Tauri Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
