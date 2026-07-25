@@ -8,6 +8,7 @@ from app.transforms.base import TransformSpec
 async def _dns_resolve(session, *, entity) -> list[dict]:
     """Resolve domain to IP."""
     import socket
+
     try:
         ip = socket.gethostbyname(entity.value)
         return [{"type": "ip", "value": ip, "display": ip, "confidence": 0.8, "relation": "resolves_to"}]
@@ -27,13 +28,15 @@ async def _whois_lookup(session, *, entity) -> list[dict]:
                     for vcard in ent.get("vcardArray", [[]])[1:]:
                         for item in vcard:
                             if item[0] == "fn" and len(item) > 3:
-                                results.append({
-                                    "type": "organization",
-                                    "value": str(item[3]),
-                                    "display": str(item[3]),
-                                    "confidence": 0.6,
-                                    "relation": "registered_to",
-                                })
+                                results.append(
+                                    {
+                                        "type": "organization",
+                                        "value": str(item[3]),
+                                        "display": str(item[3]),
+                                        "confidence": 0.6,
+                                        "relation": "registered_to",
+                                    }
+                                )
     except Exception:
         pass
     return results
@@ -53,13 +56,15 @@ async def _cert_search(session, *, entity) -> list[dict]:
                         cn = cn.strip()
                         if cn and cn not in seen and cn.endswith("." + entity.value):
                             seen.add(cn)
-                            results.append({
-                                "type": "domain",
-                                "value": cn.lower(),
-                                "display": cn,
-                                "confidence": 0.7,
-                                "relation": "has_subdomain",
-                            })
+                            results.append(
+                                {
+                                    "type": "domain",
+                                    "value": cn.lower(),
+                                    "display": cn,
+                                    "confidence": 0.7,
+                                    "relation": "has_subdomain",
+                                }
+                            )
     except Exception:
         pass
     return results
@@ -74,29 +79,33 @@ async def _shodan_like(session, *, entity) -> list[dict]:
             if resp.status_code == 200:
                 data = resp.json()
                 if "name" in data:
-                    results.append({
-                        "type": "note",
-                        "value": data["name"],
-                        "display": f"Network: {data['name']}",
-                        "confidence": 0.6,
-                        "relation": "part_of",
-                    })
+                    results.append(
+                        {
+                            "type": "note",
+                            "value": data["name"],
+                            "display": f"Network: {data['name']}",
+                            "confidence": 0.6,
+                            "relation": "part_of",
+                        }
+                    )
     except Exception:
         pass
     return results
 
 
-async def _email_breach_lookup(session, *, entity) -> list[dict]:
-    """Lookup email breach info (stub)."""
+async def _email_to_domain(session, *, entity) -> list[dict]:
+    """Deterministically extract the domain portion of an email address."""
     domain = entity.value.split("@")[-1] if "@" in entity.value else ""
     if domain:
-        return [{
-            "type": "domain",
-            "value": domain,
-            "display": domain,
-            "confidence": 0.9,
-            "relation": "uses_domain",
-        }]
+        return [
+            {
+                "type": "domain",
+                "value": domain,
+                "display": domain,
+                "confidence": 0.9,
+                "relation": "uses_domain",
+            }
+        ]
     return []
 
 
@@ -145,6 +154,6 @@ BUILT_IN_TRANSFORMS = [
         input_types=["email"],
         output_types=["domain"],
         category="identity",
-        handler=_email_breach_lookup,
+        handler=_email_to_domain,
     ),
 ]

@@ -13,20 +13,26 @@ from app.database import SessionLocal, init_db
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.routers import (
+    assistant,
     auth,
     cases,
     custody,
+    evidence,
     exports,
-    forensics,
     forensic_core,
+    forensics,
     graph,
     health,
-    osint,
+    local_models,
     operations,
+    osint,
     reports,
     sources,
     targets,
     transforms,
+)
+from app.routers import (
+    settings as settings_router,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,18 +58,19 @@ def _enforce_hardening() -> None:
     settings = get_settings()
     if not settings.is_production:
         if settings.custody_signing_key_is_default:
-            logger.warning("OIHK_CUSTODY_SIGNING_KEY is the built-in dev default; set a separate key before production.")
+            logger.warning(
+                "OIHK_CUSTODY_SIGNING_KEY is the built-in dev default; set a separate key before production."
+            )
         if settings.auth_enabled and settings.jwt_secret_is_default:
             logger.warning("OIHK_JWT_SECRET is the built-in dev default — set a strong secret before production.")
         if not settings.auth_enabled:
-            logger.warning("OIHK_AUTH_ENABLED=false — data routers are UNAUTHENTICATED. Never do this outside local dev.")
+            logger.warning("OIHK_AUTH_ENABLED=false — the single-user API must remain bound to a loopback address.")
         return
     if not settings.auth_enabled:
         raise RuntimeError("Refusing to start in production with OIHK_AUTH_ENABLED=false.")
     if settings.jwt_secret_is_default:
         raise RuntimeError(
-            "Refusing to start in production with the default OIHK_JWT_SECRET. "
-            'Set a strong OIHK_JWT_SECRET.'
+            "Refusing to start in production with the default OIHK_JWT_SECRET. Set a strong OIHK_JWT_SECRET."
         )
     if settings.custody_signing_key_is_default:
         raise RuntimeError("Refusing to start in production with the default OIHK_CUSTODY_SIGNING_KEY.")
@@ -89,7 +96,9 @@ async def _bootstrap_admin() -> None:
         has_email = bool(settings.bootstrap_admin_email)
         has_password = bool(settings.bootstrap_admin_password)
         if has_email != has_password:
-            raise RuntimeError("OIHK_BOOTSTRAP_ADMIN_EMAIL and OIHK_BOOTSTRAP_ADMIN_PASSWORD must be configured together.")
+            raise RuntimeError(
+                "OIHK_BOOTSTRAP_ADMIN_EMAIL and OIHK_BOOTSTRAP_ADMIN_PASSWORD must be configured together."
+            )
         if not has_email:
             if settings.is_production and existing_admin is None:
                 raise RuntimeError(
@@ -100,9 +109,7 @@ async def _bootstrap_admin() -> None:
         existing_user = await get_user_by_email(session, settings.bootstrap_admin_email)
         if existing_user:
             if existing_user.role != "admin":
-                raise RuntimeError(
-                    "The configured bootstrap email already belongs to a non-administrator account."
-                )
+                raise RuntimeError("The configured bootstrap email already belongs to a non-administrator account.")
             return
         await register_user(
             session,
@@ -161,6 +168,10 @@ app.include_router(exports.router, dependencies=_auth)
 app.include_router(osint.router, dependencies=_auth)
 app.include_router(transforms.router, dependencies=_auth)
 app.include_router(custody.router, dependencies=_auth)
+app.include_router(evidence.router, dependencies=_auth)
 app.include_router(forensics.router, dependencies=_auth)
 app.include_router(forensic_core.router, dependencies=_auth)
 app.include_router(operations.router, dependencies=_auth)
+app.include_router(local_models.router, dependencies=_auth)
+app.include_router(assistant.router, dependencies=_auth)
+app.include_router(settings_router.router, dependencies=_auth)

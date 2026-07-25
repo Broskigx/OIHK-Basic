@@ -1,0 +1,15 @@
+title = "OIHK Basic Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Exact non-secret placeholders retained in configuration examples and repository history"
+regexTarget = "match"
+regexes = [
+  '''change-me-in-production-oihk-basic-secret''',
+  '''change-me-in-production-oihk-basic-custody-secret''',
+  '''your-api-key''',
+  '''your-ai-api-key''',
+  '''your-secure-password''',
+]

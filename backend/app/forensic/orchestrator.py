@@ -2,19 +2,21 @@
 
 from __future__ import annotations
 
-import hashlib
 import time
 
-from app.forensic.types import (
-    FileAnalysis, ForensicCoreReport, HashResult, IocReport,
-    MetadataReport, TextExtraction, TimelineEvent, YaraReport,
-)
-from app.forensic.hashing.hasher import compute_hashes
-from app.forensic.mime.analyzer import detect_mime_type
-from app.forensic.metadata.extractor import extract_metadata
 from app.forensic.extraction.text import extract_text
+from app.forensic.hashing.hasher import compute_hashes
 from app.forensic.ioc.extractor import extract_iocs
+from app.forensic.metadata.extractor import extract_metadata
+from app.forensic.mime.analyzer import detect_mime_type
 from app.forensic.timeline.builder import build_timeline
+from app.forensic.types import (
+    FileAnalysis,
+    ForensicCoreReport,
+    HashResult,
+    IocReport,
+    YaraReport,
+)
 
 
 def analyze_file(
@@ -39,11 +41,17 @@ def analyze_file(
     # File analysis
     entropy = _compute_entropy(data)
     file_analysis = FileAnalysis(
-        filename=filename, size_bytes=len(data), extension=ext,
-        mime_type=mime_type, magic_bytes=magic,
-        detected_type=detected_type, detected_label=detected_label,
+        filename=filename,
+        size_bytes=len(data),
+        extension=ext,
+        mime_type=mime_type,
+        magic_bytes=magic,
+        detected_type=detected_type,
+        detected_label=detected_label,
         entropy=round(entropy, 2),
-        hashes=hashes, timestamps={}, permissions=None,
+        hashes=hashes,
+        timestamps={},
+        permissions=None,
         discrepancies=[],
     )
 
@@ -54,11 +62,7 @@ def analyze_file(
     text_report = extract_text(data, filename, content_type)
 
     # IOC extraction
-    ioc_report = None
-    if text_report and text_report.text:
-        ioc_report = extract_iocs(text_report.text)
-    else:
-        ioc_report = IocReport(matches=[])
+    ioc_report = extract_iocs(text_report.text) if text_report and text_report.text else IocReport(matches=[])
 
     # Timeline
     timeline = build_timeline(data, filename, sha256)

@@ -1,112 +1,135 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { downloadReport, listCases, listSources, getGraph, getGraphAnalytics, getCustody, targetIntake, listAuditEvents, getCaseMonitor } from "./api";
-import type { CaseRead, GraphNode, SourceRead, TargetIntakeResult, CaseMemory, SearchHit, SearchRun, TargetPhoto, CaseMonitor, AuditEvent, GraphRead, GraphAnalytics, CustodyReport, User } from "./types";
-import { InvestigationsView } from "./features/investigations/InvestigationsView";
+import { useCallback, useEffect, useState } from "react";
+import { createCase, deleteCase, downloadCaseExport, duplicateCase, getApplicationSettings, getStorageStatus, importCaseDocument, rerunTargetSearch, saveApplicationSettings, updateCase } from "./api";
+import { isCaseScopedArea, type PlatformArea } from "./app/navigation";
+import { PlatformShell } from "./app/PlatformShell";
+import { usePlatformRoute } from "./app/usePlatformRoute";
+import { DashboardView } from "./features/dashboard/DashboardView";
 import { EntityManagerView } from "./features/entities/EntityManagerView";
 import { EvidenceVaultView } from "./features/evidence/EvidenceVaultView";
+import { CopilotWorkspaceView } from "./features/copilot/CopilotWorkspaceView";
 import { GraphWorkspaceView } from "./features/graph/GraphWorkspaceView";
-import { ReportsWorkspaceView } from "./features/reports/ReportsWorkspaceView";
-import { SettingsView } from "./features/settings/SettingsView";
-import { ToolsWorkspaceView } from "./features/tools/ToolsWorkspaceView";
-import { TimelineView } from "./features/timeline/TimelineView";
-import { DashboardView } from "./features/dashboard/DashboardView";
+import { InvestigationsView } from "./features/investigations/InvestigationsView";
 import { NewInvestigationDialog } from "./features/investigations/NewInvestigationDialog";
-import { WorkspaceHeader } from "./shared/ui/WorkspaceHeader";
+import { ReportsWorkspaceView } from "./features/reports/ReportsWorkspaceView";
+import { LocalModelsView } from "./features/models/LocalModelsView";
+import { DataSourcesView } from "./features/sources/DataSourcesView";
+import { OsintWorkspaceView } from "./features/osint/OsintWorkspaceView";
+import { AboutView } from "./features/about/AboutView";
+import { SettingsView } from "./features/settings/SettingsView";
+import { OnboardingDialog } from "./features/onboarding/OnboardingDialog";
+import { usePlatformCatalogs } from "./features/settings/usePlatformCatalogs";
+import { TimelineView } from "./features/timeline";
+import { ToolsWorkspaceView } from "./features/tools/ToolsWorkspaceView";
+import { useCaseManager } from "./hooks/useCaseManager";
+import { useGraphInteraction } from "./hooks/useGraphInteraction";
 import { EmptyState } from "./shared/ui/EmptyState";
-import { PlatformShell } from "./app/PlatformShell";
+import { WorkspaceHeader } from "./shared/ui/WorkspaceHeader";
+import type { ApplicationSettings, CaseRead, DesktopStatus, GraphNode, InvestigationDraft, StorageStatus, User } from "./types";
 
-type PlatformArea = "dashboard" | "investigations" | "entities" | "evidence" | "graph" | "tools" | "reports" | "timeline" | "settings";
-
-export function App({ currentUser, onLogout }: { currentUser: User; onLogout: () => void }) {
+export function App({ currentUser }: { currentUser: User }) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [area, setArea] = useState<PlatformArea>("dashboard");
-  const [cases, setCases] = useState<CaseRead[]>([]);
-  const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
-  const [activeCase, setActiveCase] = useState<CaseRead | null>(null);
-  const [sources, setSources] = useState<SourceRead[]>([]);
-  const [graph, setGraph] = useState<GraphRead>({ nodes: [], edges: [] });
-  const [graphAnalytics, setGraphAnalytics] = useState<GraphAnalytics | null>(null);
-  const [custody, setCustody] = useState<CustodyReport | null>(null);
-  const [monitor, setMonitor] = useState<CaseMonitor | null>(null);
-  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
-  const [targetPhotos, setTargetPhotos] = useState<TargetPhoto[]>([]);
+  const [desktopStatus, setDesktopStatus] = useState<DesktopStatus | null>(null);
   const [showNewCase, setShowNewCase] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [applicationSettings, setApplicationSettings] = useState<ApplicationSettings | null>(null);
+  const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
+  const [settingsError, setSettingsError] = useState("");
 
-  // Intake form state
-  const [intake, setIntake] = useState({
-    first_name: "", last_name: "", aliases: "", notes: "",
-    legal_basis: "Authorized research", scope_statement: "Bounded authorized OSINT review using user-provided and public sources.",
-    consent_basis: "User confirms authorization to investigate this target.", auto_search: true, photos: [] as File[],
-  });
+  const { route, navigate, navigateCase } = usePlatformRoute();
+  const caseMgr = useCaseManager();
+  const graph = useGraphInteraction();
+  const catalogs = usePlatformCatalogs();
+
+  const activeCaseId = caseMgr.activeCaseId;
+  const activeCase = !route.caseId || route.caseId === activeCaseId ? caseMgr.activeCase : undefined;
+  const refreshCases = caseMgr.refresh;
+  const selectedNode = graph.selectedNode;
+  const setSelectedNode = graph.setSelectedNode;
+  const setOpenedNode = graph.setOpenedNode;
 
   const setSafeError = useCallback((message: string) => {
     setError(message);
     if (message) window.setTimeout(() => setError(""), 6000);
   }, []);
 
-  const refreshCases = useCallback(async (caseId?: string) => {
-    try {
-      const allCases = await listCases();
-      setCases(allCases);
-      if (caseId) {
-        const found = allCases.find((c) => c.id === caseId);
-        if (found) {
-          setActiveCaseId(found.id);
-          setActiveCase(found);
-          // Load case data
-          const [src, g, anal, cust, mon, audit] = await Promise.all([
-            listSources(found.id),
-            getGraph(found.id),
-            getGraphAnalytics(found.id).catch(() => null),
-            getCustody(found.id).catch(() => null),
-            getCaseMonitor(found.id).catch(() => null),
-            listAuditEvents(found.id).catch(() => []),
-          ]);
-          setSources(src);
-          setGraph(g);
-          setGraphAnalytics(anal);
-          setCustody(cust);
-          setMonitor(mon);
-          setAuditEvents(audit);
-        }
-      }
-    } catch (cause) {
-      setSafeError(cause instanceof Error ? cause.message : "Failed to load data");
-    }
-  }, [setSafeError]);
+  const canvasGraph = caseMgr.graph;
 
   useEffect(() => {
-    refreshCases().catch(() => {});
-  }, [refreshCases]);
+    if ((!route.caseId && activeCaseId) || (Boolean(route.caseId) && route.caseId === activeCaseId)) return;
+    refreshCases(route.caseId || undefined).catch((cause) => {
+      setSafeError(cause instanceof Error ? cause.message : "Could not load investigations");
+    });
+  }, [activeCaseId, refreshCases, route.caseId, setSafeError]);
 
-  const refreshActiveCase = useCallback(async () => {
-    if (activeCaseId) await refreshCases(activeCaseId);
-  }, [activeCaseId, refreshCases]);
+  useEffect(() => {
+    if (selectedNode && canvasGraph.nodes.some((node) => node.id === selectedNode.id)) return;
+    const first = canvasGraph.nodes[0] ?? null;
+    setSelectedNode(first);
+    setOpenedNode(null);
+  }, [canvasGraph.nodes, selectedNode, setOpenedNode, setSelectedNode]);
 
-  const handleNavigate = useCallback((newArea: PlatformArea) => {
-    setArea(newArea);
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke<DesktopStatus>("desktop_status"))
+      .then(setDesktopStatus)
+      .catch(() => setDesktopStatus(null));
   }, []);
+
+  const handleNavigate = useCallback(
+    (area: PlatformArea) => {
+      if (isCaseScopedArea(area) && !activeCaseId) {
+        navigate("investigations");
+        return;
+      }
+      navigate(area, activeCaseId);
+    },
+    [activeCaseId, navigate],
+  );
+
+  const openNewCaseDialog = useCallback(() => {
+    setShowNewCase(true);
+  }, []);
+
+  const refreshApplicationSettings = useCallback(async () => {
+    setSettingsError("");
+    try {
+      const [preferences, storage] = await Promise.all([getApplicationSettings(), getStorageStatus()]);
+      setApplicationSettings(preferences);
+      setStorageStatus(storage);
+      return preferences;
+    } catch (cause) {
+      setSettingsError(cause instanceof Error ? cause.message : "Could not load local settings");
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshApplicationSettings().then((preferences) => {
+      if (preferences && !preferences.onboarding_complete) setShowOnboarding(true);
+    });
+  }, [refreshApplicationSettings]);
+
+  useEffect(() => {
+    if (!applicationSettings) return;
+    document.documentElement.style.fontSize = `${applicationSettings.appearance.text_scale * 100}%`;
+    document.documentElement.dataset.density = applicationSettings.appearance.density;
+    document.documentElement.classList.toggle("reduce-motion", applicationSettings.appearance.reduce_motion);
+  }, [applicationSettings]);
 
   const openCase = useCallback((caseId: string) => {
-    setActiveCaseId(caseId);
-    refreshCases(caseId).catch(() => {});
-  }, [refreshCases]);
+    if (caseId) navigateCase(caseId);
+  }, [navigateCase]);
 
-  const resetIntake = useCallback(() => {
-    setIntake({ first_name: "", last_name: "", aliases: "", notes: "", legal_basis: "Authorized research", scope_statement: "", consent_basis: "User confirms authorization to investigate this target.", auto_search: true, photos: [] });
-  }, []);
-
-  const submitIntake = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const createInvestigation = async (draft: InvestigationDraft) => {
     setLoading(true);
     setError("");
     try {
-      const result = await targetIntake(intake);
+      const result = await createCase(draft);
       setShowNewCase(false);
-      resetIntake();
-      setArea("investigations");
-      openCase(result.case.id);
+      await caseMgr.refresh(result.id);
+      navigate("investigations", result.id);
     } catch (cause) {
       setSafeError(cause instanceof Error ? cause.message : "Could not create investigation");
     } finally {
@@ -114,144 +137,415 @@ export function App({ currentUser, onLogout }: { currentUser: User; onLogout: ()
     }
   };
 
-  const saveReport = async () => {
-    if (!activeCaseId) return;
+  const createOnboardingInvestigation = async (draft: InvestigationDraft): Promise<CaseRead> => {
+    const result = await createCase(draft);
+    await caseMgr.refresh(result.id);
+    return result;
+  };
+
+  const persistApplicationSettings = async (next: ApplicationSettings) => {
+    const saved = await saveApplicationSettings({
+      onboarding_complete: next.onboarding_complete,
+      general: next.general,
+      appearance: next.appearance,
+      storage: next.storage,
+      tools: next.tools,
+      privacy: next.privacy,
+      performance: next.performance,
+    });
+    setApplicationSettings(saved);
+  };
+
+  const completeOnboarding = async () => {
+    if (applicationSettings) {
+      await persistApplicationSettings({ ...applicationSettings, onboarding_complete: true });
+    }
+    setShowOnboarding(false);
+    navigate("dashboard");
+  };
+
+  const mutateInvestigation = async (action: () => Promise<unknown>, preferredId?: string) => {
+    setLoading(true);
+    setError("");
     try {
-      const blob = await downloadReport(activeCaseId);
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${activeCase?.title?.replace(/[^a-z0-9_-]+/gi, "_") || "oihk-basic-report"}.md`;
-      anchor.click();
-      URL.revokeObjectURL(url);
+      await action();
+      await caseMgr.refresh(preferredId);
     } catch (cause) {
-      setSafeError(cause instanceof Error ? cause.message : "Could not download report");
+      setSafeError(cause instanceof Error ? cause.message : "Could not update investigation");
+    } finally {
+      setLoading(false);
     }
   };
 
+  const exportInvestigation = async (caseId: string, title: string) => {
+    try {
+      const blob = await downloadCaseExport(caseId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${title.replace(/[^a-z0-9_-]+/gi, "_") || "investigation"}.oihk.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not export investigation");
+    }
+  };
+
+  const editInvestigation = async (caseId: string, draft: InvestigationDraft) => {
+    await mutateInvestigation(() => updateCase(caseId, draft), caseId);
+  };
+
+  const setInvestigationStatus = async (caseId: string, status: "active" | "archived") => {
+    await mutateInvestigation(() => updateCase(caseId, { status }), caseId);
+  };
+
+  const duplicateInvestigation = async (caseId: string) => {
+    setLoading(true);
+    try {
+      const result = await duplicateCase(caseId);
+      await caseMgr.refresh(result.id);
+      navigate("investigations", result.id);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not duplicate investigation");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const removeInvestigation = async (caseId: string) => {
+    setLoading(true);
+    try {
+      await deleteCase(caseId);
+      navigate("investigations");
+      await caseMgr.refresh();
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not delete investigation");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const importInvestigation = async (document: unknown) => {
+    setLoading(true);
+    try {
+      const result = await importCaseDocument(document);
+      await caseMgr.refresh(result.id);
+      navigate("investigations", result.id);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not import investigation");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runAgain = async () => {
+    if (!caseMgr.activeTargetId) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await rerunTargetSearch(caseMgr.activeTargetId);
+      caseMgr.setMemory(result.memory);
+      caseMgr.setHits(result.hits);
+      caseMgr.setTargetPhotos(result.photos);
+      if (result.search_run) caseMgr.setRuns([result.search_run, ...caseMgr.runs]);
+      await caseMgr.refresh(result.case.id);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not rerun discovery");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const refreshActiveCase = useCallback(async () => {
+    if (activeCaseId) await refreshCases(activeCaseId);
+  }, [activeCaseId, refreshCases]);
+
+  const expandNode = async (node: GraphNode) => {
+    try {
+      await graph.expandNode(node, caseMgr.activeCaseId, refreshActiveCase);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not expand entity");
+    }
+  };
+
+  const enrichNode = async (node: GraphNode) => {
+    try {
+      await graph.enrichNode(node, caseMgr.activeCaseId, refreshActiveCase);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not enrich entity");
+    }
+  };
+
+  const importCsv = async (csv: string) => {
+    try {
+      await graph.importCsv(csv, caseMgr.activeCaseId, refreshActiveCase, setSafeError);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not import CSV");
+    }
+  };
+
+  const runTransformOnNode = async (transformId: string, node: GraphNode) => {
+    try {
+      await graph.runTransformOnNode(transformId, node, caseMgr.activeCaseId, refreshActiveCase);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Transform failed");
+    }
+  };
+
+  const runAdhocMachineOnNode = async (transformIds: string[], node: GraphNode) => {
+    try {
+      await graph.runAdhocMachineOnNode(transformIds, node, caseMgr.activeCaseId, refreshActiveCase);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Transform chain failed");
+    }
+  };
+
+  const runSavedMachineOnNode = async (machineId: string, node: GraphNode) => {
+    try {
+      await graph.runSavedMachineOnNode(machineId, node, caseMgr.activeCaseId, refreshActiveCase);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Saved machine failed");
+    }
+  };
+
+  const caseRequired = isCaseScopedArea(route.area) && !activeCase;
   let content: React.ReactNode;
 
-  switch (area) {
-    case "dashboard":
-      content = (
-        <DashboardView
-          cases={cases}
-          activeCase={activeCase}
-          graph={graph}
-          selectedNode={null}
-          onNavigate={handleNavigate}
-          onNewCase={() => { resetIntake(); setShowNewCase(true); }}
+  if (caseRequired) {
+    content = (
+      <div className="platform-view">
+        <WorkspaceHeader
+          eyebrow="Investigation required"
+          title="Open an investigation"
+          description="This workspace is case-scoped and cannot display organization-wide or synthetic data."
         />
-      );
-      break;
-    case "investigations":
-      content = (
-        <InvestigationsView
-          cases={cases}
-          activeCase={activeCase}
-          onOpenCase={openCase}
-          onNewCase={() => { resetIntake(); setShowNewCase(true); }}
-          onOpenWorkspace={() => handleNavigate("graph")}
+        <EmptyState
+          title="No active investigation"
+          description="Choose an authorized investigation or create a new one."
+          action={<button onClick={() => navigate("investigations")}>View investigations</button>}
         />
-      );
-      break;
-    case "entities":
-      content = (
-        <EntityManagerView
-          nodes={graph.nodes}
-          onRefresh={refreshActiveCase}
-          onOpenGraph={() => handleNavigate("graph")}
-          onError={setSafeError}
-        />
-      );
-      break;
-    case "evidence":
-      content = (
-        <EvidenceVaultView
-          caseId={activeCaseId}
-          sources={sources}
-          photos={targetPhotos}
-          custody={custody}
-          onRefresh={refreshActiveCase}
-        />
-      );
-      break;
-    case "timeline":
-      content = (
-        <div className="platform-view">
-          <WorkspaceHeader eyebrow="Chronological activity" title="Timeline" description="Audit events and collected sources in chronological order." />
-          <TimelineView auditEvents={auditEvents} sources={sources} />
-        </div>
-      );
-      break;
-    case "graph":
-      content = (
-        <GraphWorkspaceView
-          graph={graph}
-          analytics={graphAnalytics}
-          selectedNode={null}
-          caseId={activeCaseId}
-          onRefresh={refreshActiveCase}
-          onOpenEntityManager={() => handleNavigate("entities")}
-          onError={setSafeError}
-        />
-      );
-      break;
-    case "tools":
-      content = (
-        <ToolsWorkspaceView
-          caseId={activeCaseId}
-          isAdmin={currentUser.role === "admin" || currentUser.role === "system"}
-          sources={sources}
-          custody={custody}
-          onRefresh={refreshActiveCase}
-          onOpenEvidence={() => handleNavigate("evidence")}
-        />
-      );
-      break;
-    case "reports":
-      content = activeCase ? (
-        <ReportsWorkspaceView
-          activeCase={activeCase}
-          graph={graph}
-          sources={sources}
-          custody={custody}
-          onDownloadMarkdown={() => void saveReport()}
-        />
-      ) : null;
-      break;
-    case "settings":
-      content = (
-        <SettingsView user={currentUser} />
-      );
-      break;
-    default:
-      content = null;
+      </div>
+    );
+  } else {
+    switch (route.area) {
+      case "dashboard":
+        content = (
+          <DashboardView
+            cases={caseMgr.cases}
+            activeCase={activeCase}
+            monitor={caseMgr.monitor}
+            auditEvents={caseMgr.auditEvents}
+            sources={caseMgr.sources}
+            graph={canvasGraph}
+            graphAnalytics={caseMgr.graphAnalytics}
+            storageStatus={storageStatus}
+            selectedNode={graph.selectedNode}
+            onSelectNode={graph.setSelectedNode}
+            onNavigate={handleNavigate}
+            onNewCase={openNewCaseDialog}
+          />
+        );
+        break;
+      case "investigations":
+        content = (
+          <InvestigationsView
+            cases={caseMgr.cases}
+            activeCase={activeCase}
+            monitor={caseMgr.monitor}
+            loading={loading}
+            canRerun={Boolean(caseMgr.activeTargetId)}
+            onOpenCase={(caseId) => void openCase(caseId)}
+            onNewCase={openNewCaseDialog}
+            onRunAgain={() => void runAgain()}
+            onOpenWorkspace={() => handleNavigate("graph")}
+            onEdit={editInvestigation}
+            onDuplicate={duplicateInvestigation}
+            onSetStatus={setInvestigationStatus}
+            onDelete={removeInvestigation}
+            onExport={exportInvestigation}
+            onImport={importInvestigation}
+          />
+        );
+        break;
+      case "entities":
+        content = (
+          <EntityManagerView
+            nodes={caseMgr.graph.nodes}
+            selectedNode={graph.selectedNode}
+            onSelectNode={graph.openNode}
+            onRefresh={refreshActiveCase}
+            onOpenGraph={() => handleNavigate("graph")}
+            onError={setSafeError}
+          />
+        );
+        break;
+      case "evidence":
+        content = (
+          <EvidenceVaultView
+            caseId={caseMgr.activeCaseId}
+            sources={caseMgr.sources}
+            photos={caseMgr.targetPhotos}
+            custody={caseMgr.custody}
+            entities={caseMgr.graph.nodes}
+            onRefresh={refreshActiveCase}
+          />
+        );
+        break;
+      case "timeline":
+        content = (
+          <div className="platform-view">
+            <WorkspaceHeader
+              eyebrow="Derived investigation activity"
+              title="Timeline"
+              description="A real chronological projection of audit events, collected sources, search runs, and hashed uploads."
+            />
+            <p className="platform-footnote">
+              Manual events and comments are not available until the canonical investigation-event API is implemented.
+            </p>
+            <TimelineView
+              auditEvents={caseMgr.auditEvents}
+              sources={caseMgr.sources}
+              searchRuns={caseMgr.runs}
+              targetPhotos={caseMgr.targetPhotos}
+              exportFileName={`${activeCase?.title?.replace(/[^a-z0-9_-]+/gi, "_") || "investigation"}-timeline.json`}
+            />
+          </div>
+        );
+        break;
+      case "graph":
+        content = (
+          <GraphWorkspaceView
+            graph={canvasGraph}
+            analytics={caseMgr.graphAnalytics}
+            selectedNode={graph.selectedNode}
+            openedNode={graph.openedNode}
+            zoom={graph.graphZoom}
+            layoutVersion={graph.layoutVersion}
+            showFilters={graph.showFilters}
+            expanding={graph.expanding}
+            caseId={caseMgr.activeCaseId}
+            onSelectNode={graph.setSelectedNode}
+            onOpenNode={graph.openNode}
+            onExpandNode={(node) => void expandNode(node)}
+            onEnrichNode={(node) => void enrichNode(node)}
+            onRunTransform={(transformId, node) => void runTransformOnNode(transformId, node)}
+            onRunAdhocMachine={(transformIds, node) => void runAdhocMachineOnNode(transformIds, node)}
+            onRunSavedMachine={(machineId, node) => void runSavedMachineOnNode(machineId, node)}
+            onImportCsv={(csv) => void importCsv(csv)}
+            onGraphChanged={refreshActiveCase}
+            onToggleFilters={() => graph.setShowFilters(!graph.showFilters)}
+            onResetLayout={graph.resetLayout}
+            onOpenEntityManager={() => handleNavigate("entities")}
+            onError={setSafeError}
+          />
+        );
+        break;
+      case "tools":
+        content = (
+          <ToolsWorkspaceView
+            caseId={caseMgr.activeCaseId}
+            isAdmin={currentUser.role === "admin" || currentUser.role === "system"}
+            sources={caseMgr.sources}
+            custody={caseMgr.custody}
+            onRefresh={refreshActiveCase}
+            onOpenEvidence={() => handleNavigate("evidence")}
+          />
+        );
+        break;
+      case "reports":
+        content = activeCase ? (
+          <ReportsWorkspaceView
+            activeCase={activeCase}
+            graph={caseMgr.graph}
+            sources={caseMgr.sources}
+            custody={caseMgr.custody}
+          />
+        ) : null;
+        break;
+      case "copilot":
+        content = (
+          <CopilotWorkspaceView
+            caseId={caseMgr.activeCaseId}
+            targetId={caseMgr.activeTargetId}
+            onOpenModels={() => handleNavigate("models")}
+          />
+        );
+        break;
+      case "osint":
+        content = (
+          <OsintWorkspaceView
+            caseId={caseMgr.activeCaseId}
+            onGraphChanged={refreshActiveCase}
+            onOpenGraph={() => handleNavigate("graph")}
+          />
+        );
+        break;
+      case "models":
+        content = <LocalModelsView />;
+        break;
+      case "sources":
+        content = (
+          <DataSourcesView
+            activeCase={activeCase}
+            sources={caseMgr.sources}
+            onOpenEvidence={() => handleNavigate("evidence")}
+            onOpenInvestigations={() => handleNavigate("investigations")}
+          />
+        );
+        break;
+      case "settings":
+        content = (
+          <SettingsView
+            user={currentUser}
+            desktopStatus={desktopStatus}
+            providers={catalogs.providers}
+            settings={applicationSettings}
+            storage={storageStatus}
+            loading={catalogs.loading || loading}
+            error={settingsError || catalogs.error}
+            onRefresh={() => void Promise.all([catalogs.refresh(), refreshApplicationSettings()])}
+            onSave={persistApplicationSettings}
+            onRunOnboarding={() => setShowOnboarding(true)}
+            onOpenModels={() => handleNavigate("models")}
+          />
+        );
+        break;
+      case "about":
+        content = <AboutView desktopStatus={desktopStatus} />;
+        break;
+    }
   }
 
   return (
     <>
       <PlatformShell
-        area={area}
-        cases={cases}
+        area={route.area}
+        cases={caseMgr.cases}
         activeCase={activeCase}
         currentUser={currentUser}
+        desktopStatus={desktopStatus}
         loading={loading}
         error={error}
         onNavigate={handleNavigate}
-        onOpenCase={openCase}
-        onNewCase={() => { resetIntake(); setShowNewCase(true); }}
-        onLogout={onLogout}
+        onOpenCase={(caseId) => void openCase(caseId)}
+        onNewCase={openNewCaseDialog}
+        onDismissError={() => setError("")}
       >
         {content}
       </PlatformShell>
       <NewInvestigationDialog
         open={showNewCase}
-        intake={intake}
         loading={loading}
-        onChange={(patch) => setIntake({ ...intake, ...patch })}
         onClose={() => setShowNewCase(false)}
-        onSubmit={submitIntake}
+        onSubmit={createInvestigation}
+      />
+      <OnboardingDialog
+        open={showOnboarding}
+        settings={applicationSettings}
+        cases={caseMgr.cases}
+        onComplete={completeOnboarding}
+        onCreateCase={createOnboardingInvestigation}
+        onOpenModels={() => { setShowOnboarding(false); handleNavigate("models"); }}
       />
     </>
   );

@@ -31,8 +31,11 @@ frontend/node_modules/
 frontend/dist/
 frontend/build/
 frontend/.vite/
+frontend/*.tsbuildinfo
 
 node_modules/
+src-tauri/target/
+src-tauri/gen/
 
 # IDE
 .idea/

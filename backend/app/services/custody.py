@@ -112,9 +112,15 @@ async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVer
     settings = get_settings()
 
     seals = (
-        (await session.execute(
-            select(models.EvidenceSeal).where(models.EvidenceSeal.case_id == case_id).order_by(models.EvidenceSeal.sequence)
-        )).scalars().all()
+        (
+            await session.execute(
+                select(models.EvidenceSeal)
+                .where(models.EvidenceSeal.case_id == case_id)
+                .order_by(models.EvidenceSeal.sequence)
+            )
+        )
+        .scalars()
+        .all()
     )
 
     if not seals:
@@ -152,19 +158,21 @@ async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVer
         if source is not None:
             source_title = source.title
 
-        entries.append(SealEntryResult(
-            sequence=seal.sequence,
-            source_id=seal.source_id,
-            source_title=source_title,
-            sealed_at_iso=seal.sealed_at_iso,
-            content_sha256=seal.content_sha256,
-            seal_hash=seal.seal_hash,
-            content_ok=content_ok,
-            seal_ok=seal_ok,
-            chain_ok=chain_ok,
-            signature_ok=signature_ok,
-            ok=ok,
-        ))
+        entries.append(
+            SealEntryResult(
+                sequence=seal.sequence,
+                source_id=seal.source_id,
+                source_title=source_title,
+                sealed_at_iso=seal.sealed_at_iso,
+                content_sha256=seal.content_sha256,
+                seal_hash=seal.seal_hash,
+                content_ok=content_ok,
+                seal_ok=seal_ok,
+                chain_ok=chain_ok,
+                signature_ok=signature_ok,
+                ok=ok,
+            )
+        )
 
         prev_seal_hash = seal.seal_hash
 

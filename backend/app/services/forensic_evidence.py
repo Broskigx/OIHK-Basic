@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import hashlib
-import io
-import struct
-from dataclasses import dataclass, field
-from typing import List
+from dataclasses import dataclass
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.core.config import get_settings
+from app.services.correlation import index_attribute
 from app.services.custody import seal_source
 from app.services.evidence_storage import store_evidence_bytes
-from app.services.correlation import index_attribute
 from app.services.hash_intel import lookup_value
 
 
@@ -79,7 +78,14 @@ def _compute_sha256(data: bytes) -> str:
 
 
 async def read_forensic_upload(file) -> bytes:
-    return await file.read()
+    limit = get_settings().max_evidence_bytes
+    data = await file.read(limit + 1)
+    if len(data) > limit:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Forensic upload exceeds the configured {limit // (1024 * 1024)} MB limit.",
+        )
+    return data
 
 
 async def store_forensic_evidence(
@@ -114,8 +120,14 @@ async def store_forensic_evidence(
     session.add(source)
     await session.flush()
     await seal_source(session, source, raw_bytes=data, storage_path=stored["storage_path"])
-    await index_attribute(session, organization_id=organization_id, case_id=case_id,
-                          attr_type="file_hash", value=sha256, source_id=source.id)
+    await index_attribute(
+        session,
+        organization_id=organization_id,
+        case_id=case_id,
+        attr_type="file_hash",
+        value=sha256,
+        source_id=source.id,
+    )
 
     report = ForensicReport(
         filename=filename,
@@ -154,8 +166,9 @@ async def carve_and_seal(
     sealed: list[SealedArtifact] = []
 
     for artifact in artifacts:
-        stored = store_evidence_bytes(case_id, artifact.label, data[artifact.offset:artifact.offset + artifact.size],
-                                       subdir="carved")
+        stored = store_evidence_bytes(
+            case_id, artifact.label, data[artifact.offset : artifact.offset + artifact.size], subdir="carved"
+        )
         source = models.Source(
             case_id=case_id,
             title=f"Carved: {artifact.label}"[:240],
@@ -167,18 +180,31 @@ async def carve_and_seal(
         )
         session.add(source)
         await session.flush()
-        await seal_source(session, source, raw_bytes=data[artifact.offset:artifact.offset + artifact.size],
-                          storage_path=stored["storage_path"])
+        await seal_source(
+            session,
+            source,
+            raw_bytes=data[artifact.offset : artifact.offset + artifact.size],
+            storage_path=stored["storage_path"],
+        )
 
         hash_matches = await lookup_value(session, organization_id=organization_id, value=artifact.sha256)
         correlation_hits = await index_attribute(
-            session, organization_id=organization_id, case_id=case_id,
-            attr_type="file_hash", value=artifact.sha256, source_id=source.id,
+            session,
+            organization_id=organization_id,
+            case_id=case_id,
+            attr_type="file_hash",
+            value=artifact.sha256,
+            source_id=source.id,
         )
 
-        sealed.append(SealedArtifact(artifact=artifact, source=source,
-                                      hash_matches=hash_matches,
-                                      correlation_hits=[correlation_hits] if correlation_hits else []))
+        sealed.append(
+            SealedArtifact(
+                artifact=artifact,
+                source=source,
+                hash_matches=hash_matches,
+                correlation_hits=[correlation_hits] if correlation_hits else [],
+            )
+        )
 
     return sealed
 
@@ -198,10 +224,17 @@ def _carve_binary(data: bytes) -> list[CarvedArtifact]:
         if iend != -1:
             end = iend + 8
             chunk = data[idx:end]
-            artifacts.append(CarvedArtifact(
-                offset=idx, size=len(chunk), carved_type="png", label=f"carved_png_{idx}",
-                sha256=_compute_sha256(chunk), entropy=_compute_entropy(chunk), reason="PNG header signature",
-            ))
+            artifacts.append(
+                CarvedArtifact(
+                    offset=idx,
+                    size=len(chunk),
+                    carved_type="png",
+                    label=f"carved_png_{idx}",
+                    sha256=_compute_sha256(chunk),
+                    entropy=_compute_entropy(chunk),
+                    reason="PNG header signature",
+                )
+            )
         pos = idx + 1
 
     # Look for JPEG
@@ -217,10 +250,17 @@ def _carve_binary(data: bytes) -> list[CarvedArtifact]:
         if eoi != -1:
             end = eoi + 2
             chunk = data[idx:end]
-            artifacts.append(CarvedArtifact(
-                offset=idx, size=len(chunk), carved_type="jpeg", label=f"carved_jpeg_{idx}",
-                sha256=_compute_sha256(chunk), entropy=_compute_entropy(chunk), reason="JPEG SOI marker",
-            ))
+            artifacts.append(
+                CarvedArtifact(
+                    offset=idx,
+                    size=len(chunk),
+                    carved_type="jpeg",
+                    label=f"carved_jpeg_{idx}",
+                    sha256=_compute_sha256(chunk),
+                    entropy=_compute_entropy(chunk),
+                    reason="JPEG SOI marker",
+                )
+            )
         pos = idx + 1
 
     # Look for ZIP
@@ -234,10 +274,17 @@ def _carve_binary(data: bytes) -> list[CarvedArtifact]:
         if end > len(data):
             end = len(data)
         chunk = data[idx:end]
-        artifacts.append(CarvedArtifact(
-            offset=idx, size=len(chunk), carved_type="zip", label=f"carved_zip_{idx}",
-            sha256=_compute_sha256(chunk), entropy=_compute_entropy(chunk), reason="ZIP local file header",
-        ))
+        artifacts.append(
+            CarvedArtifact(
+                offset=idx,
+                size=len(chunk),
+                carved_type="zip",
+                label=f"carved_zip_{idx}",
+                sha256=_compute_sha256(chunk),
+                entropy=_compute_entropy(chunk),
+                reason="ZIP local file header",
+            )
+        )
         pos = idx + 1
 
     return artifacts

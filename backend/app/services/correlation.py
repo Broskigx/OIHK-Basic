@@ -90,15 +90,17 @@ async def correlate(
     hits = []
     for row in rows:
         case = await session.get(models.Case, row.case_id)
-        hits.append(CorrelationHit(
-            case_id=row.case_id,
-            case_title=case.title if case else "Unknown",
-            source_id=row.source_id,
-            attr_type=row.attr_type,
-            attr_value=row.attr_value,
-            display=row.display or row.attr_value,
-            first_seen_at=row.first_seen_at,
-        ))
+        hits.append(
+            CorrelationHit(
+                case_id=row.case_id,
+                case_title=case.title if case else "Unknown",
+                source_id=row.source_id,
+                attr_type=row.attr_type,
+                attr_value=row.attr_value,
+                display=row.display or row.attr_value,
+                first_seen_at=row.first_seen_at,
+            )
+        )
     return hits
 
 
@@ -110,13 +112,17 @@ async def case_overlaps(
 ) -> list[CaseOverlap]:
     """Find other cases that share selectors with the given case."""
     selectors = (
-        await session.execute(
-            select(models.CorrelationAttribute).where(
-                models.CorrelationAttribute.organization_id == organization_id,
-                models.CorrelationAttribute.case_id == case_id,
+        (
+            await session.execute(
+                select(models.CorrelationAttribute).where(
+                    models.CorrelationAttribute.organization_id == organization_id,
+                    models.CorrelationAttribute.case_id == case_id,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if not selectors:
         return []
@@ -141,10 +147,12 @@ async def case_overlaps(
     for other_case_id, shared in overlaps.items():
         other_case = await session.get(models.Case, other_case_id)
         samples = list(shared)[:5]
-        result.append(CaseOverlap(
-            case_id=other_case_id,
-            case_title=other_case.title if other_case else "Unknown",
-            shared_count=len(shared),
-            samples=[(s.split(":")[0], s.split(":")[1]) for s in samples],
-        ))
+        result.append(
+            CaseOverlap(
+                case_id=other_case_id,
+                case_title=other_case.title if other_case else "Unknown",
+                shared_count=len(shared),
+                samples=[(s.split(":")[0], s.split(":")[1]) for s in samples],
+            )
+        )
     return result

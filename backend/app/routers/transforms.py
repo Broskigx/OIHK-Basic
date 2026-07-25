@@ -10,9 +10,16 @@ from app import models
 from app.core.deps import CurrentUser, get_current_user, require_case_access
 from app.database import get_session
 from app.schemas import (
-    GraphEdge, GraphExpandResult, GraphNode,
-    MachineAdhocRun, MachineCreate, MachineRead, MachineRunResult,
-    MachineSkip, MachineStep, TransformRunRequest,
+    GraphEdge,
+    GraphExpandResult,
+    GraphNode,
+    MachineAdhocRun,
+    MachineCreate,
+    MachineRead,
+    MachineRunResult,
+    MachineSkip,
+    MachineStep,
+    TransformRunRequest,
 )
 from app.services.transform_runner import TransformError, run_transform_on_entity
 from app.transforms import registry
@@ -22,16 +29,23 @@ router = APIRouter(prefix="/transforms", tags=["transforms"])
 
 def _node(entity: models.Entity) -> GraphNode:
     return GraphNode(
-        id=entity.id, label=entity.display, type=entity.type,
-        confidence=entity.confidence, source_ids=entity.source_ids or [],
-        properties=entity.properties or {}, notes=entity.notes or "",
+        id=entity.id,
+        label=entity.display,
+        type=entity.type,
+        confidence=entity.confidence,
+        source_ids=entity.source_ids or [],
+        properties=entity.properties or {},
+        notes=entity.notes or "",
     )
 
 
 def _edge(relationship: models.Relationship) -> GraphEdge:
     return GraphEdge(
-        id=relationship.id, source=relationship.subject_id, target=relationship.object_id,
-        label=relationship.predicate, confidence=relationship.confidence,
+        id=relationship.id,
+        source=relationship.subject_id,
+        target=relationship.object_id,
+        label=relationship.predicate,
+        confidence=relationship.confidence,
         source_ids=relationship.source_ids or [],
     )
 
@@ -144,7 +158,10 @@ async def _run_chain(
         f" · {len(skipped)} skipped" if skipped else ""
     )
     return MachineRunResult(
-        entity_id=entity.id, summary=summary, ran=ran, skipped=skipped,
+        entity_id=entity.id,
+        summary=summary,
+        ran=ran,
+        skipped=skipped,
         new_nodes=[_node(item) for item in nodes.values()],
         new_edges=[_edge(item) for item in edges.values()],
     )

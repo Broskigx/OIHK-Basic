@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,7 +24,7 @@ from app.schemas import (
     TargetProfileRead,
 )
 from app.services.custody import seal_source
-from app.services.evidence_storage import store_photo
+from app.services.evidence_storage import safe_storage_path, store_photo
 from app.services.repository import audit, ingest_source
 from app.services.target_workflow import (
     create_memory,
@@ -66,7 +63,7 @@ async def _store_target_photo(
     await seal_source(
         session,
         source,
-        raw_bytes=Path(stored["storage_path"]).read_bytes(),
+        raw_bytes=safe_storage_path(stored["storage_path"]).read_bytes(),
         storage_path=stored["storage_path"],
     )
     photo = models.TargetPhoto(
@@ -115,7 +112,7 @@ async def target_intake(
         legal_basis=legal_basis,
         scope_statement=scope_statement,
         consent_basis=consent_basis,
-        owner_id=current.id,
+        owner_id=current.database_user_id,
         organization_id=current.organization_id,
     )
 
@@ -199,11 +196,22 @@ async def serve_target_photo(
     photo = await session.get(models.TargetPhoto, photo_id)
     if photo is None or photo.target_id != target_id:
         raise HTTPException(status_code=404, detail="Photo not found")
-    path = Path(photo.storage_path)
+    path = safe_storage_path(photo.storage_path)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Photo file not found on disk")
     from starlette.responses import FileResponse
-    return FileResponse(path, media_type=photo.content_type)
+
+    safe_inline = photo.content_type.startswith("image/") and photo.content_type != "image/svg+xml"
+    return FileResponse(
+        path,
+        media_type=photo.content_type if safe_inline else "application/octet-stream",
+        filename=photo.filename,
+        content_disposition_type="inline" if safe_inline else "attachment",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; sandbox",
+        },
+    )
 
 
 @router.post("/{target_id}/photos", response_model=list[TargetPhotoRead], status_code=201)
