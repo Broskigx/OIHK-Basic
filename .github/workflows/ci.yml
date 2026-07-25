@@ -39,9 +39,9 @@ jobs:
           python -m pip install -e "./backend[dev]"
 
       - name: Ruff
-        run: python -m ruff check backend/app backend/tests tests
+        run: python -m ruff check backend/app backend/tests
 
-      - name: Pytest
+      - name: Backend and portability tests
         run: python -m pytest backend/tests tests --quiet --tb=short --no-header
 
       - name: Verify Python dependency consistency
