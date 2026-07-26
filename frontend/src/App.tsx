@@ -20,6 +20,7 @@ import { OnboardingDialog } from "./features/onboarding/OnboardingDialog";
 import { usePlatformCatalogs } from "./features/settings/usePlatformCatalogs";
 import { TimelineView } from "./features/timeline";
 import { ToolsWorkspaceView } from "./features/tools/ToolsWorkspaceView";
+import { useUpdater } from "./features/updates/useUpdater";
 import { useCaseManager } from "./hooks/useCaseManager";
 import { useGraphInteraction } from "./hooks/useGraphInteraction";
 import { EmptyState } from "./shared/ui/EmptyState";
@@ -40,6 +41,11 @@ export function App({ currentUser }: { currentUser: User }) {
   const caseMgr = useCaseManager();
   const graph = useGraphInteraction();
   const catalogs = usePlatformCatalogs();
+  const updater = useUpdater(
+    applicationSettings?.general.check_updates ?? false,
+    applicationSettings?.general.update_channel ?? "alpha",
+    desktopStatus?.updater_enabled ?? false,
+  );
 
   const activeCaseId = caseMgr.activeCaseId;
   const activeCase = !route.caseId || route.caseId === activeCaseId ? caseMgr.activeCase : undefined;
@@ -507,11 +513,12 @@ export function App({ currentUser }: { currentUser: User }) {
             onSave={persistApplicationSettings}
             onRunOnboarding={() => setShowOnboarding(true)}
             onOpenModels={() => handleNavigate("models")}
+            updater={updater}
           />
         );
         break;
       case "about":
-        content = <AboutView desktopStatus={desktopStatus} />;
+        content = <AboutView desktopStatus={desktopStatus} updater={updater} />;
         break;
     }
   }

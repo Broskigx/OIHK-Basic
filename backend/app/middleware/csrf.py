@@ -10,7 +10,15 @@ from starlette.responses import JSONResponse, Response
 
 from app.core.config import get_settings
 
-_EXEMPT_PATHS = {"/health", "/docs", "/openapi.json", "/redoc", "/auth/login", "/auth/register"}
+_EXEMPT_PATHS = {
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+    "/auth/login",
+    "/auth/register",
+    "/updates/shutdown",
+}
 _CSRF_COOKIE = "oihk_basic_csrf_token"
 _CSRF_HEADER = "x-csrf-token"
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}

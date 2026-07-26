@@ -5,7 +5,6 @@ Tests for first-run security: secret generation, persistence, and reusability.
 import io
 import json
 import os
-import secrets
 import stat
 import sys
 import tempfile
@@ -34,7 +33,6 @@ def isolated_first_run(monkeypatch):
 
 
 class TestSecretGeneration:
-
     def test_generates_on_first_call(self, isolated_first_run):
         fr = isolated_first_run
         secret = fr.get_or_create_secret("test_gen", 32)
@@ -94,8 +92,9 @@ class TestSecretGeneration:
         fr = isolated_first_run
         fr.get_or_create_secret("loc_test", 32)
         secrets_path = fr._SECRETS_FILE.resolve()
-        assert _BASIC_ROOT not in secrets_path.parents, \
+        assert _BASIC_ROOT not in secrets_path.parents, (
             f"Secrets file {secrets_path} must be outside the repo"
+        )
 
     def test_no_change_me_placeholders_in_config(self):
         """Verify no 'change-me' placeholder secrets exist in config files."""
@@ -132,7 +131,9 @@ class TestSecretGeneration:
                     if pattern in content:
                         pytest.fail(f"Found placeholder '{pattern}' in {filepath}")
 
-    @pytest.mark.skipif(os.name == "nt", reason="umask-based permissions not enforceable on Windows")
+    @pytest.mark.skipif(
+        os.name == "nt", reason="umask-based permissions not enforceable on Windows"
+    )
     def test_secrets_file_restricted_permissions_unix(self, isolated_first_run):
         """On Unix: verify secrets file permissions are restricted (0o600 or stricter)."""
         fr = isolated_first_run

@@ -48,6 +48,14 @@ En el primer inicio se abre un onboarding de ocho pasos. El modelo local es opci
 
 Los secretos de firma y autenticación opcional se generan de forma atómica en el directorio de configuración del sistema operativo.
 
+## Actualizaciones seguras
+
+La aplicación de escritorio comprueba por defecto si hay una actualización, pero nunca descarga ni instala silenciosamente. Settings y About muestran canal, notas, progreso y las decisiones explícitas de descargar y reiniciar.
+
+Cada actualización exige una firma del updater de Tauri y, antes de cerrar el sidecar, crea un backup SQLite consistente y verificado bajo `%APPDATA%\OIHK-Basic\backups\pre-update\`. La desinstalación y la actualización no eliminan la base, evidencia, configuración, historial ni backups.
+
+La arquitectura y recuperación están en [docs/UPDATES.md](docs/UPDATES.md); la publicación de candidatos, en [docs/RELEASING.md](docs/RELEASING.md). CI deja siempre un draft/prerelease para validación manual.
+
 ## Desarrollo
 
 Requisitos: Python 3.11+, Node.js 18+ y, para escritorio, Rust/Tauri 2.
@@ -69,20 +77,18 @@ La interfaz queda en `http://127.0.0.1:5173` y la API, por defecto, en `http://1
 ## Calidad
 
 ```powershell
+python -m ruff check backend/app backend/run.py scripts tests
 python -m pytest -q
 
-cd backend
-python -m ruff check app tests
-python -m pytest -q
-
-cd ../frontend
+cd frontend
 npm run lint
 npm run test -- --run
 npm run build
 
 cd ../src-tauri
-cargo fmt --check
-cargo check
+cargo fmt -- --check
+cargo check --locked
+cargo test --locked
 ```
 
 La compilación completa por plataforma se explica en [docs/BUILDING.md](docs/BUILDING.md). La arquitectura y el modelo de seguridad están en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) y [SECURITY.md](SECURITY.md).

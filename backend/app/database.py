@@ -1,11 +1,11 @@
 """Database setup for OIHK Basic — SQLite local storage."""
 
-import shutil
+import sqlite3
 from collections.abc import AsyncGenerator
 from pathlib import Path
 
 from sqlalchemy import event
-from sqlalchemy.engine import Connection, make_url
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -43,45 +43,70 @@ if settings.database_url.startswith("sqlite"):
         cursor.close()
 
 
-def _backup_sqlite_before_schema_v2() -> None:
+def _installed_schema_version() -> int:
     if not settings.database_url.startswith("sqlite"):
-        return
-    database = make_url(settings.database_url).database
-    if not database or database == ":memory:":
-        return
-    source = Path(database)
-    backup = source.with_suffix(source.suffix + ".pre-v2.bak")
-    if source.is_file() and not backup.exists():
-        shutil.copy2(source, backup)
-
-
-async def _migrate_sqlite_schema(conn: Connection) -> None:
-    """Apply additive, backup-safe changes for databases created before v2."""
-    if not settings.database_url.startswith("sqlite"):
-        return
-    rows = await conn.exec_driver_sql("PRAGMA table_info(cases)")
-    columns = {row[1] for row in rows}
-    additions = {
-        "priority": "VARCHAR(20) NOT NULL DEFAULT 'normal'",
-        "tags": "JSON NOT NULL DEFAULT '[]'",
-        "notes": "TEXT NOT NULL DEFAULT ''",
-        "graph_config": "JSON NOT NULL DEFAULT '{}'",
-        "archived_at": "DATETIME",
-    }
-    for name, definition in additions.items():
-        if name not in columns:
-            await conn.exec_driver_sql(f"ALTER TABLE cases ADD COLUMN {name} {definition}")
+        return 0
+    configured = make_url(settings.database_url).database
+    if not configured or configured == ":memory:" or not Path(configured).is_file():
+        return 0
+    connection = sqlite3.connect(configured)
+    try:
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+        ).fetchone()
+        if not exists:
+            return 0
+        row = connection.execute("SELECT COALESCE(MAX(version), 0) FROM schema_migrations").fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        connection.close()
 
 
 async def init_db() -> None:
     from app import models  # noqa: F401
+    from app.core.update_service import (
+        create_verified_backup,
+        mark_update_healthy_if_current,
+        record_update_state,
+    )
+    from app.database_migrations import MIGRATIONS, run_migrations
 
     if not settings.should_create_tables:
         return
-    _backup_sqlite_before_schema_v2()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await _migrate_sqlite_schema(conn)
+    migration_backup = ""
+    configured_database = (
+        make_url(settings.database_url).database if settings.database_url.startswith("sqlite") else None
+    )
+    source_exists = bool(
+        configured_database and configured_database != ":memory:" and Path(configured_database).is_file()
+    )
+    if source_exists and _installed_schema_version() < MIGRATIONS[-1].version:
+        try:
+            backup, _metadata = create_verified_backup(
+                target_version=f"schema-{MIGRATIONS[-1].version}",
+                kind="migrations",
+            )
+            migration_backup = str(backup)
+        except Exception:
+            record_update_state(
+                stage="migration_backup_failed",
+                error_code="migration_backup_failed",
+            )
+            raise
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+            if settings.database_url.startswith("sqlite"):
+                await run_migrations(conn)
+        if settings.database_url.startswith("sqlite"):
+            mark_update_healthy_if_current()
+    except Exception:
+        record_update_state(
+            stage="migration_failed",
+            backup_path=migration_backup,
+            error_code="migration_failed",
+        )
+        raise
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

@@ -1,0 +1,55 @@
+name: Promote tested update channel
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published version tag (basic-vX.Y.Z)"
+        required: true
+        type: string
+      channel:
+        description: "Update channel"
+        required: true
+        default: alpha
+        type: choice
+        options: [alpha, beta, stable]
+      confirmation:
+        description: "Type PROMOTE after manual signed-upgrade validation"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Verify explicit approval and published source release
+        run: |
+          test "${{ inputs.confirmation }}" = "PROMOTE"
+          case "${{ inputs.tag }}" in basic-v*) ;; *) exit 1 ;; esac
+          test "$(gh release view "${{ inputs.tag }}" --json isDraft --jq .isDraft)" = "false"
+      - name: Download and validate source assets
+        run: |
+          mkdir -p staging
+          gh release download "${{ inputs.tag }}" --dir staging
+          python scripts/validate_release_artifacts.py staging --channel "${{ inputs.channel }}"
+      - name: Publish rolling channel metadata
+        run: |
+          channel_tag="basic-${{ inputs.channel }}"
+          if ! gh release view "$channel_tag" >/dev/null 2>&1; then
+            gh release create "$channel_tag" --prerelease --title "OIHK Basic ${{ inputs.channel }} update channel" --notes "Rolling signed update metadata. Do not edit manually."
+          fi
+          gh release upload "$channel_tag" \
+            "staging/latest-${{ inputs.channel }}.json" \
+            "staging/release-manifest.json" \
+            "staging/latest-${{ inputs.channel }}.json.sha256" \
+            "staging/release-manifest.json.sha256" \
+            --clobber

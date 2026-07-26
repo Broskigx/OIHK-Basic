@@ -55,13 +55,26 @@ def main() -> None:
     # Import app directly so PyInstaller bundles resolve correctly
     from app.main import app
 
-    uvicorn.run(
-        app,
-        host=args.host,
-        port=args.port,
-        reload=args.reload,
-        log_level=args.log_level,
+    if args.reload:
+        uvicorn.run(
+            "app.main:app",
+            host=args.host,
+            port=args.port,
+            reload=True,
+            log_level=args.log_level,
+        )
+        return
+
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=args.host,
+            port=args.port,
+            log_level=args.log_level,
+        )
     )
+    app.state.shutdown_callback = lambda: setattr(server, "should_exit", True)
+    server.run()
 
 
 if __name__ == "__main__":

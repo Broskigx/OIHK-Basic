@@ -21,6 +21,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CaseRead, DesktopStatus, User } from "../types";
+import { PRODUCT_VERSION } from "../version";
 import { MAIN_NAVIGATION, type PlatformArea } from "./navigation";
 
 const NAV_ICONS: Record<PlatformArea, LucideIcon> = {
@@ -39,16 +40,6 @@ const NAV_ICONS: Record<PlatformArea, LucideIcon> = {
   settings: Settings,
   about: Info,
 };
-
-// Simple version retrieval
-function getAppVersion(): string {
-  try {
-    const pkg = (window as Window & { __OIHK_VERSION__?: string }).__OIHK_VERSION__;
-    return pkg || "0.1.0";
-  } catch {
-    return "0.1.0";
-  }
-}
 
 export function PlatformShell({
   area,
@@ -109,7 +100,7 @@ export function PlatformShell({
     }
   }, []);
 
-  const appVersion = getAppVersion();
+  const appVersion = desktopStatus?.version ?? PRODUCT_VERSION;
   const searchResults = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase();
     if (!query) return [];

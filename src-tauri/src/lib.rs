@@ -1,6 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 #[derive(Default)]
@@ -12,6 +14,16 @@ struct BackendStatus {
     pid: u32,
 }
 
+#[derive(Clone, Deserialize, Serialize)]
+struct RecoveryStatus {
+    stage: String,
+    source_version: String,
+    target_version: String,
+    backup_path: String,
+    error_code: String,
+    updated_at: String,
+}
+
 #[derive(Serialize)]
 struct DesktopStatus {
     mode: &'static str,
@@ -20,6 +32,38 @@ struct DesktopStatus {
     platform: &'static str,
     api_endpoint: String,
     backend_managed: bool,
+    updater_enabled: bool,
+    recovery: Option<RecoveryStatus>,
+}
+
+fn oihk_data_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    let root = std::env::var_os("APPDATA").map(PathBuf::from);
+    #[cfg(target_os = "macos")]
+    let root = std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .map(|path| path.join("Library").join("Application Support"));
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let root = std::env::var_os("XDG_DATA_HOME")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .map(|path| path.join(".local").join("share"))
+        });
+    root.map(|path| path.join("OIHK-Basic")).ok_or_else(|| {
+        "The operating-system application data directory is unavailable.".to_string()
+    })
+}
+
+fn read_recovery_status() -> Option<RecoveryStatus> {
+    let path = oihk_data_dir()
+        .ok()?
+        .join("updates")
+        .join("last-update.json");
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
 }
 
 /// Find a free TCP port on 127.0.0.1
@@ -170,7 +214,115 @@ fn desktop_status(state: tauri::State<BackendProcess>) -> Result<DesktopStatus, 
         platform: std::env::consts::OS,
         api_endpoint: format!("http://127.0.0.1:{}", port),
         backend_managed: guard.is_some(),
+        updater_enabled: cfg!(feature = "updater-release"),
+        recovery: read_recovery_status(),
     })
+}
+
+#[tauri::command]
+fn stop_backend_for_update(
+    state: tauri::State<BackendProcess>,
+    update_token: String,
+) -> Result<(), String> {
+    if update_token.len() < 32 || update_token.len() > 256 {
+        return Err("The update preparation token is invalid.".to_string());
+    }
+    let port = std::env::var("OIHK_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(8001);
+    let mut child = {
+        let mut guard = state
+            .0
+            .lock()
+            .map_err(|_| "The managed backend state is unavailable.".to_string())?;
+        guard
+            .take()
+            .ok_or_else(|| "The updater can only stop its managed packaged backend.".to_string())?
+    };
+
+    let shutdown_url = format!("http://127.0.0.1:{}/updates/shutdown", port);
+    let request = ureq::post(&shutdown_url)
+        .set("X-OIHK-Update-Token", &update_token)
+        .set("Content-Type", "application/json")
+        .timeout(Duration::from_secs(5))
+        .send_string("{}");
+    if request
+        .as_ref()
+        .map(|response| response.status())
+        .unwrap_or(0)
+        != 202
+    {
+        if let Ok(mut guard) = state.0.lock() {
+            *guard = Some(child);
+        }
+        return Err("The backend refused the authenticated update shutdown request.".to_string());
+    }
+
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(100)),
+            Ok(None) => {
+                terminate_backend(&mut child);
+                return Err(
+                    "The local service did not stop within the safety timeout. Installation was cancelled."
+                        .to_string(),
+                );
+            }
+            Err(_) => {
+                terminate_backend(&mut child);
+                return Err(
+                    "The local service exit could not be verified. Installation was cancelled."
+                        .to_string(),
+                );
+            }
+        }
+    }
+}
+
+#[tauri::command]
+fn restart_backend_after_update_failure(state: tauri::State<BackendProcess>) -> Result<(), String> {
+    let port = std::env::var("OIHK_PORT")
+        .ok()
+        .and_then(|value| value.parse::<u16>().ok())
+        .unwrap_or(8001);
+    {
+        let guard = state
+            .0
+            .lock()
+            .map_err(|_| "The managed backend state is unavailable.".to_string())?;
+        if guard.is_some() {
+            return Ok(());
+        }
+    }
+    let child = start_backend(port)?;
+    {
+        let mut guard = state
+            .0
+            .lock()
+            .map_err(|_| "The managed backend state is unavailable.".to_string())?;
+        *guard = Some(child);
+    }
+    wait_for_backend(port, 30)
+}
+
+#[tauri::command]
+fn open_backup_directory() -> Result<(), String> {
+    let directory = oihk_data_dir()?.join("backups").join("pre-update");
+    std::fs::create_dir_all(&directory)
+        .map_err(|_| "The backup directory could not be created.".to_string())?;
+    #[cfg(target_os = "windows")]
+    let status = Command::new("explorer.exe").arg(&directory).status();
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open").arg(&directory).status();
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let status = Command::new("xdg-open").arg(&directory).status();
+    match status {
+        Ok(result) if result.success() => Ok(()),
+        _ => Err("The backup directory could not be opened.".to_string()),
+    }
 }
 
 /// Check if a backend is already running on a known port
@@ -200,7 +352,11 @@ pub fn run() {
     let port = existing_port.unwrap_or_else(find_free_port);
     std::env::set_var("OIHK_PORT", port.to_string());
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(feature = "updater-release")]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+
+    builder
         .manage(BackendProcess::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -262,7 +418,13 @@ pub fn run() {
                 }
             }
         })
-        .invoke_handler(tauri::generate_handler![get_backend_url, desktop_status])
+        .invoke_handler(tauri::generate_handler![
+            get_backend_url,
+            desktop_status,
+            stop_backend_for_update,
+            restart_backend_after_update_failure,
+            open_backup_directory
+        ])
         .run(tauri::generate_context!())
         .expect("Error while running OIHK Basic");
 }
