@@ -1,0 +1,106 @@
+name: Windows signed release candidate
+
+on:
+  push:
+    tags: ["basic-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  secrets:
+    name: Gitleaks release gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc # v2
+
+  build:
+    name: Build signed NSIS candidate
+    needs: secrets
+    runs-on: windows-latest
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Validate tag and canonical version
+        shell: pwsh
+        run: |
+          python scripts/version.py check
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ("${{ github.ref_name }}" -ne "basic-v$version") {
+            throw "Tag must exactly match VERSION (expected basic-v$version)."
+          }
+      - name: Install build and audit dependencies
+        run: python -m pip install --disable-pip-version-check -e "./backend[dev]" pyinstaller pip-audit
+      - name: Python dependency audit
+        run: python -m pip_audit backend
+      - name: Install and audit frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit --audit-level=high
+      - name: Pre-build quality gates
+        shell: pwsh
+        run: |
+          python -m ruff check backend/app backend/run.py scripts tests
+          python -m pytest -q
+          Push-Location frontend
+          npm run lint
+          npm test -- --run
+          npm run build
+          Pop-Location
+          Push-Location src-tauri
+          cargo fmt -- --check
+          cargo check --locked
+          cargo check --locked --features updater-release
+          cargo test --locked
+          cargo install cargo-audit --version 0.22.2 --locked
+          cargo audit
+          Pop-Location
+      - name: Build signed sidecar, installer, and updater
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Release -Channel alpha
+      - name: Extract release notes
+        run: python scripts/extract_release_notes.py dist/release-notes.md
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: oihk-basic-${{ github.ref_name }}-candidate
+          path: |
+            dist/windows/*
+            dist/release-notes.md
+          if-no-files-found: error
+          retention-days: 14
+      - name: Create or update draft prerelease
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = (Get-Content VERSION -Raw).Trim()
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --draft --prerelease --verify-tag --title "OIHK Basic v$version (alpha)" --notes-file dist/release-notes.md
+          }
+          $assets = Get-ChildItem dist/windows -File | ForEach-Object { $_.FullName }
+          gh release upload $tag $assets --clobber
+          $release = gh release view $tag --json isDraft,isPrerelease | ConvertFrom-Json
+          if (-not $release.isDraft -or -not $release.isPrerelease) {
+            throw "Release candidate must remain draft and prerelease."
+          }

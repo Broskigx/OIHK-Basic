@@ -22,8 +22,13 @@ User data is separate from the installation at `%APPDATA%\OIHK-Basic\`:
 - `oihk-basic.db`: SQLite database.
 - `storage\`: managed evidence and imported files.
 - `config\`: generated local secrets.
+- `backups\pre-update\`: verified updater backups and metadata.
+- `updates\last-update.json`: sanitized recovery state.
+- `logs\updater.log`: rotated updater events without case data.
 
 Uninstalling the executable preserves this directory. Use the in-app backup before manually removing it.
+
+Update checks are enabled by default but never install automatically. Use Settings or About to review the signed release, download it, and separately approve restart. See [UPDATES.md](UPDATES.md) for recovery.
 
 ## Troubleshooting
 

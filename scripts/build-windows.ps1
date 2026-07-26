@@ -2,6 +2,12 @@
 # OIHK Basic - Windows Build Script
 # Builds the complete application: backend sidecar + frontend + Tauri desktop
 
+param(
+    [switch]$Release,
+    [ValidateSet("alpha", "beta", "stable")]
+    [string]$Channel = "alpha"
+)
+
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 $BackendDir = Join-Path $ProjectRoot "backend"
@@ -9,9 +15,34 @@ $FrontendDir = Join-Path $ProjectRoot "frontend"
 $TauriDir = Join-Path $ProjectRoot "src-tauri"
 $DistDir = Join-Path $ProjectRoot "dist"
 $SidecarDir = Join-Path $DistDir "sidecar"
+$ReleaseConfig = Join-Path $TauriDir "tauri.release.conf.json"
+
+function Assert-WorkspacePath([string]$Path) {
+    $resolvedRoot = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\') + '\'
+    $resolvedPath = [System.IO.Path]::GetFullPath($Path)
+    if (-not $resolvedPath.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing filesystem mutation outside the repository: $resolvedPath"
+    }
+}
 
 Write-Host "=== OIHK Basic Build (Windows) ===" -ForegroundColor Cyan
 Write-Host "Project root: $ProjectRoot" -ForegroundColor White
+python (Join-Path $ProjectRoot "scripts\version.py") check
+if ($LASTEXITCODE -ne 0) { throw "Version metadata validation failed." }
+
+if ($Release) {
+    if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
+        throw "TAURI_SIGNING_PRIVATE_KEY is required for a signed updater release build."
+    }
+    if (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
+        throw "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required for a signed updater release build."
+    }
+    if (-not $env:TAURI_UPDATER_PUBLIC_KEY) {
+        throw "TAURI_UPDATER_PUBLIC_KEY is required for a signed updater release build."
+    }
+    python (Join-Path $ProjectRoot "scripts\generate_release_config.py") --channel $Channel
+    if ($LASTEXITCODE -ne 0) { throw "Updater release configuration failed." }
+}
 
 # 1. Verify tools
 Write-Host "`n[1/8] Verifying tools..." -ForegroundColor Yellow
@@ -38,17 +69,21 @@ $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
 # 3. Install Python dependencies
 Write-Host "`n[3/8] Installing Python dependencies..." -ForegroundColor Yellow
-& $venvPython -m pip install -e "${BackendDir}[dev]" pyinstaller --quiet
+& $venvPython -m pip install -e "${BackendDir}[dev]" pyinstaller pip-audit --quiet
+if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed." }
 Write-Host "  Done" -ForegroundColor Green
+& $venvPython -m pip_audit $BackendDir
+if ($LASTEXITCODE -ne 0) { throw "Python dependency audit failed." }
 
 # 4. Run lint
 Write-Host "`n[4/8] Running lint..." -ForegroundColor Yellow
-& $venvPython -m ruff check "$BackendDir\app" "$BackendDir\tests" --quiet
+& $venvPython -m ruff check "$BackendDir\app" "$BackendDir\run.py" "$ProjectRoot\scripts" "$ProjectRoot\tests" --quiet
+if ($LASTEXITCODE -ne 0) { throw "Python lint failed." }
 Write-Host "  Lint passed" -ForegroundColor Green
 
 # 5. Run backend tests
 Write-Host "`n[5/8] Running backend tests..." -ForegroundColor Yellow
-Set-Location $BackendDir
+Set-Location $ProjectRoot
 & $venvPython -m pytest --quiet --tb=short --no-header 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [error] Tests failed" -ForegroundColor Red
@@ -62,6 +97,8 @@ Set-Location $ProjectRoot
 # Clean previous build
 $pyiBuild = Join-Path $ProjectRoot "build"
 $pyiDist = Join-Path $ProjectRoot "dist\sidecar"
+Assert-WorkspacePath $pyiBuild
+Assert-WorkspacePath $pyiDist
 if (Test-Path $pyiBuild) { Remove-Item -Recurse -Force $pyiBuild }
 if (Test-Path $pyiDist) { Remove-Item -Recurse -Force $pyiDist }
 
@@ -86,11 +123,14 @@ if (-not $hostLine) {
 $targetTriple = ($hostLine.ToString().Split(':', 2)[1]).Trim()
 Copy-Item "$pyiDist\oihk-basic-backend.exe" "$pyiDist\oihk-basic-backend-$targetTriple.exe" -Force
 Write-Host "  Sidecar built: $pyiDist\oihk-basic-backend.exe" -ForegroundColor Green
+& (Join-Path $ProjectRoot "scripts\smoke-sidecar.ps1") -SidecarPath "$pyiDist\oihk-basic-backend.exe"
+if ($LASTEXITCODE -ne 0) { throw "Packaged sidecar smoke test failed." }
 
 # 7. Build frontend
 Write-Host "`n[7/8] Building frontend..." -ForegroundColor Yellow
 Set-Location $FrontendDir
 npm ci --silent
+if ($LASTEXITCODE -ne 0) { throw "Frontend dependency installation failed." }
 npm run build
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [error] Frontend build failed" -ForegroundColor Red
@@ -102,19 +142,42 @@ Write-Host "  Frontend built" -ForegroundColor Green
 Write-Host "`n[8/8] Building Tauri desktop app..." -ForegroundColor Yellow
 Set-Location $TauriDir
 Set-Location $ProjectRoot
-& (Join-Path $FrontendDir "node_modules\.bin\tauri.cmd") build --bundles nsis --config "src-tauri/tauri.sidecar.conf.json"
+$bundleDir = Join-Path $TauriDir "target\release\bundle\nsis"
+Assert-WorkspacePath $bundleDir
+if (Test-Path -LiteralPath $bundleDir) {
+    Remove-Item -LiteralPath $bundleDir -Recurse -Force
+}
+$tauriConfig = if ($Release) { "src-tauri/tauri.release.conf.json" } else { "src-tauri/tauri.sidecar.conf.json" }
+if ($Release) {
+    & (Join-Path $FrontendDir "node_modules\.bin\tauri.cmd") build --bundles nsis --config $tauriConfig --features updater-release --ci
+} else {
+    & (Join-Path $FrontendDir "node_modules\.bin\tauri.cmd") build --bundles nsis --config $tauriConfig --ci
+}
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [error] Tauri build failed" -ForegroundColor Red
     exit 1
 }
+& (Join-Path $ProjectRoot "scripts\smoke-desktop.ps1") `
+    -DesktopPath (Join-Path $TauriDir "target\release\oihk-basic-desktop.exe")
+if ($LASTEXITCODE -ne 0) { throw "Release desktop smoke test failed." }
 
 # Copy installer to dist
 $tauriTarget = Join-Path $TauriDir "target\release"
-$installerSource = Get-ChildItem "$tauriTarget\bundle\nsis\*.exe" | Select-Object -First 1
-if ($installerSource) {
-    New-Item -ItemType Directory -Force -Path (Join-Path $DistDir "windows") | Out-Null
-    Copy-Item $installerSource.FullName (Join-Path $DistDir "windows\") -Force
-    Write-Host "  Installer: $($installerSource.Name)" -ForegroundColor Green
+$installerCandidates = @(Get-ChildItem -LiteralPath $bundleDir -Filter "*.exe" -File)
+if ($installerCandidates.Count -ne 1) {
+    throw "Expected exactly one NSIS installer, found $($installerCandidates.Count)."
+}
+$installerSource = $installerCandidates[0]
+$windowsDist = Join-Path $DistDir "windows"
+Assert-WorkspacePath $windowsDist
+if (Test-Path -LiteralPath $windowsDist) {
+    Remove-Item -LiteralPath $windowsDist -Recurse -Force
+}
+New-Item -ItemType Directory -Force -Path $windowsDist | Out-Null
+Copy-Item $installerSource.FullName $windowsDist -Force
+Write-Host "  Installer: $($installerSource.Name)" -ForegroundColor Green
+if ($Release) {
+    Get-ChildItem "$bundleDir\*.nsis.zip*" | Copy-Item -Destination $windowsDist -Force
 }
 
 # Generate SHA-256
@@ -123,6 +186,24 @@ foreach ($artifact in $artifacts) {
     $hash = Get-FileHash $artifact.FullName -Algorithm SHA256
     "$($hash.Hash)  $($artifact.Name)" | Out-File "$($artifact.FullName).sha256" -Encoding ascii
     Write-Host "  SHA256 ($($artifact.Name)): $($hash.Hash)" -ForegroundColor Green
+}
+
+if ($Release) {
+    $updaterArchive = Get-ChildItem "$windowsDist\*.nsis.zip" | Select-Object -First 1
+    $updaterSignature = Get-ChildItem "$windowsDist\*.nsis.zip.sig" | Select-Object -First 1
+    if (-not $installerSource -or -not $updaterArchive -or -not $updaterSignature) {
+        throw "Signed NSIS updater artifacts are incomplete."
+    }
+    $version = (Get-Content (Join-Path $ProjectRoot "VERSION") -Raw).Trim()
+    python (Join-Path $ProjectRoot "scripts\generate_update_metadata.py") `
+        --tag "basic-v$version" `
+        --channel $Channel `
+        --installer (Join-Path $windowsDist $installerSource.Name) `
+        --updater $updaterArchive.FullName `
+        --signature $updaterSignature.FullName `
+        --output-dir $windowsDist
+    python (Join-Path $ProjectRoot "scripts\validate_release_artifacts.py") $windowsDist --channel $Channel
+    if ($LASTEXITCODE -ne 0) { throw "Release artifact validation failed." }
 }
 
 Write-Host "`n=== Build complete! ===" -ForegroundColor Cyan

@@ -9,9 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.deps import get_current_user
 from app.core.logging import configure_logging
-from app.database import SessionLocal, init_db
+from app.database import SessionLocal, engine, init_db
 from app.middleware.csrf import CSRFMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.update_gate import UpdateGateMiddleware
 from app.routers import (
     assistant,
     auth,
@@ -30,14 +31,14 @@ from app.routers import (
     sources,
     targets,
     transforms,
+    updates,
 )
 from app.routers import (
     settings as settings_router,
 )
+from app.version import PRODUCT_VERSION
 
 logger = logging.getLogger(__name__)
-
-VERSION = "0.1.0"
 
 
 def _startup_banner() -> str:
@@ -48,7 +49,7 @@ def _startup_banner() -> str:
         "  OIHK Basic  |  Local-first investigation platform\n"
         "  Secure - Offline-capable - Evidence-aware\n"
         "------------------------------------------------------------\n"
-        f"  v{VERSION}  |  env: {settings.environment}\n"
+        f"  v{PRODUCT_VERSION}  |  env: {settings.environment}\n"
         "  API docs: /docs\n"
         "============================================================"
     )
@@ -129,13 +130,16 @@ async def lifespan(app: FastAPI):
     _enforce_hardening()
     await init_db()
     await _bootstrap_admin()
-    yield
+    try:
+        yield
+    finally:
+        await engine.dispose()
 
 
 settings = get_settings()
 app = FastAPI(
     title=settings.app_name,
-    version=VERSION,
+    version=PRODUCT_VERSION,
     description="OIHK Basic — Local-first investigation and OSINT platform.",
     lifespan=lifespan,
 )
@@ -143,6 +147,7 @@ app = FastAPI(
 if settings.rate_limit_enabled:
     app.add_middleware(RateLimitMiddleware)
 
+app.add_middleware(UpdateGateMiddleware)
 app.add_middleware(CSRFMiddleware)
 
 app.add_middleware(
@@ -156,6 +161,7 @@ app.add_middleware(
 # Public routers
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(updates.router)
 
 # Authenticated routers
 _auth = [Depends(get_current_user)]

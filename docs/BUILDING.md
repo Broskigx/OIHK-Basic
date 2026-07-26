@@ -21,6 +21,17 @@ Desde la raíz:
 .\scripts\build-windows.ps1
 ```
 
+El build local anterior no registra el plugin de updater ni genera sus artefactos. Un candidato firmado activa la feature `updater-release` y requiere las tres variables de firma:
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = "<secret-store value>"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<secret-store value>"
+$env:TAURI_UPDATER_PUBLIC_KEY = "<repository public variable>"
+.\scripts\build-windows.ps1 -Release -Channel alpha
+```
+
+El script genera un overlay Tauri ignorado por Git. No escribe la clave privada en disco.
+
 ```bash
 # Linux
 ./scripts/build-linux.sh
@@ -29,7 +40,7 @@ Desde la raíz:
 ./scripts/build-macos.sh
 ```
 
-Cada script ejecuta lint y pruebas, compila el backend con PyInstaller, genera el nombre de sidecar requerido por el target triple de Rust, compila frontend, construye Tauri y calcula SHA-256 de los artefactos.
+Cada script ejecuta lint, pruebas y auditorías de Python/npm, compila el backend con PyInstaller, genera el nombre de sidecar requerido por el target triple de Rust, compila frontend, construye Tauri y calcula SHA-256 de los artefactos. CI añade `cargo audit` sobre `Cargo.lock`; las advertencias de mantenimiento transitivas se revisan por separado de vulnerabilidades explotables.
 
 ## Artefactos
 
@@ -41,9 +52,13 @@ dist/
   macos/     # app/dmg por arquitectura y checksums
 ```
 
-El build Windows verificado produce `OIHK Basic_0.1.0_x64-setup.exe`. El instalador se probó mediante instalación silenciosa, arranque directo del sidecar, arranque del backend administrado por Tauri y desinstalación.
+El build Windows base produce `OIHK Basic_0.1.0_x64-setup.exe`. El nuevo candidato con updater firmado no se declara validado hasta completar el checklist manual con claves y endpoint de prueba.
 
 ## Pasos manuales
+
+El nombre/version del instalador procede de `VERSION`. El build de release exige el instalador NSIS, `.nsis.zip`, `.sig`, checksums y JSON consistentes. `smoke-sidecar.ps1` arranca el ejecutable PyInstaller de forma aislada y comprueba `/health` sin depender de Python instalado.
+
+La compilación automática no sustituye la validación manual del upgrade firmado en Windows Sandbox descrita en [RELEASING.md](RELEASING.md). Ese control permanece pendiente hasta disponer de claves de producción y un endpoint HTTPS accesible para el cliente.
 
 ```powershell
 python -m pip install -e ".\backend"
@@ -78,5 +93,7 @@ npm run desktop:dev
 El modo release no depende de Python: localiza el sidecar empaquetado, selecciona un puerto libre de `127.0.0.1`, espera `/health` y termina el proceso hijo al cerrar la ventana.
 
 ## Release checklist
+
+Véase [RELEASING.md](RELEASING.md) y [UPDATES.md](UPDATES.md). La configuración Tauri de release es generada, contiene solo la clave pública y permanece ignorada por Git.
 
 Véase [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). Los artefactos, bases locales, evidencia, dependencias, caches y secretos permanecen ignorados por Git.

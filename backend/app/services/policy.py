@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.core.config import get_settings
+from app.version import PRODUCT_VERSION
 
 
 @dataclass
@@ -33,7 +34,7 @@ async def fetch_public_url(url: str) -> FetchedPage:
     async with httpx.AsyncClient(
         timeout=30.0,
         follow_redirects=True,
-        headers={"User-Agent": "OIHK-Basic/0.1.0 (research tool; contact for takedown)"},
+        headers={"User-Agent": f"OIHK-Basic/{PRODUCT_VERSION} (research tool; contact for takedown)"},
     ) as client:
         resp = await client.get(url)
 

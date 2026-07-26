@@ -365,7 +365,7 @@ class ApplicationSettings(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
-    schema_version: Mapped[int] = mapped_column(Integer, default=1)
+    schema_version: Mapped[int] = mapped_column(Integer, default=2)
     onboarding_complete: Mapped[bool] = mapped_column(Boolean, default=False)
     general: Mapped[dict] = mapped_column(JSON, default=dict)
     appearance: Mapped[dict] = mapped_column(JSON, default=dict)

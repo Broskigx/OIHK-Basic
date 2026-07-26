@@ -36,6 +36,8 @@ frontend/*.tsbuildinfo
 node_modules/
 src-tauri/target/
 src-tauri/gen/
+src-tauri/tauri.release.conf.json
+src-tauri/tauri.release.test.conf.json
 
 # IDE
 .idea/

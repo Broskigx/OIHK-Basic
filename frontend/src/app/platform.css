@@ -2514,6 +2514,43 @@ body { margin: 0; min-height: 100vh; background: var(--bg-root); }
   }
 }
 
+.update-panel {
+  margin-top: 16px;
+}
+
+.update-panel p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-notes {
+  padding: 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+}
+
+.update-progress {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.update-progress progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.spin {
+  animation: update-spin 1s linear infinite;
+}
+
+@keyframes update-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ===================================================================
    SKELETON LOADING
    =================================================================== */

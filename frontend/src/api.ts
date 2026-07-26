@@ -471,6 +471,28 @@ export async function downloadStorageBackup(): Promise<Blob> {
   return response.blob();
 }
 
+export type UpdatePreparation = {
+  update_token: string;
+  backup_path: string;
+  backup_sha256: string;
+  schema_version: number;
+  database_bytes: number;
+};
+
+export function prepareDesktopUpdate(
+  targetVersion: string,
+  channel: "alpha" | "beta" | "stable",
+): Promise<UpdatePreparation> {
+  return request<UpdatePreparation>("/updates/prepare", {
+    method: "POST",
+    body: JSON.stringify({ target_version: targetVersion, channel }),
+  });
+}
+
+export function resumeDesktopUpdate(): Promise<void> {
+  return request<void>("/updates/resume", { method: "POST" });
+}
+
 export function listSources(caseId: string): Promise<SourceRead[]> {
   return request<SourceRead[]>(`/sources/${caseId}`);
 }

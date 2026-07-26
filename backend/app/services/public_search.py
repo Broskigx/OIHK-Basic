@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.core.config import get_settings
+from app.version import PRODUCT_VERSION
 
 
 async def search_public(query: str, max_results: int = 5) -> list[dict]:
@@ -38,7 +39,7 @@ async def _search_searxng(query: str, max_results: int) -> list[dict]:
         resp = await client.get(
             f"{settings.searxng_url}/search",
             params={"q": query, "format": "json", "language": "en", "categories": "general"},
-            headers={"User-Agent": "OIHK-Basic/0.1.0"},
+            headers={"User-Agent": f"OIHK-Basic/{PRODUCT_VERSION}"},
         )
         if resp.status_code == 200:
             data = resp.json()

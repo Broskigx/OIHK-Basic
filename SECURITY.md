@@ -24,7 +24,11 @@ OSINT adapters can contact public services only after a user action. Results are
 
 ## Desktop hardening
 
-The Tauri webview exposes only core capabilities and two narrow commands for backend status. It does not expose the shell plugin, filesystem access or arbitrary command execution. CSP restricts scripts, objects, base URLs, connections and images. The packaged backend is started with loopback and authentication-disabled desktop settings.
+The Tauri webview exposes core capabilities, the official updater default capability, and narrow commands for managed-backend lifecycle/status and opening the fixed backup directory. It does not expose the shell plugin, arbitrary filesystem access or arbitrary command execution. CSP restricts scripts, objects, base URLs, connections and images. The packaged backend is started with loopback and authentication-disabled desktop settings.
+
+Updates require a Tauri Minisign signature embedded in metadata served over HTTPS. The production private key is accepted only through CI secrets. A verified SQLite backup and one-use loopback shutdown token are mandatory before installation. Invalid signatures, failed backups, active writes and failed sidecar shutdowns fail closed.
+
+Release workflows pin third-party actions to immutable commits, run Gitleaks and dependency audits, and create draft prereleases only. See [docs/UPDATES.md](docs/UPDATES.md) for recovery and [docs/RELEASING.md](docs/RELEASING.md) for key custody and rotation.
 
 ## Reporting a vulnerability
 
