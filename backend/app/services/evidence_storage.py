@@ -13,11 +13,14 @@ from app.core.config import get_settings
 
 
 def _ensure_storage(subdir: str = "") -> Path:
-    base = Path(get_settings().storage_dir).resolve()
-    if subdir:
-        base = base / subdir
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    root = Path(get_settings().storage_dir).resolve()
+    candidate = (root / subdir).resolve() if subdir else root
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="File path is outside managed storage.") from exc
+    candidate.mkdir(parents=True, exist_ok=True)
+    return candidate
 
 
 def safe_storage_path(path_value: str) -> Path:
@@ -43,7 +46,11 @@ def store_evidence_bytes(
     # Sanitize filename to prevent path traversal
     safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in filename)[:200]
     storage_dir = _ensure_storage(os.path.join(subdir, case_id))
-    stored_path = storage_dir / f"{sha256[:16]}_{safe_name}"
+    stored_path = (storage_dir / f"{sha256[:16]}_{safe_name}").resolve()
+    try:
+        stored_path.relative_to(storage_dir)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="File path is outside managed storage.") from exc
     descriptor, temporary_name = tempfile.mkstemp(prefix="incoming-", dir=storage_dir)
     try:
         with os.fdopen(descriptor, "wb") as destination:

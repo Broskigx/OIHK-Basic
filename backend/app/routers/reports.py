@@ -23,9 +23,10 @@ from app.schemas import (
 )
 from app.services.local_models import build_local_provider
 from app.services.repository import audit
+from app.version import PRODUCT_VERSION
 
 router = APIRouter(prefix="/reports", tags=["reports"])
-VERSION = "0.1.0"
+VERSION = PRODUCT_VERSION
 
 
 async def _dataset(session: AsyncSession, case: models.Case) -> dict:

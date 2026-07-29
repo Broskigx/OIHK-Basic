@@ -8,9 +8,7 @@ These tests verify that:
 4. Data directories are separate
 """
 
-import os
 import re
-import sys
 from pathlib import Path
 
 
@@ -70,7 +68,7 @@ def test_no_cross_imports_from_basic_to_full():
     for py_file in basic_backend.rglob("*.py"):
         issues.extend(_check_file_for_patterns(py_file, _PROHIBITED_IMPORTS_IN_BASIC))
 
-    assert len(issues) == 0, f"Cross-imports found:\n" + "\n".join(issues)
+    assert len(issues) == 0, "Cross-imports found:\n" + "\n".join(issues)
 
 
 def test_package_names_unique():
@@ -79,12 +77,16 @@ def test_package_names_unique():
     assert pyproject.exists(), "pyproject.toml not found"
 
     content = pyproject.read_text()
-    assert "oihk-basic-backend" in content, "Package name should be 'oihk-basic-backend'"
+    assert "oihk-basic-backend" in content, (
+        "Package name should be 'oihk-basic-backend'"
+    )
 
     package_json = _basic_dir() / "frontend" / "package.json"
     assert package_json.exists(), "package.json not found"
     content = package_json.read_text()
-    assert "oihk-basic-frontend" in content, "Package name should be 'oihk-basic-frontend'"
+    assert "oihk-basic-frontend" in content, (
+        "Package name should be 'oihk-basic-frontend'"
+    )
 
 
 def _safe_read_text(filepath: Path) -> str:
@@ -100,7 +102,11 @@ def _iter_backend_py_files():
     backend_dir = _basic_dir() / "backend"
     for py_file in backend_dir.rglob("*.py"):
         # Skip files inside virtual environments
-        if ".venv" in py_file.parts or "venv" in py_file.parts or "env" in py_file.parts:
+        if (
+            ".venv" in py_file.parts
+            or "venv" in py_file.parts
+            or "env" in py_file.parts
+        ):
             continue
         yield py_file
 
@@ -112,9 +118,11 @@ def test_no_hardcoded_developer_paths():
         for py_file in _iter_backend_py_files():
             content = _safe_read_text(py_file)
             if pattern in content:
-                issues.append(f"{py_file.relative_to(_basic_dir())}: Contains {pattern}")
+                issues.append(
+                    f"{py_file.relative_to(_basic_dir())}: Contains {pattern}"
+                )
 
-    assert len(issues) == 0, f"Hardcoded paths found:\n" + "\n".join(issues)
+    assert len(issues) == 0, "Hardcoded paths found:\n" + "\n".join(issues)
 
 
 def test_no_hardcoded_secrets():
@@ -130,9 +138,11 @@ def test_no_hardcoded_secrets():
         content = _safe_read_text(py_file)
         for pattern in secret_patterns:
             if re.search(pattern, content):
-                issues.append(f"{py_file.relative_to(_basic_dir())}: Possible hardcoded secret")
+                issues.append(
+                    f"{py_file.relative_to(_basic_dir())}: Possible hardcoded secret"
+                )
 
-    assert len(issues) == 0, f"Possible secrets found:\n" + "\n".join(issues)
+    assert len(issues) == 0, "Possible secrets found:\n" + "\n".join(issues)
 
 
 def test_data_dir_uses_oihk_basic():
@@ -142,8 +152,9 @@ def test_data_dir_uses_oihk_basic():
 
     content = config_py.read_text()
     # The data dir should use "OIHK-Basic" (with hyphen)
-    assert '"OIHK-Basic"' in content or "'OIHK-Basic'" in content, \
+    assert '"OIHK-Basic"' in content or "'OIHK-Basic'" in content, (
         "Data directory should reference 'OIHK-Basic'"
+    )
 
 
 def test_frontend_connects_to_localhost():
@@ -153,7 +164,9 @@ def test_frontend_connects_to_localhost():
 
     content = api_ts.read_text()
     assert "127.0.0.1" in content, "API should connect to 127.0.0.1"
-    assert "localhost" in content or "127.0.0.1" in content, "API should connect to localhost"
+    assert "localhost" in content or "127.0.0.1" in content, (
+        "API should connect to localhost"
+    )
     # Should NOT connect to external services by default
     external_services = ["api.github", "api.google", "api.cloudflare"]
     for service in external_services:
@@ -177,8 +190,9 @@ def test_vite_binds_to_localhost():
     assert vite_config.exists(), "vite.config.ts not found"
     content = vite_config.read_text()
     # Should not expose to network
-    assert "127.0.0.1" in content or "strictPort" in content, \
+    assert "127.0.0.1" in content or "strictPort" in content, (
         "Vite should bind to specific local interface"
+    )
 
 
 def test_csp_limits_connections():
@@ -186,7 +200,10 @@ def test_csp_limits_connections():
     index_html = _basic_dir() / "frontend" / "index.html"
     assert index_html.exists(), "index.html not found"
     content = index_html.read_text()
-    assert "content-security-policy" in content.lower() or "Content-Security-Policy" in content, \
-        "CSP should be set"
-    assert "127.0.0.1" in content or "localhost" in content, \
+    assert (
+        "content-security-policy" in content.lower()
+        or "Content-Security-Policy" in content
+    ), "CSP should be set"
+    assert "127.0.0.1" in content or "localhost" in content, (
         "CSP should allow local connections"
+    )

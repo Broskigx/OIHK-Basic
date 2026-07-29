@@ -4,6 +4,8 @@ import re
 
 from app.forensic.types import TextExtraction
 
+_MAX_OOXML_MEMBER_BYTES = 10 * 1024 * 1024
+
 
 def extract_text(data: bytes, filename: str, content_type: str) -> TextExtraction:
     """Extract text from file data based on type."""
@@ -69,15 +71,23 @@ def _extract_ooxml(data: bytes, errors: list[str]) -> str:
 
         texts: list[str] = []
         with zipfile.ZipFile(io.BytesIO(data)) as z:
-            if "word/document.xml" in z.namelist():
-                xml = z.read("word/document.xml")
-                # Simple XML tag stripping
-                text = xml.decode("utf-8", errors="replace")
-                text = re.sub(r"<[^>]+>", " ", text)
-                text = re.sub(r"\s+", " ", text)
-                texts.append(text)
-            if "xl/sharedStrings.xml" in z.namelist():
-                xml = z.read("xl/sharedStrings.xml")
+            for member_name in ("word/document.xml", "xl/sharedStrings.xml"):
+                try:
+                    member = z.getinfo(member_name)
+                except KeyError:
+                    continue
+                if member.file_size > _MAX_OOXML_MEMBER_BYTES:
+                    errors.append(
+                        f"OOXML member {member_name} exceeds the {_MAX_OOXML_MEMBER_BYTES}-byte extraction limit"
+                    )
+                    continue
+                with z.open(member) as stream:
+                    xml = stream.read(_MAX_OOXML_MEMBER_BYTES + 1)
+                if len(xml) > _MAX_OOXML_MEMBER_BYTES:
+                    errors.append(
+                        f"OOXML member {member_name} exceeds the {_MAX_OOXML_MEMBER_BYTES}-byte extraction limit"
+                    )
+                    continue
                 text = xml.decode("utf-8", errors="replace")
                 text = re.sub(r"<[^>]+>", " ", text)
                 text = re.sub(r"\s+", " ", text)

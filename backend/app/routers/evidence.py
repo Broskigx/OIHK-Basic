@@ -174,7 +174,7 @@ async def preview_evidence(
     path = safe_evidence_path(item.storage_path)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Managed evidence file is missing from storage.")
-    safe_inline = item.mime_type.startswith("image/") and item.mime_type not in {"image/svg+xml"}
+    safe_inline = item.mime_type in {"image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp"}
     media_type = item.mime_type if safe_inline else "application/octet-stream"
     disposition = "inline" if safe_inline else "attachment"
     return FileResponse(

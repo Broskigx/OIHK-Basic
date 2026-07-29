@@ -245,7 +245,7 @@ export function DashboardView({
       <div className="dashboard-quick-actions" aria-label="Quick actions">
         <button type="button" onClick={onNewCase}><Plus size={15} /><span><strong>New investigation</strong><small>Create an authorized local case</small></span></button>
         <button type="button" onClick={() => onNavigate("investigations")}><Upload size={15} /><span><strong>Import investigation</strong><small>Open versioned JSON import</small></span></button>
-        <button type="button" onClick={() => onNavigate("entities")}><UserPlus size={15} /><span><strong>Add entity</strong><small>Record a verified graph node</small></span></button>
+        <button type="button" onClick={() => onNavigate("graph")}><UserPlus size={15} /><span><strong>Add entity</strong><small>Record a verified graph node</small></span></button>
         <button type="button" onClick={() => onNavigate("evidence")}><FileArchive size={15} /><span><strong>Import evidence</strong><small>Hash into managed storage</small></span></button>
         <button type="button" onClick={() => onNavigate("models")}><Cpu size={15} /><span><strong>Local model</strong><small>Configure LM Studio or Ollama</small></span></button>
         <button type="button" onClick={() => onNavigate("graph")}><Network size={15} /><span><strong>Open graph</strong><small>Continue visual analysis</small></span></button>

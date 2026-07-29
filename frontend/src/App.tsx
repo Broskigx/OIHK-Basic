@@ -20,6 +20,7 @@ import { OnboardingDialog } from "./features/onboarding/OnboardingDialog";
 import { usePlatformCatalogs } from "./features/settings/usePlatformCatalogs";
 import { TimelineView } from "./features/timeline";
 import { ToolsWorkspaceView } from "./features/tools/ToolsWorkspaceView";
+import { useUpdater } from "./features/updates/useUpdater";
 import { useCaseManager } from "./hooks/useCaseManager";
 import { useGraphInteraction } from "./hooks/useGraphInteraction";
 import { EmptyState } from "./shared/ui/EmptyState";
@@ -40,6 +41,11 @@ export function App({ currentUser }: { currentUser: User }) {
   const caseMgr = useCaseManager();
   const graph = useGraphInteraction();
   const catalogs = usePlatformCatalogs();
+  const updater = useUpdater(
+    applicationSettings?.general.check_updates ?? false,
+    applicationSettings?.general.update_channel ?? "alpha",
+    desktopStatus?.updater_enabled ?? false,
+  );
 
   const activeCaseId = caseMgr.activeCaseId;
   const activeCase = !route.caseId || route.caseId === activeCaseId ? caseMgr.activeCase : undefined;
@@ -284,6 +290,14 @@ export function App({ currentUser }: { currentUser: User }) {
     }
   };
 
+  const addManualEntity = async (event: React.FormEvent) => {
+    try {
+      await graph.addManualEntity(event, caseMgr.activeCaseId, graph.selectedNode, refreshActiveCase);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not add entity");
+    }
+  };
+
   const runTransformOnNode = async (transformId: string, node: GraphNode) => {
     try {
       await graph.runTransformOnNode(transformId, node, caseMgr.activeCaseId, refreshActiveCase);
@@ -424,6 +438,9 @@ export function App({ currentUser }: { currentUser: User }) {
             showFilters={graph.showFilters}
             expanding={graph.expanding}
             caseId={caseMgr.activeCaseId}
+            manualEntity={graph.manualEntity}
+            onManualEntityChange={graph.patchManualEntity}
+            onAddEntity={(event) => void addManualEntity(event)}
             onSelectNode={graph.setSelectedNode}
             onOpenNode={graph.openNode}
             onExpandNode={(node) => void expandNode(node)}
@@ -507,11 +524,12 @@ export function App({ currentUser }: { currentUser: User }) {
             onSave={persistApplicationSettings}
             onRunOnboarding={() => setShowOnboarding(true)}
             onOpenModels={() => handleNavigate("models")}
+            updater={updater}
           />
         );
         break;
       case "about":
-        content = <AboutView desktopStatus={desktopStatus} />;
+        content = <AboutView desktopStatus={desktopStatus} updater={updater} />;
         break;
     }
   }

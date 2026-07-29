@@ -6,7 +6,7 @@ an admin account if configured.
 """
 
 import argparse
-import os
+import asyncio
 import subprocess
 import sys
 from pathlib import Path
@@ -14,9 +14,15 @@ from pathlib import Path
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="OIHK Basic setup")
-    parser.add_argument("--install-deps", action="store_true", help="Install Python dependencies")
-    parser.add_argument("--init-db", action="store_true", help="Initialize database tables")
-    parser.add_argument("--create-admin", action="store_true", help="Create bootstrap admin account")
+    parser.add_argument(
+        "--install-deps", action="store_true", help="Install Python dependencies"
+    )
+    parser.add_argument(
+        "--init-db", action="store_true", help="Initialize database tables"
+    )
+    parser.add_argument(
+        "--create-admin", action="store_true", help="Create bootstrap admin account"
+    )
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parent.parent
@@ -33,11 +39,9 @@ def main() -> int:
     if args.init_db:
         print("Initializing database...")
         sys.path.insert(0, str(backend_dir))
-        from app.core.config import get_settings
-        from app.database import engine, Base
         from app import models  # noqa: F401
-
-        import asyncio
+        from app.core.config import get_settings
+        from app.database import Base, engine
 
         async def _init():
             async with engine.begin() as conn:
@@ -52,13 +56,17 @@ def main() -> int:
         from app.core.config import get_settings
         from app.database import SessionLocal
         from app.services.auth_service import register_user
-
-        import asyncio
+        from sqlalchemy.exc import SQLAlchemyError
 
         async def _create_admin():
             settings = get_settings()
-            if not settings.bootstrap_admin_email or not settings.bootstrap_admin_password:
-                print("ERROR: Set OIHK_BOOTSTRAP_ADMIN_EMAIL and OIHK_BOOTSTRAP_ADMIN_PASSWORD in .env")
+            if (
+                not settings.bootstrap_admin_email
+                or not settings.bootstrap_admin_password
+            ):
+                print(
+                    "ERROR: Set OIHK_BOOTSTRAP_ADMIN_EMAIL and OIHK_BOOTSTRAP_ADMIN_PASSWORD in .env"
+                )
                 return False
             async with SessionLocal() as session:
                 try:
@@ -72,13 +80,15 @@ def main() -> int:
                     await session.commit()
                     print(f"Admin account created: {user.email}")
                     return True
-                except Exception as e:
-                    print(f"Error creating admin: {e}")
+                except (SQLAlchemyError, ValueError, RuntimeError) as exc:
+                    print(f"Error creating admin: {exc}")
                     return False
 
         asyncio.run(_create_admin())
 
-    print("\nSetup complete! Run the server with: uvicorn app.main:app --host 127.0.0.1 --port 8000")
+    print(
+        "\nSetup complete! Run the server with: uvicorn app.main:app --host 127.0.0.1 --port 8000"
+    )
     return 0
 
 

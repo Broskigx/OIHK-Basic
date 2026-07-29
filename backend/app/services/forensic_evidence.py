@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 from dataclasses import dataclass
+from math import log2
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,12 +67,8 @@ class SealedArtifact:
 def _compute_entropy(data: bytes) -> float:
     if not data:
         return 0.0
-    entropy = 0.0
-    for x in range(256):
-        p_x = data.count(x) / len(data)
-        if p_x > 0:
-            entropy += -p_x * (p_x.bit_length() - 1)  # simplified: -p_x * log2(p_x) approximated
-    return entropy
+    size = len(data)
+    return -sum((count / size) * log2(count / size) for count in Counter(data).values())
 
 
 def _compute_sha256(data: bytes) -> str:

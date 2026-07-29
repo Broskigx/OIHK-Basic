@@ -86,9 +86,9 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-/** Read the CSRF token from the ``oihk_csrf_token`` cookie (set by the backend). */
+/** Read the CSRF token from the ``oihk_basic_csrf_token`` cookie (set by the backend). */
 function getCsrfToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)oihk_csrf_token=([^;]*)/);
+  const match = document.cookie.match(/(?:^|;\s*)oihk_basic_csrf_token=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : "";
 }
 
@@ -469,6 +469,28 @@ export async function downloadStorageBackup(): Promise<Blob> {
     throw new Error(typeof payload.detail === "string" ? payload.detail : "Could not create the local backup");
   }
   return response.blob();
+}
+
+export type UpdatePreparation = {
+  update_token: string;
+  backup_path: string;
+  backup_sha256: string;
+  schema_version: number;
+  database_bytes: number;
+};
+
+export function prepareDesktopUpdate(
+  targetVersion: string,
+  channel: "alpha" | "beta" | "stable",
+): Promise<UpdatePreparation> {
+  return request<UpdatePreparation>("/updates/prepare", {
+    method: "POST",
+    body: JSON.stringify({ target_version: targetVersion, channel }),
+  });
+}
+
+export function resumeDesktopUpdate(): Promise<void> {
+  return request<void>("/updates/resume", { method: "POST" });
 }
 
 export function listSources(caseId: string): Promise<SourceRead[]> {
