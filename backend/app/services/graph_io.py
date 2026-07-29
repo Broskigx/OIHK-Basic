@@ -23,6 +23,11 @@ class CsvImportSummary:
     errors: list[str]
 
 
+def _spreadsheet_safe(value: str) -> str:
+    """Prevent exported user-controlled cells from being interpreted as formulas."""
+    return f"'{value}" if value.startswith(("=", "+", "-", "@", "\t", "\r")) else value
+
+
 async def import_entities_csv(
     session: AsyncSession,
     *,
@@ -108,7 +113,15 @@ def export_nodes_csv(entities: list[models.Entity]) -> str:
     writer = csv.writer(output)
     writer.writerow(["id", "label", "type", "confidence", "source_count"])
     for e in entities:
-        writer.writerow([e.id, e.display, e.type, e.confidence, len(e.source_ids or [])])
+        writer.writerow(
+            [
+                _spreadsheet_safe(e.id),
+                _spreadsheet_safe(e.display),
+                _spreadsheet_safe(e.type),
+                e.confidence,
+                len(e.source_ids or []),
+            ]
+        )
     return output.getvalue()
 
 
@@ -120,9 +133,9 @@ def export_edges_csv(relationships: list[models.Relationship], labels: dict[str,
         writer.writerow(
             [
                 r.id,
-                labels.get(r.subject_id, r.subject_id),
-                labels.get(r.object_id, r.object_id),
-                r.predicate,
+                _spreadsheet_safe(labels.get(r.subject_id, r.subject_id)),
+                _spreadsheet_safe(labels.get(r.object_id, r.object_id)),
+                _spreadsheet_safe(r.predicate),
                 r.confidence,
             ]
         )

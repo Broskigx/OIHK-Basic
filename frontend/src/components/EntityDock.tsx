@@ -71,7 +71,7 @@ export function EntityDock({
             <input
               min="0"
               max="1"
-              step="0.05"
+              step="0.01"
               type="number"
               value={manualEntity.confidence}
               onChange={(event) => onManualEntityChange({ confidence: Number(event.target.value) })}

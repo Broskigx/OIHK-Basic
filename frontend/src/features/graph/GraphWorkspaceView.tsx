@@ -1,6 +1,7 @@
 import { Filter, RotateCcw } from "lucide-react";
 import { lazy, Suspense } from "react";
-import type { GraphAnalytics, GraphNode, GraphRead } from "../../types";
+import type { FormEvent } from "react";
+import type { GraphAnalytics, GraphNode, GraphRead, ManualEntityForm } from "../../types";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
 
 const GraphPanel = lazy(() =>
@@ -17,6 +18,9 @@ export function GraphWorkspaceView({
   showFilters,
   expanding,
   caseId,
+  manualEntity,
+  onManualEntityChange,
+  onAddEntity,
   onSelectNode,
   onOpenNode,
   onExpandNode,
@@ -40,6 +44,9 @@ export function GraphWorkspaceView({
   showFilters: boolean;
   expanding: boolean;
   caseId: string;
+  manualEntity: ManualEntityForm;
+  onManualEntityChange: (patch: Partial<ManualEntityForm>) => void;
+  onAddEntity: (event: FormEvent) => void;
   onSelectNode: (node: GraphNode | null) => void;
   onOpenNode: (node: GraphNode) => void;
   onExpandNode: (node: GraphNode) => void;
@@ -73,6 +80,59 @@ export function GraphWorkspaceView({
           </>
         }
       />
+      <form className="platform-entity-create" onSubmit={onAddEntity}>
+        <label>
+          <span>New entity</span>
+          <input
+            aria-label="New entity label"
+            value={manualEntity.label}
+            onChange={(event) => onManualEntityChange({ label: event.target.value })}
+            placeholder="Name, alias, URL, email, evidence…"
+            maxLength={500}
+          />
+        </label>
+        <label>
+          <span>Type</span>
+          <select
+            aria-label="New entity type"
+            value={manualEntity.type}
+            onChange={(event) => onManualEntityChange({ type: event.target.value })}
+          >
+            {["name", "handle", "email", "url", "phone", "organization", "source", "note"].map((type) => (
+              <option key={type} value={type}>{type}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Confidence</span>
+          <input
+            aria-label="New entity confidence"
+            min="0"
+            max="1"
+            step="0.01"
+            type="number"
+            value={manualEntity.confidence}
+            onChange={(event) => onManualEntityChange({ confidence: Number(event.target.value) })}
+          />
+        </label>
+        <label>
+          <span>Relationship</span>
+          <input
+            aria-label="New entity relationship"
+            value={manualEntity.relation_label}
+            onChange={(event) => onManualEntityChange({ relation_label: event.target.value })}
+            placeholder={selectedNode ? `Link to ${selectedNode.label}` : "Select a node to link"}
+            maxLength={200}
+          />
+        </label>
+        <button
+          type="submit"
+          className="platform-primary"
+          disabled={!caseId || !manualEntity.label.trim()}
+        >
+          Add to graph
+        </button>
+      </form>
       <div className={openedNode ? "platform-graph-layout inspected" : "platform-graph-layout"}>
         <section className="platform-graph-canvas">
           <Suspense fallback={<div className="platform-module-loading">Loading graph engine…</div>}>

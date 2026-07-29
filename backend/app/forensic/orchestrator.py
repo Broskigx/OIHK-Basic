@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import time
+from collections import Counter
+from math import log2
 
 from app.forensic.extraction.text import extract_text
 from app.forensic.hashing.hasher import compute_hashes
@@ -93,11 +95,5 @@ def analyze_file(
 def _compute_entropy(data: bytes) -> float:
     if not data:
         return 0.0
-    from math import log2
-
-    entropy = 0.0
-    for x in range(256):
-        p_x = data.count(x) / len(data)
-        if p_x > 0:
-            entropy += -p_x * log2(p_x)
-    return entropy
+    size = len(data)
+    return -sum((count / size) * log2(count / size) for count in Counter(data).values())
