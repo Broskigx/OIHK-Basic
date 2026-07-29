@@ -92,7 +92,13 @@ fn start_backend(port: u16) -> Result<Child, String> {
                 if run_py.exists() {
                     eprintln!("[OIHK Desktop] Starting Python backend from: {:?}", run_py);
                     return Command::new(python)
-                        .args([&run_py.to_string_lossy(), "--port", &port.to_string()])
+                        .args([
+                            &run_py.to_string_lossy(),
+                            "--port",
+                            &port.to_string(),
+                            "--parent-pid",
+                            &std::process::id().to_string(),
+                        ])
                         .env("OIHK_PORT", port.to_string())
                         .spawn()
                         .map_err(|e| {
@@ -132,9 +138,6 @@ fn start_backend(port: u16) -> Result<Child, String> {
         {
             candidates.push(executable_dir.join(backend_name));
         }
-        if let Ok(current_dir) = std::env::current_dir() {
-            candidates.push(current_dir.join(backend_name));
-        }
         let backend_exe = candidates
             .into_iter()
             .find(|candidate| candidate.is_file())
@@ -142,11 +145,23 @@ fn start_backend(port: u16) -> Result<Child, String> {
                 "Bundled backend executable was not found in the application resources.".to_string()
             })?;
 
+        let data_dir = oihk_data_dir()?;
+        std::fs::create_dir_all(&data_dir)
+            .map_err(|_| "The application data directory could not be created.".to_string())?;
         Command::new(&backend_exe)
-            .args(["--port", &port.to_string()])
+            .args([
+                "--port",
+                &port.to_string(),
+                "--parent-pid",
+                &std::process::id().to_string(),
+                "--data-dir",
+                &data_dir.to_string_lossy(),
+            ])
+            .current_dir(data_dir)
             .env("OIHK_PORT", port.to_string())
             .env("OIHK_ENVIRONMENT", "desktop")
             .env("OIHK_AUTH_ENABLED", "false")
+            .env("OIHK_DESKTOP_PACKAGED", "1")
             .spawn()
             .map_err(|e| format!("Failed to start backend: {}", e))
     }
@@ -172,6 +187,10 @@ fn wait_for_backend(port: u16, timeout_secs: u64) -> Result<(), String> {
 }
 
 fn terminate_backend(child: &mut Child) {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        let _ = child.wait();
+        return;
+    }
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -382,26 +401,13 @@ pub fn run() {
             });
 
             // Spawn backend health check in background
-            let handle = app_handle.clone();
             std::thread::spawn(move || {
                 let backend_port: u16 = std::env::var("OIHK_PORT")
                     .ok()
                     .and_then(|p| p.parse().ok())
                     .unwrap_or(8001);
                 if let Err(e) = wait_for_backend(backend_port, 30) {
-                    let _ = handle.get_webview_window("main").map(|w| {
-                        let safe_error = serde_json::to_string(&e)
-                            .unwrap_or_else(|_| "\"Backend startup failed\"".to_string());
-                        let _ = w.eval(&format!(
-                            r#"setTimeout(() => {{
-                                const d = document.createElement('div');
-                                d.style.cssText = 'position:fixed;bottom:1rem;right:1rem;z-index:9999;padding:1rem 1.5rem;background:#1a1a2e;border:1px solid #ef4444;border-radius:8px;color:#fca5a5;font-size:0.875rem;max-width:400px;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
-                                d.textContent = 'Backend error: ' + {};
-                                document.body.appendChild(d);
-                            }}, 3000);"#,
-                            safe_error
-                        ));
-                    });
+                    eprintln!("[OIHK Desktop] Backend health check failed: {}", e);
                 }
             });
 

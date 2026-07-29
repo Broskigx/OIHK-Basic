@@ -55,9 +55,18 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: backend/pyproject.toml
+          cache-dependency-path: |
+            backend/pyproject.toml
+            backend/requirements.lock
 
-      - name: Install backend, tests, and audit tooling
+      - name: Install locked backend, tests, and audit tooling (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          python -m pip install --disable-pip-version-check --require-hashes -r backend/requirements.lock
+          python -m pip install --disable-pip-version-check --no-build-isolation --no-deps -e backend
+
+      - name: Install backend, tests, and audit tooling (Linux portability)
+        if: runner.os != 'Windows'
         run: python -m pip install --disable-pip-version-check -e "./backend[dev]" pip-audit
 
       - name: Validate canonical version
@@ -72,8 +81,13 @@ jobs:
       - name: Verify dependency consistency
         run: python -m pip check
 
-      - name: Audit Python dependencies
-        run: python -m pip_audit
+      - name: Audit locked Python dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: python -m pip_audit -r backend/requirements.lock
+
+      - name: Audit resolved Python dependencies (Linux)
+        if: runner.os != 'Windows'
+        run: python -m pip_audit backend
 
   frontend:
     name: Frontend - Node 22
@@ -130,7 +144,7 @@ jobs:
 
       - name: Rust tests
         working-directory: src-tauri
-        run: cargo test --locked
+        run: cargo test --locked --all-targets
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --version 0.22.2 --locked

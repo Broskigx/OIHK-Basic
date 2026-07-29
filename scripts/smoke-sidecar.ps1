@@ -11,8 +11,10 @@ if (-not $resolvedSidecar.EndsWith(".exe", [System.StringComparison]::OrdinalIgn
 }
 $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("oihk-sidecar-smoke-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
-$database = Join-Path $smokeRoot "smoke.db"
-$storage = Join-Path $smokeRoot "storage"
+$database = Join-Path $smokeRoot "oihk-basic.db"
+$smokeAppData = Join-Path $smokeRoot "AppData"
+$projectRoot = Split-Path $PSScriptRoot -Parent
+$productVersion = (Get-Content (Join-Path $projectRoot "VERSION") -Raw).Trim()
 $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
 $listener.Start()
 $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
@@ -22,12 +24,19 @@ $previousDatabase = $env:OIHK_DATABASE_URL
 $previousStorage = $env:OIHK_STORAGE_DIR
 $previousEnvironment = $env:OIHK_ENVIRONMENT
 $previousAuth = $env:OIHK_AUTH_ENABLED
+$previousPackaged = $env:OIHK_DESKTOP_PACKAGED
+$previousAppData = $env:APPDATA
 try {
-    $env:OIHK_DATABASE_URL = "sqlite+aiosqlite:///$($database.Replace('\', '/'))"
-    $env:OIHK_STORAGE_DIR = $storage
+    $env:OIHK_DATABASE_URL = "sqlite+aiosqlite:///ambient-value-must-be-ignored.db"
+    $env:OIHK_STORAGE_DIR = "ambient-value-must-be-ignored"
     $env:OIHK_ENVIRONMENT = "desktop"
     $env:OIHK_AUTH_ENABLED = "false"
-    $process = Start-Process -FilePath $resolvedSidecar -ArgumentList @("--port", $port) -PassThru -WindowStyle Hidden
+    $env:OIHK_DESKTOP_PACKAGED = "1"
+    $env:APPDATA = $smokeAppData
+    $process = Start-Process -FilePath $resolvedSidecar -ArgumentList @(
+        "--port", $port,
+        "--data-dir", $smokeRoot
+    ) -PassThru -WindowStyle Hidden
     $healthy = $false
     for ($attempt = 0; $attempt -lt 120; $attempt++) {
         if ($process.HasExited) { break }
@@ -51,7 +60,7 @@ try {
         -Uri "http://127.0.0.1:$port/updates/prepare" `
         -Method Post `
         -ContentType "application/json" `
-        -Body '{"target_version":"0.1.1","channel":"alpha"}' `
+        -Body (@{ target_version = $productVersion; channel = "alpha" } | ConvertTo-Json -Compress) `
         -TimeoutSec 40
     if (-not $prepared.update_token -or -not (Test-Path -LiteralPath $prepared.backup_path)) {
         throw "The packaged sidecar did not create its mandatory pre-update backup."
@@ -66,7 +75,7 @@ try {
         $backupHash -ne $prepared.backup_sha256.ToUpperInvariant() -or
         $backupHash -ne $backupMetadata.sha256.ToUpperInvariant() -or
         $backupMetadata.integrity_check -ne "ok" -or
-        $backupMetadata.target_version -ne "0.1.1"
+        $backupMetadata.target_version -ne $productVersion
     ) {
         throw "The packaged sidecar backup metadata or SHA-256 is inconsistent."
     }
@@ -106,6 +115,8 @@ try {
     $env:OIHK_STORAGE_DIR = $previousStorage
     $env:OIHK_ENVIRONMENT = $previousEnvironment
     $env:OIHK_AUTH_ENABLED = $previousAuth
+    $env:OIHK_DESKTOP_PACKAGED = $previousPackaged
+    $env:APPDATA = $previousAppData
     $resolvedSmoke = [System.IO.Path]::GetFullPath($smokeRoot)
     $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
     if ($resolvedSmoke.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -and

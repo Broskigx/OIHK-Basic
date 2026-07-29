@@ -13,6 +13,7 @@ SIDECAR_DIR="$DIST_DIR/sidecar"
 
 echo "=== OIHK Basic Build (Linux) ==="
 echo "Project root: $PROJECT_ROOT"
+python3 "$PROJECT_ROOT/scripts/version.py" check
 
 # 1. Verify tools
 echo ""
@@ -36,19 +37,21 @@ source "$BACKEND_DIR/venv/bin/activate"
 # 3. Install Python dependencies
 echo ""
 echo "[3/8] Installing Python dependencies..."
-pip install -e "$BACKEND_DIR[dev]" pyinstaller --quiet
+python -m pip install -e "$BACKEND_DIR[dev,release]" --quiet
+python -m pip check
+python -m pip_audit "$BACKEND_DIR"
 echo "  Done"
 
 # 4. Run lint
 echo ""
 echo "[4/8] Running lint..."
-python -m ruff check "$BACKEND_DIR/app" "$BACKEND_DIR/tests" --quiet
+python -m ruff check "$BACKEND_DIR/app" "$BACKEND_DIR/run.py" "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/tests" --quiet
 
 # 5. Run backend tests
 echo ""
 echo "[5/8] Running backend tests..."
-cd "$BACKEND_DIR"
-python -m pytest --quiet --tb=short --no-header -x || {
+cd "$PROJECT_ROOT"
+python -m pytest backend/tests tests --quiet --tb=short --no-header -x || {
     echo "  ✗ Tests failed"
     exit 1
 }
@@ -72,8 +75,9 @@ echo "  Sidecar built"
 # 7. Build frontend
 echo ""
 echo "[7/8] Building frontend..."
-cd "$PROJECT_ROOT"
+cd "$FRONTEND_DIR"
 npm ci --silent
+npm audit --audit-level=high
 npm run build || {
     echo "  ✗ Frontend build failed"
     exit 1

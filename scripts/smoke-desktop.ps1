@@ -13,14 +13,12 @@ if (-not (Test-Path -LiteralPath $sidecar)) {
 }
 $smokeRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("oihk-desktop-smoke-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $smokeRoot | Out-Null
-$database = Join-Path $smokeRoot "desktop.db"
-$storage = Join-Path $smokeRoot "storage"
-$previousDatabase = $env:OIHK_DATABASE_URL
-$previousStorage = $env:OIHK_STORAGE_DIR
+$smokeAppData = Join-Path $smokeRoot "AppData"
+$database = Join-Path $smokeAppData "OIHK-Basic\oihk-basic.db"
+$previousAppData = $env:APPDATA
 
 try {
-    $env:OIHK_DATABASE_URL = "sqlite+aiosqlite:///$($database.Replace('\', '/'))"
-    $env:OIHK_STORAGE_DIR = $storage
+    $env:APPDATA = $smokeAppData
     $desktopProcess = Start-Process -FilePath $desktop -PassThru -WindowStyle Hidden
     $port = 0
     $healthy = $false
@@ -51,8 +49,34 @@ try {
     if (-not $healthy) {
         throw "The release desktop executable did not start a healthy managed sidecar."
     }
+    $corsResponse = Invoke-WebRequest `
+        -Uri "http://127.0.0.1:$port/health" `
+        -Headers @{ Origin = "http://tauri.localhost" } `
+        -UseBasicParsing `
+        -TimeoutSec 2
+    if ($corsResponse.Headers["Access-Control-Allow-Origin"] -ne "http://tauri.localhost") {
+        throw "The packaged API does not authorize the Tauri webview origin."
+    }
     if (-not (Test-Path -LiteralPath $database)) {
         throw "The desktop smoke did not create its isolated database."
+    }
+    if (-not $desktopProcess.CloseMainWindow()) {
+        throw "The desktop smoke could not request a normal window close."
+    }
+    if (-not $desktopProcess.WaitForExit(15000)) {
+        throw "The desktop process did not exit after a normal window close."
+    }
+    Start-Sleep -Milliseconds 500
+    $orphan = Get-CimInstance Win32_Process | Where-Object {
+        $_.ExecutablePath -and
+        [System.IO.Path]::GetFullPath($_.ExecutablePath).Equals(
+            [System.IO.Path]::GetFullPath($sidecar),
+            [System.StringComparison]::OrdinalIgnoreCase
+        ) -and
+        $_.CommandLine -match "--port\s+$port(?:\s|$)"
+    }
+    if ($orphan) {
+        throw "The managed sidecar remained after a normal desktop close."
     }
 } finally {
     $desktopProcesses = Get-CimInstance Win32_Process | Where-Object {
@@ -68,8 +92,7 @@ try {
         Stop-Process -Id $candidate.ProcessId -Force -ErrorAction SilentlyContinue
         Wait-Process -Id $candidate.ProcessId -ErrorAction SilentlyContinue
     }
-    $env:OIHK_DATABASE_URL = $previousDatabase
-    $env:OIHK_STORAGE_DIR = $previousStorage
+    $env:APPDATA = $previousAppData
     $resolvedSmoke = [System.IO.Path]::GetFullPath($smokeRoot)
     $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
     if ($resolvedSmoke.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -and

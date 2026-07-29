@@ -16,6 +16,7 @@ $TauriDir = Join-Path $ProjectRoot "src-tauri"
 $DistDir = Join-Path $ProjectRoot "dist"
 $SidecarDir = Join-Path $DistDir "sidecar"
 $ReleaseConfig = Join-Path $TauriDir "tauri.release.conf.json"
+$RequirementsLock = Join-Path $BackendDir "requirements.lock"
 
 function Assert-WorkspacePath([string]$Path) {
     $resolvedRoot = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\') + '\'
@@ -69,10 +70,12 @@ $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
 # 3. Install Python dependencies
 Write-Host "`n[3/8] Installing Python dependencies..." -ForegroundColor Yellow
-& $venvPython -m pip install -e "${BackendDir}[dev]" pyinstaller pip-audit --quiet
+& $venvPython -m pip install --disable-pip-version-check --require-hashes -r $RequirementsLock --quiet
+if ($LASTEXITCODE -ne 0) { throw "Locked Python dependency installation failed." }
+& $venvPython -m pip install --disable-pip-version-check --no-build-isolation --no-deps -e $BackendDir --quiet
 if ($LASTEXITCODE -ne 0) { throw "Python dependency installation failed." }
 Write-Host "  Done" -ForegroundColor Green
-& $venvPython -m pip_audit $BackendDir
+& $venvPython -m pip_audit -r $RequirementsLock
 if ($LASTEXITCODE -ne 0) { throw "Python dependency audit failed." }
 
 # 4. Run lint
@@ -142,6 +145,12 @@ Write-Host "  Frontend built" -ForegroundColor Green
 Write-Host "`n[8/8] Building Tauri desktop app..." -ForegroundColor Yellow
 Set-Location $TauriDir
 Set-Location $ProjectRoot
+# Keep release builds reliable on the documented 4 GB minimum. Callers can
+# explicitly raise this when they control a larger CI runner.
+if (-not $env:CARGO_BUILD_JOBS) {
+    $env:CARGO_BUILD_JOBS = "1"
+}
+Write-Host "  Rust build jobs: $env:CARGO_BUILD_JOBS" -ForegroundColor DarkGray
 $bundleDir = Join-Path $TauriDir "target\release\bundle\nsis"
 Assert-WorkspacePath $bundleDir
 if (Test-Path -LiteralPath $bundleDir) {
@@ -179,6 +188,9 @@ Write-Host "  Installer: $($installerSource.Name)" -ForegroundColor Green
 if ($Release) {
     Get-ChildItem "$bundleDir\*.nsis.zip*" | Copy-Item -Destination $windowsDist -Force
 }
+& (Join-Path $ProjectRoot "scripts\smoke-installer.ps1") `
+    -InstallerPath (Join-Path $windowsDist $installerSource.Name)
+if ($LASTEXITCODE -ne 0) { throw "Clean NSIS installer smoke test failed." }
 
 # Generate SHA-256
 $artifacts = Get-ChildItem (Join-Path $DistDir "windows\") -Filter "*.exe"
@@ -194,6 +206,10 @@ if ($Release) {
     if (-not $installerSource -or -not $updaterArchive -or -not $updaterSignature) {
         throw "Signed NSIS updater artifacts are incomplete."
     }
+    & cargo run --quiet --locked --manifest-path (Join-Path $TauriDir "Cargo.toml") `
+        --example verify_update_signature -- `
+        $updaterArchive.FullName $updaterSignature.FullName $env:TAURI_UPDATER_PUBLIC_KEY
+    if ($LASTEXITCODE -ne 0) { throw "Updater signature does not match the archive and configured public key." }
     $version = (Get-Content (Join-Path $ProjectRoot "VERSION") -Raw).Trim()
     python (Join-Path $ProjectRoot "scripts\generate_update_metadata.py") `
         --tag "basic-v$version" `

@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.1.0 — 2026-07-26
+## 0.1.1-alpha.1 — 2026-07-28
 
-Initial standalone OIHK Basic release candidate.
+First public-alpha candidate for the standalone OIHK Basic desktop application.
 
 ### Added
 
@@ -29,9 +29,14 @@ Initial standalone OIHK Basic release candidate.
 - Restrictive webview/report CSP, safe error rendering and no exposed shell plugin.
 - Bounded uploads/reads, path confinement, attachment-only unsafe previews and evidence hash re-verification.
 - Updater private keys remain CI-only; invalid or absent signatures and incomplete artifacts fail closed.
+- Public URL ingestion rejects credentials, private/local/reserved destinations, onion hosts and unsafe redirect hops while enforcing streamed response limits.
+- Chain-of-custody verification rehashes managed evidence files and checks the per-case anchor for truncation.
+- Packaged sidecars ignore working-directory `.env` files, use a fixed application-data working directory and exit if their Tauri parent disappears.
+- Spreadsheet exports neutralize user-controlled formula cells, CSRF works in optional-auth mode, and OOXML extraction is bounded against decompression bombs.
 
 ### Quality
 
 - Backend, frontend, graph performance, portability, packaging and installed-sidecar regression coverage.
 - Correct direct hash routing for case workspaces.
 - Adaptive spatial force layout for large graphs.
+- Linear-time forensic entropy calculation with regression coverage for binary uploads.

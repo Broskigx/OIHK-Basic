@@ -8,6 +8,7 @@ import os
 import stat
 import sys
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,9 @@ def isolated_first_run(monkeypatch):
 
         monkeypatch.setattr(fr, "_CONFIG_DIR", config_dir)
         monkeypatch.setattr(fr, "_SECRETS_FILE", config_dir / "secrets.json")
+        monkeypatch.setattr(
+            fr, "_default_database_path", lambda: Path(tmpdir) / "oihk-basic.db"
+        )
 
         yield fr  # yield the module reference for tests to use
 
@@ -50,6 +54,80 @@ class TestSecretGeneration:
         jwt = fr.get_or_create_secret("jwt_secret", 32)
         custody = fr.get_or_create_secret("custody_signing_key", 32)
         assert jwt != custody
+
+    def test_concurrent_first_run_keeps_one_stable_secret(self, isolated_first_run):
+        fr = isolated_first_run
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            values = list(
+                executor.map(
+                    lambda _index: fr.get_or_create_secret("shared", 32), range(16)
+                )
+            )
+        assert len(set(values)) == 1
+        assert (
+            json.loads(fr._SECRETS_FILE.read_text(encoding="utf-8"))["shared"]
+            == values[0]
+        )
+
+    def test_transient_windows_lock_sharing_violation_is_retried(
+        self, isolated_first_run, monkeypatch
+    ):
+        fr = isolated_first_run
+        real_open = fr.os.open
+        attempts = 0
+
+        def transient_open(*args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise PermissionError("simulated Windows sharing violation")
+            return real_open(*args, **kwargs)
+
+        monkeypatch.setattr(fr.os, "open", transient_open)
+        assert fr.get_or_create_secret("sharing_retry", 32)
+        assert attempts >= 2
+
+    def test_corrupt_secrets_fail_closed_without_rotating_keys(
+        self, isolated_first_run
+    ):
+        fr = isolated_first_run
+        original = b"{not-valid-json"
+        fr._SECRETS_FILE.write_bytes(original)
+        with pytest.raises(
+            fr.SecretsFileError, match="automatic key rotation was blocked"
+        ):
+            fr.get_custody_signing_key()
+        assert fr._SECRETS_FILE.read_bytes() == original
+        backups = list(fr._CONFIG_DIR.glob("secrets.json.corrupt-*"))
+        assert len(backups) == 1
+        assert backups[0].read_bytes() == original
+
+    def test_missing_secrets_with_existing_database_fail_closed(
+        self, isolated_first_run, tmp_path, monkeypatch
+    ):
+        fr = isolated_first_run
+        database = tmp_path / "oihk-basic.db"
+        database.write_bytes(b"existing workspace")
+        monkeypatch.setattr(fr, "_default_database_path", lambda: database)
+        with pytest.raises(fr.SecretsFileError, match="database exists"):
+            fr.get_jwt_secret()
+        assert not fr._SECRETS_FILE.exists()
+
+    def test_partial_secrets_with_existing_database_fail_closed(
+        self, isolated_first_run, tmp_path, monkeypatch
+    ):
+        fr = isolated_first_run
+        database = tmp_path / "oihk-basic.db"
+        database.write_bytes(b"existing workspace")
+        monkeypatch.setattr(fr, "_default_database_path", lambda: database)
+        fr._SECRETS_FILE.write_text(
+            json.dumps({"jwt_secret": "preserved"}), encoding="utf-8"
+        )
+        with pytest.raises(fr.SecretsFileError, match="custody_signing_key"):
+            fr.get_custody_signing_key()
+        assert json.loads(fr._SECRETS_FILE.read_text(encoding="utf-8")) == {
+            "jwt_secret": "preserved"
+        }
 
     def test_secret_not_in_stdout(self, isolated_first_run):
         fr = isolated_first_run

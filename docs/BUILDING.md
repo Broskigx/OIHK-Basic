@@ -10,7 +10,7 @@
 - Linux: WebKitGTK 4.1, GTK 3, librsvg2, patchelf y OpenSSL headers.
 - macOS: Xcode Command Line Tools.
 
-Los scripts instalan PyInstaller dentro del entorno Python que utilizan. Tauri CLI está fijado en las dependencias de frontend.
+Los scripts instalan PyInstaller dentro del entorno Python que utilizan. Tauri CLI está fijado en las dependencias de frontend. El flujo Windows instala `backend/requirements.lock` con hashes; ese lock se genera y valida para Python 3.11 en Windows x64, el target de distribución alpha. Linux y macOS resuelven sus marcadores nativos desde `pyproject.toml` y no se declaran reproducibles hasta conservar locks generados en sus runners.
 
 ## Build reproducible
 
@@ -52,7 +52,7 @@ dist/
   macos/     # app/dmg por arquitectura y checksums
 ```
 
-El build Windows base produce `OIHK Basic_0.1.0_x64-setup.exe`. El nuevo candidato con updater firmado no se declara validado hasta completar el checklist manual con claves y endpoint de prueba.
+El build Windows base produce `OIHK Basic_0.1.1-alpha.1_x64-setup.exe`. El candidato con updater firmado no se declara validado hasta completar el checklist manual con claves y endpoint de prueba.
 
 ## Pasos manuales
 
@@ -61,8 +61,8 @@ El nombre/version del instalador procede de `VERSION`. El build de release exige
 La compilación automática no sustituye la validación manual del upgrade firmado en Windows Sandbox descrita en [RELEASING.md](RELEASING.md). Ese control permanece pendiente hasta disponer de claves de producción y un endpoint HTTPS accesible para el cliente.
 
 ```powershell
-python -m pip install -e ".\backend"
-python -m pip install pyinstaller
+python -m pip install --require-hashes -r .\backend\requirements.lock
+python -m pip install --no-build-isolation --no-deps -e .\backend
 python -m PyInstaller oihk-basic-backend.spec --clean --noconfirm `
   --distpath dist\sidecar --workpath build\pyinstaller
 
