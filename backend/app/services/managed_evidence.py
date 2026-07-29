@@ -16,9 +16,23 @@ _CHUNK_SIZE = 1024 * 1024
 
 
 def evidence_root() -> Path:
-    root = (Path(get_settings().effective_storage_dir).resolve() / "evidence").resolve()
+    storage_root = Path(get_settings().effective_storage_dir).resolve()
+    root = (storage_root / "evidence").resolve()
+    try:
+        root.relative_to(storage_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Evidence storage escapes the configured directory.") from exc
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _confined_directory(root: Path, *parts: str) -> Path:
+    candidate = root.joinpath(*parts).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Evidence path is outside managed storage.") from exc
+    return candidate
 
 
 def safe_evidence_path(path_value: str) -> Path:
@@ -39,7 +53,7 @@ def safe_filename(filename: str) -> str:
 
 async def store_upload(case_id: str, upload: UploadFile) -> dict[str, str | int]:
     root = evidence_root()
-    case_root = (root / case_id).resolve()
+    case_root = _confined_directory(root, case_id)
     case_root.mkdir(parents=True, exist_ok=True)
     safe_name = safe_filename(upload.filename or "evidence.bin")
     descriptor, temporary_name = tempfile.mkstemp(prefix="incoming-", dir=case_root)
@@ -60,7 +74,10 @@ async def store_upload(case_id: str, upload: UploadFile) -> dict[str, str | int]
             destination.flush()
             os.fsync(destination.fileno())
         final_path = (case_root / f"{uuid4()}-{safe_name}").resolve()
-        final_path.relative_to(case_root)
+        try:
+            final_path.relative_to(case_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Evidence path is outside managed storage.") from exc
         os.replace(temporary_name, final_path)
         return {
             "storage_path": str(final_path),

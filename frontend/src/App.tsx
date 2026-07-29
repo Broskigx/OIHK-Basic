@@ -290,6 +290,14 @@ export function App({ currentUser }: { currentUser: User }) {
     }
   };
 
+  const addManualEntity = async (event: React.FormEvent) => {
+    try {
+      await graph.addManualEntity(event, caseMgr.activeCaseId, graph.selectedNode, refreshActiveCase);
+    } catch (cause) {
+      setSafeError(cause instanceof Error ? cause.message : "Could not add entity");
+    }
+  };
+
   const runTransformOnNode = async (transformId: string, node: GraphNode) => {
     try {
       await graph.runTransformOnNode(transformId, node, caseMgr.activeCaseId, refreshActiveCase);
@@ -430,6 +438,9 @@ export function App({ currentUser }: { currentUser: User }) {
             showFilters={graph.showFilters}
             expanding={graph.expanding}
             caseId={caseMgr.activeCaseId}
+            manualEntity={graph.manualEntity}
+            onManualEntityChange={graph.patchManualEntity}
+            onAddEntity={(event) => void addManualEntity(event)}
             onSelectNode={graph.setSelectedNode}
             onOpenNode={graph.openNode}
             onExpandNode={(node) => void expandNode(node)}

@@ -1,4 +1,5 @@
 import { Database, HardDrive, LockKeyhole, Server, ShieldCheck } from "lucide-react";
+import { getApiUrl } from "../../api";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
 import type { DesktopStatus } from "../../types";
 import { PRODUCT_VERSION, UPDATE_CHANNEL } from "../../version";
@@ -39,7 +40,7 @@ export function AboutView({
           <div><dt>Product</dt><dd>{desktopStatus?.product ?? "OIHK Basic"}</dd></div>
           <div><dt>Version</dt><dd>{desktopStatus?.version ?? PRODUCT_VERSION} · {UPDATE_CHANNEL}</dd></div>
           <div><dt>Runtime</dt><dd>{desktopStatus ? `${desktopStatus.mode} · ${desktopStatus.platform}` : "Browser development mode"}</dd></div>
-          <div><dt>Local API</dt><dd className="platform-mono">{desktopStatus?.api_endpoint ?? "http://127.0.0.1:8000"}</dd></div>
+          <div><dt>Local API</dt><dd className="platform-mono">{desktopStatus?.api_endpoint ?? getApiUrl()}</dd></div>
         </dl>
       </section>
       <UpdatePanel updater={updater} recovery={desktopStatus?.recovery} />

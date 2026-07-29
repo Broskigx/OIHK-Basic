@@ -86,9 +86,9 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
-/** Read the CSRF token from the ``oihk_csrf_token`` cookie (set by the backend). */
+/** Read the CSRF token from the ``oihk_basic_csrf_token`` cookie (set by the backend). */
 function getCsrfToken(): string {
-  const match = document.cookie.match(/(?:^|;\s*)oihk_csrf_token=([^;]*)/);
+  const match = document.cookie.match(/(?:^|;\s*)oihk_basic_csrf_token=([^;]*)/);
   return match ? decodeURIComponent(match[1]) : "";
 }
 

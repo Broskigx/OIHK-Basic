@@ -150,7 +150,7 @@ export function EvidenceVaultView({ caseId, sources, photos, custody, entities, 
     if (!window.confirm(`Delete the managed copy of “${item.original_name}”? The sealed provenance record remains in the audit trail.`)) return;
     await deleteEvidence(item.id);
     await Promise.all([refreshFiles(), onRefresh()]);
-    setMessage("Managed file deleted; provenance was retained.");
+    setMessage("Managed file deleted; provenance was retained and custody verification will record the missing content.");
   }
 
   async function exportManifest() {
