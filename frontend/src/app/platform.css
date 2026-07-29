@@ -2018,6 +2018,122 @@ body { margin: 0; min-height: 100vh; background: var(--bg-root); }
 .platform-view .platform-primary,
 .platform-view .platform-primary-btn { background: var(--accent); border-color: transparent; color: #04100c; }
 .platform-secondary-btn { background: transparent !important; color: var(--text-secondary) !important; }
+.platform-entity-create {
+  align-items: end;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(180px, 2fr) minmax(110px, .7fr) minmax(100px, .55fr) minmax(180px, 1.4fr) auto;
+  margin: 0 24px;
+  padding: 10px;
+}
+.platform-entity-create label { color: var(--text-muted); display: grid; font-size: 10px; gap: 5px; }
+.platform-entity-create input,
+.platform-entity-create select {
+  background: var(--bg-root);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  min-height: 34px;
+  padding: 7px 9px;
+  width: 100%;
+}
+.platform-graph-canvas { min-width: 0; }
+.platform-graph-canvas .graph-panel-featured {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  min-height: 640px;
+  overflow: hidden;
+}
+.platform-graph-canvas .graph-view-tabs {
+  background: var(--bg-panel-elevated);
+  border-bottom: 1px solid var(--divider);
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(3, minmax(150px, 1fr)) auto;
+  padding: 8px;
+}
+.platform-graph-canvas .graph-view-tabs > button {
+  align-items: center;
+  background: transparent;
+  border-color: transparent;
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 8px 10px;
+  text-align: left;
+}
+.platform-graph-canvas .graph-view-tabs > button.selected {
+  background: var(--bg-active);
+  border-color: var(--border-accent);
+}
+.platform-graph-canvas .graph-view-tabs > button > span { min-width: 0; }
+.platform-graph-canvas .graph-view-tabs strong,
+.platform-graph-canvas .graph-view-tabs small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.platform-graph-canvas .graph-view-tabs strong { font-size: 11px; }
+.platform-graph-canvas .graph-view-tabs small { color: var(--text-muted); font-size: 9px; margin-top: 2px; }
+.platform-graph-canvas .graph-view-tabs-future {
+  align-items: center;
+  color: var(--text-muted);
+  display: flex;
+  font-size: 10px;
+  gap: 5px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.platform-graph-canvas .graph-tabbar {
+  align-items: center;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--divider);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 9px 10px;
+}
+.platform-graph-canvas .graph-tabbar > div:first-child {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+}
+.platform-graph-canvas .graph-tabbar > div:first-child > span {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.platform-graph-canvas .graph-tabbar small {
+  color: var(--text-muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.platform-graph-canvas .graph-tabbar-right,
+.platform-graph-canvas .view-switch {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+.platform-graph-canvas .view-switch {
+  background: var(--bg-root);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+.platform-graph-canvas .view-switch > button {
+  background: transparent;
+  border-color: transparent;
+  min-height: 28px;
+  padding: 4px 8px;
+}
+.platform-graph-canvas .view-switch > button.selected {
+  background: var(--bg-active);
+  border-color: var(--border-accent);
+}
 .platform-inline-error,
 .platform-inline-success,
 .platform-context-note { align-items: center; border: 1px solid; border-radius: var(--radius-md); display: flex; font-size: 11px; gap: 7px; padding: 9px 11px; }
@@ -2514,6 +2630,43 @@ body { margin: 0; min-height: 100vh; background: var(--bg-root); }
   }
 }
 
+.update-panel {
+  margin-top: 16px;
+}
+
+.update-panel p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.update-notes {
+  padding: 12px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  white-space: pre-wrap;
+}
+
+.update-progress {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.update-progress progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.spin {
+  animation: update-spin 1s linear infinite;
+}
+
+@keyframes update-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ===================================================================
    SKELETON LOADING
    =================================================================== */
@@ -2557,6 +2710,11 @@ body { margin: 0; min-height: 100vh; background: var(--bg-root); }
   }
   .platform-search { max-width: 200px; min-width: 120px; }
   .platform-kpi-strip { grid-template-columns: repeat(2, 1fr); }
+  .platform-entity-create { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .platform-entity-create button { width: 100%; }
+  .platform-graph-canvas .graph-view-tabs { grid-template-columns: repeat(3, minmax(110px, 1fr)); }
+  .platform-graph-canvas .graph-view-tabs-future { display: none; }
+  .platform-graph-canvas .graph-controls-hint { display: none; }
 }
 
 @media (max-width: 768px) {
@@ -2568,4 +2726,9 @@ body { margin: 0; min-height: 100vh; background: var(--bg-root); }
   .platform-dashboard { padding: 12px; }
   .platform-kpi-strip { grid-template-columns: 1fr 1fr; }
   .platform-dash-header { flex-direction: column; }
+  .platform-entity-create { grid-template-columns: 1fr; margin-inline: 12px; }
+  .platform-graph-canvas .graph-view-tabs { grid-template-columns: 1fr; }
+  .platform-graph-canvas .graph-tabbar,
+  .platform-graph-canvas .graph-tabbar > div:first-child { align-items: stretch; flex-direction: column; }
+  .platform-graph-canvas .graph-tabbar-right { justify-content: space-between; width: 100%; }
 }

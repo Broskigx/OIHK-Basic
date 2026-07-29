@@ -5,12 +5,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
+from app.version import PRODUCT_VERSION
+
 
 # --- Health ---
 class HealthRead(BaseModel):
     status: str
     service: str = "oihk-basic-api"
-    version: str = "0.1.0"
+    version: str = PRODUCT_VERSION
 
 
 # --- Auth ---
@@ -86,6 +88,7 @@ class GeneralSettings(BaseModel):
     default_case_id: str = Field(default="", max_length=36)
     confirmations: bool = True
     check_updates: bool = True
+    update_channel: Literal["alpha", "beta", "stable"] = "alpha"
 
 
 class AppearanceSettings(BaseModel):
@@ -134,7 +137,7 @@ class ApplicationSettingsWrite(BaseModel):
 
 class ApplicationSettingsRead(ApplicationSettingsWrite):
     id: str = ""
-    schema_version: int = 1
+    schema_version: int = 2
     updated_at: datetime | None = None
 
 
@@ -146,6 +149,28 @@ class StorageStatusRead(BaseModel):
     evidence_bytes: int
     total_bytes: int
     writable: bool
+
+
+class UpdatePrepareRequest(BaseModel):
+    target_version: str = Field(min_length=1, max_length=80, pattern=r"^[0-9A-Za-z.+-]+$")
+    channel: Literal["alpha", "beta", "stable"] = "alpha"
+
+
+class UpdatePrepareRead(BaseModel):
+    update_token: str
+    backup_path: str
+    backup_sha256: str
+    schema_version: int
+    database_bytes: int
+
+
+class UpdateRecoveryRead(BaseModel):
+    stage: str = ""
+    source_version: str = ""
+    target_version: str = ""
+    backup_path: str = ""
+    error_code: str = ""
+    updated_at: str = ""
     timeout_seconds: int = Field(default=60, ge=2, le=600)
 
 

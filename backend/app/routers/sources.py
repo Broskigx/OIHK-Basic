@@ -1,6 +1,6 @@
 """Sources router for OIHK Basic."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,7 +8,7 @@ from app import models
 from app.core.deps import CurrentUser, get_current_user, require_case_access
 from app.database import get_session
 from app.schemas import IngestResult, SourceRead, TextIngestRequest, UrlIngestRequest
-from app.services.policy import fetch_public_url
+from app.services.policy import PublicUrlError, fetch_public_url
 from app.services.repository import ingest_source
 
 router = APIRouter(prefix="/sources", tags=["sources"])
@@ -59,7 +59,10 @@ async def ingest_url(
     session: AsyncSession = Depends(get_session),
 ) -> IngestResult:
     await _ensure_case(session, payload.case_id, current)
-    fetched = await fetch_public_url(str(payload.url))
+    try:
+        fetched = await fetch_public_url(str(payload.url))
+    except PublicUrlError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     source, entities, relationships = await ingest_source(
         session,
         case_id=payload.case_id,

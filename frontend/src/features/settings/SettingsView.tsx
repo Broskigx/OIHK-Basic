@@ -22,6 +22,9 @@ import { useEffect, useState } from "react";
 import { downloadStorageBackup } from "../../api";
 import type { ApplicationSettings, DesktopStatus, ProviderCatalog, StorageStatus, User } from "../../types";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
+import { PRODUCT_VERSION, UPDATE_CHANNEL } from "../../version";
+import { UpdatePanel } from "../updates/UpdatePanel";
+import type { UpdateController } from "../updates/useUpdater";
 
 type SettingsSection = "general" | "appearance" | "storage" | "models" | "tools" | "privacy" | "performance" | "transfer" | "diagnostics" | "about";
 
@@ -58,6 +61,7 @@ export function SettingsView({
   onSave,
   onRunOnboarding,
   onOpenModels,
+  updater,
 }: {
   user: User;
   desktopStatus: DesktopStatus | null;
@@ -70,6 +74,7 @@ export function SettingsView({
   onSave: (settings: ApplicationSettings) => Promise<void>;
   onRunOnboarding: () => void;
   onOpenModels: () => void;
+  updater: UpdateController;
 }) {
   const [section, setSection] = useState<SettingsSection>("general");
   const [draft, setDraft] = useState<ApplicationSettings | null>(settings);
@@ -102,7 +107,7 @@ export function SettingsView({
   async function copyDiagnostics() {
     const diagnostic = {
       product: desktopStatus?.product ?? "OIHK Basic",
-      version: desktopStatus?.version ?? "0.1.0 development",
+      version: desktopStatus?.version ?? `${PRODUCT_VERSION} development`,
       platform: desktopStatus?.platform ?? navigator.platform,
       runtime: desktopStatus?.mode ?? "browser",
       backend: desktopStatus?.api_endpoint ?? "configured local API",
@@ -144,8 +149,10 @@ export function SettingsView({
               <label>Default investigation<input value={draft.general.default_case_id} onChange={(event) => setDraft({ ...draft, general: { ...draft.general, default_case_id: event.target.value } })} placeholder="Use most recent" /></label>
               <label className="settings-check"><input type="checkbox" checked={draft.general.confirmations} onChange={(event) => setDraft({ ...draft, general: { ...draft.general, confirmations: event.target.checked } })} /> Confirm destructive actions</label>
               <label className="settings-check"><input type="checkbox" checked={draft.general.check_updates} onChange={(event) => setDraft({ ...draft, general: { ...draft.general, check_updates: event.target.checked } })} /> Check for updates</label>
+              <label>Update channel<select value={draft.general.update_channel} onChange={(event) => setDraft({ ...draft, general: { ...draft.general, update_channel: event.target.value as "alpha" | "beta" | "stable" } })}><option value="alpha">Alpha</option><option value="beta">Beta (reserved)</option><option value="stable">Stable (reserved)</option></select></label>
             </div>
             <div className="settings-actions"><button type="button" onClick={onRunOnboarding}><PlayCircle size={14} /> Run onboarding again</button></div>
+            <UpdatePanel updater={updater} recovery={desktopStatus?.recovery} />
           </>}
 
           {section === "appearance" && <>
@@ -191,7 +198,7 @@ export function SettingsView({
               <label className="settings-check"><input type="checkbox" checked={draft.privacy.redact_logs} onChange={(event) => setDraft({ ...draft, privacy: { ...draft.privacy, redact_logs: event.target.checked } })} /> Redact sensitive log fields</label>
               <label>Log retention (days)<input type="number" min="1" max="365" value={draft.privacy.log_retention_days} onChange={(event) => setDraft({ ...draft, privacy: { ...draft.privacy, log_retention_days: Number(event.target.value) } })} /></label>
             </div>
-            <div className="settings-network-list"><strong>Possible connections</strong><span>Local API on 127.0.0.1</span><span>User-selected LM Studio or Ollama endpoint</span><span>Public DNS, RDAP, and certificate services only after an OSINT action</span></div>
+            <div className="settings-network-list"><strong>Possible connections</strong><span>Local API on 127.0.0.1</span><span>Signed update metadata only when update checks are enabled</span><span>User-selected LM Studio or Ollama endpoint</span><span>Public DNS, RDAP, and certificate services only after an OSINT action</span></div>
           </>}
 
           {section === "performance" && <>
@@ -207,13 +214,13 @@ export function SettingsView({
 
           {section === "diagnostics" && <>
             <div className="platform-section-heading"><div><span className="platform-eyebrow">Diagnostics</span><h2>Sanitized runtime status</h2></div><Activity size={18} /></div>
-            <dl className="platform-property-list settings-properties"><div><dt>Runtime</dt><dd>{desktopStatus?.mode ?? "browser"}</dd></div><div><dt>Version</dt><dd>{desktopStatus?.version ?? "0.1.0 development"}</dd></div><div><dt>Platform</dt><dd>{desktopStatus?.platform ?? navigator.platform}</dd></div><div><dt>Backend</dt><dd>{desktopStatus?.backend_managed ? "Managed local process" : "Local web service"}</dd></div><div><dt>Providers</dt><dd>{providers ? `${providers.operational} operational / ${providers.configured} configured` : "Unavailable"}</dd></div><div><dt>Storage</dt><dd>{storage?.writable ? "Writable" : "Check local service"}</dd></div></dl>
+            <dl className="platform-property-list settings-properties"><div><dt>Runtime</dt><dd>{desktopStatus?.mode ?? "browser"}</dd></div><div><dt>Version</dt><dd>{desktopStatus?.version ?? `${PRODUCT_VERSION} development`}</dd></div><div><dt>Platform</dt><dd>{desktopStatus?.platform ?? navigator.platform}</dd></div><div><dt>Backend</dt><dd>{desktopStatus?.backend_managed ? "Managed local process" : "Local web service"}</dd></div><div><dt>Providers</dt><dd>{providers ? `${providers.operational} operational / ${providers.configured} configured` : "Unavailable"}</dd></div><div><dt>Storage</dt><dd>{storage?.writable ? "Writable" : "Check local service"}</dd></div></dl>
             <div className="settings-actions"><button type="button" onClick={() => void copyDiagnostics()}><Copy size={14} /> Copy sanitized diagnostics</button></div>
           </>}
 
           {section === "about" && <>
             <div className="platform-section-heading"><div><span className="platform-eyebrow">About</span><h2>OIHK Basic</h2></div><Server size={18} /></div>
-            <dl className="platform-property-list settings-properties"><div><dt>Edition</dt><dd>Basic · local-first · single-user</dd></div><div><dt>Version</dt><dd>{desktopStatus?.version ?? "0.1.0"}</dd></div><div><dt>Account</dt><dd>{user.username} ({user.role})</dd></div><div><dt>Settings schema</dt><dd>v{draft.schema_version}</dd></div></dl>
+            <dl className="platform-property-list settings-properties"><div><dt>Edition</dt><dd>Basic · local-first · single-user</dd></div><div><dt>Version</dt><dd>{desktopStatus?.version ?? PRODUCT_VERSION} · {UPDATE_CHANNEL}</dd></div><div><dt>Account</dt><dd>{user.username} ({user.role})</dd></div><div><dt>Settings schema</dt><dd>v{draft.schema_version}</dd></div></dl>
             {providers && <div className="platform-table-wrap"><table className="platform-table"><thead><tr><th>Provider</th><th>Access</th><th>Status</th></tr></thead><tbody>{providers.providers.map((provider) => <tr key={provider.id}><td><strong>{provider.name}</strong><small>{provider.capabilities.join(", ")}</small></td><td>{provider.access}</td><td><span className={provider.status === "operational" ? "platform-provider good" : "platform-provider"}>{provider.status === "operational" ? <CheckCircle2 size={13} /> : <ShieldAlert size={13} />}{provider.status}</span></td></tr>)}</tbody></table></div>}
           </>}
         </section>

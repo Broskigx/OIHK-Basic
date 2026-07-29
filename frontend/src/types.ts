@@ -35,7 +35,7 @@ export type ApplicationSettings = {
   id: string;
   schema_version: number;
   onboarding_complete: boolean;
-  general: { language: "en" | "es"; default_start: string; default_case_id: string; confirmations: boolean; check_updates: boolean };
+  general: { language: "en" | "es"; default_start: string; default_case_id: string; confirmations: boolean; check_updates: boolean; update_channel: "alpha" | "beta" | "stable" };
   appearance: { dark_mode: boolean; density: "comfortable" | "compact"; text_scale: number; reduce_motion: boolean; restore_layout: boolean };
   storage: { data_directory: string; backup_on_exit: boolean; retention_days: number };
   tools: { executable_paths: Record<string, string>; timeout_seconds: number; max_file_mb: number };
@@ -807,6 +807,17 @@ export type DesktopStatus = {
   platform: string;
   api_endpoint: string;
   backend_managed?: boolean;
+  updater_enabled?: boolean;
+  recovery?: DesktopRecoveryStatus | null;
+};
+
+export type DesktopRecoveryStatus = {
+  stage: string;
+  source_version: string;
+  target_version: string;
+  backup_path: string;
+  error_code: string;
+  updated_at: string;
 };
 
 // --- Forensic lab (hash sets, correlation, carving, interesting files) ---

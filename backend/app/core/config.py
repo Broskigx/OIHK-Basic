@@ -1,5 +1,6 @@
 """OIHK Basic configuration — local-first, no cloud dependencies."""
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
@@ -163,6 +164,33 @@ class Settings(BaseSettings):
         return bool(self.ai_api_key)
 
 
+class _PackagedDesktopSettings(Settings):
+    """Packaged desktop settings accept explicit safe values, not ambient OIHK variables."""
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
+    ):
+        return (init_settings,)
+
+
 @lru_cache
 def get_settings() -> Settings:
+    if os.environ.get("OIHK_DESKTOP_PACKAGED") == "1":
+        data_dir_value = os.environ.get("OIHK_PACKAGED_DATA_DIR", "")
+        overrides: dict[str, object] = {
+            "environment": "desktop",
+            "auth_enabled": False,
+            "cors_origins": "http://tauri.localhost,tauri://localhost",
+        }
+        if data_dir_value:
+            data_dir = Path(data_dir_value).resolve()
+            overrides["database_url"] = f"sqlite+aiosqlite:///{(data_dir / 'oihk-basic.db').as_posix()}"
+            overrides["storage_dir"] = str(data_dir / "storage")
+        return _PackagedDesktopSettings(**overrides)
     return Settings()

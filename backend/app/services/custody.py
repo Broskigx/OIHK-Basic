@@ -6,6 +6,7 @@ import hashlib
 import hmac
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,6 +58,27 @@ def _compute_signature(seal_hash: str, signing_key: str) -> str:
     return _hmac_sha256(signing_key, seal_hash.encode("utf-8"))
 
 
+def _managed_file_hash(content_ref: str) -> str | None:
+    if not content_ref.startswith("file:"):
+        return None
+    root = Path(get_settings().effective_storage_dir).resolve()
+    path = Path(content_ref.removeprefix("file:")).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return ""
+    if not path.is_file():
+        return ""
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
 async def seal_source(
     session: AsyncSession,
     source: models.Source,
@@ -66,8 +88,19 @@ async def seal_source(
 ) -> models.EvidenceSeal:
     settings = get_settings()
 
-    content_to_hash = raw_bytes if raw_bytes is not None else (source.body or "").encode("utf-8")
-    content_sha256 = hashlib.sha256(content_to_hash).hexdigest()
+    if storage_path:
+        content_ref = f"file:{storage_path}"
+        content_sha256 = _managed_file_hash(content_ref)
+        if not content_sha256:
+            raise ValueError("Managed evidence must exist inside the configured storage directory before sealing.")
+        size_bytes = Path(storage_path).stat().st_size
+        if raw_bytes is not None and not hmac.compare_digest(hashlib.sha256(raw_bytes).hexdigest(), content_sha256):
+            raise ValueError("Managed evidence bytes changed before the custody seal was created.")
+    else:
+        content_ref = "body"
+        content_to_hash = raw_bytes if raw_bytes is not None else (source.body or "").encode("utf-8")
+        content_sha256 = hashlib.sha256(content_to_hash).hexdigest()
+        size_bytes = len(content_to_hash)
 
     anchor = await session.get(models.CustodyAnchor, source.case_id)
     if anchor is None:
@@ -90,8 +123,8 @@ async def seal_source(
         source_id=source.id,
         sequence=sequence,
         content_sha256=content_sha256,
-        content_ref=f"file:{storage_path}" if storage_path else "body",
-        size_bytes=len(content_to_hash),
+        content_ref=content_ref,
+        size_bytes=size_bytes,
         sealed_at=sealed_at,
         sealed_at_iso=sealed_at_iso,
         prev_seal_hash=prev_hash,
@@ -110,6 +143,7 @@ async def seal_source(
 
 async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVerificationReport:
     settings = get_settings()
+    anchor = await session.get(models.CustodyAnchor, case_id)
 
     seals = (
         (
@@ -123,9 +157,17 @@ async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVer
         .all()
     )
 
-    if not seals:
+    if not seals and anchor is None:
         return CustodyVerificationReport(
             case_id=case_id, intact=True, sealed_count=0, first_broken_sequence=None, entries=[]
+        )
+    if not seals:
+        return CustodyVerificationReport(
+            case_id=case_id,
+            intact=anchor.expected_sequence == 0 and anchor.last_seal_hash == "0" * 64,
+            sealed_count=0,
+            first_broken_sequence=1 if anchor.expected_sequence else None,
+            entries=[],
         )
 
     entries: list[SealEntryResult] = []
@@ -136,9 +178,13 @@ async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVer
         content_ok = True
         if seal.content_ref == "body":
             source = await session.get(models.Source, seal.source_id)
-            if source is not None:
-                actual_content_hash = hashlib.sha256((source.body or "").encode("utf-8")).hexdigest()
-                content_ok = actual_content_hash == seal.content_sha256
+            content_ok = source is not None and (
+                hashlib.sha256((source.body or "").encode("utf-8")).hexdigest() == seal.content_sha256
+            )
+        elif seal.content_ref.startswith("file:"):
+            content_ok = _managed_file_hash(seal.content_ref) == seal.content_sha256
+        else:
+            content_ok = False
 
         expected_seal_hash = _compute_seal_hash(
             prev_seal_hash, seal.content_sha256, seal.source_id, seal.sequence, seal.sealed_at_iso
@@ -147,7 +193,7 @@ async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVer
         chain_ok = seal.prev_seal_hash == prev_seal_hash
 
         expected_sig = _compute_signature(seal.seal_hash, settings.custody_signing_key)
-        signature_ok = expected_sig == seal.signature
+        signature_ok = hmac.compare_digest(expected_sig, seal.signature)
 
         ok = content_ok and seal_ok and chain_ok and signature_ok
         if not ok and first_broken is None:
@@ -175,6 +221,13 @@ async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVer
         )
 
         prev_seal_hash = seal.seal_hash
+
+    if anchor is None:
+        first_broken = first_broken or 1
+    elif anchor.expected_sequence != seals[-1].sequence or not hmac.compare_digest(
+        anchor.last_seal_hash, seals[-1].seal_hash
+    ):
+        first_broken = first_broken or seals[-1].sequence + 1
 
     return CustodyVerificationReport(
         case_id=case_id,

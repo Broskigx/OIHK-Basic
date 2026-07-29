@@ -1,8 +1,18 @@
 import { Database, HardDrive, LockKeyhole, Server, ShieldCheck } from "lucide-react";
+import { getApiUrl } from "../../api";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
 import type { DesktopStatus } from "../../types";
+import { PRODUCT_VERSION, UPDATE_CHANNEL } from "../../version";
+import { UpdatePanel } from "../updates/UpdatePanel";
+import type { UpdateController } from "../updates/useUpdater";
 
-export function AboutView({ desktopStatus }: { desktopStatus: DesktopStatus | null }) {
+export function AboutView({
+  desktopStatus,
+  updater,
+}: {
+  desktopStatus: DesktopStatus | null;
+  updater: UpdateController;
+}) {
   return (
     <div className="platform-view about-view">
       <WorkspaceHeader
@@ -28,11 +38,12 @@ export function AboutView({ desktopStatus }: { desktopStatus: DesktopStatus | nu
         <div className="platform-section-heading"><div><span className="platform-eyebrow">Runtime</span><h2>Build information</h2></div></div>
         <dl className="platform-property-list">
           <div><dt>Product</dt><dd>{desktopStatus?.product ?? "OIHK Basic"}</dd></div>
-          <div><dt>Version</dt><dd>{desktopStatus?.version ?? "0.1.0 development"}</dd></div>
+          <div><dt>Version</dt><dd>{desktopStatus?.version ?? PRODUCT_VERSION} · {UPDATE_CHANNEL}</dd></div>
           <div><dt>Runtime</dt><dd>{desktopStatus ? `${desktopStatus.mode} · ${desktopStatus.platform}` : "Browser development mode"}</dd></div>
-          <div><dt>Local API</dt><dd className="platform-mono">{desktopStatus?.api_endpoint ?? "http://127.0.0.1:8000"}</dd></div>
+          <div><dt>Local API</dt><dd className="platform-mono">{desktopStatus?.api_endpoint ?? getApiUrl()}</dd></div>
         </dl>
       </section>
+      <UpdatePanel updater={updater} recovery={desktopStatus?.recovery} />
     </div>
   );
 }

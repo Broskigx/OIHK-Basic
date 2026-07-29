@@ -53,6 +53,19 @@ async def test_evidence_size_limit_leaves_no_partial_file(tmp_path, monkeypatch)
     assert list((tmp_path / "evidence" / "case-local").iterdir()) == []
 
 
+@pytest.mark.asyncio
+async def test_streamed_evidence_rejects_case_path_traversal(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        managed_evidence,
+        "get_settings",
+        lambda: SimpleNamespace(effective_storage_dir=str(tmp_path), max_evidence_bytes=1024),
+    )
+    upload = UploadFile(filename="evidence.bin", file=BytesIO(b"preserved"))
+    with pytest.raises(HTTPException, match="outside managed storage"):
+        await managed_evidence.store_upload("../../outside", upload)
+    assert not (tmp_path.parent / "outside").exists()
+
+
 def test_legacy_managed_storage_is_atomic_and_path_safe(tmp_path, monkeypatch):
     monkeypatch.setattr(
         evidence_storage,
@@ -65,3 +78,5 @@ def test_legacy_managed_storage_is_atomic_and_path_safe(tmp_path, monkeypatch):
     assert path.is_relative_to(tmp_path)
     with pytest.raises(HTTPException, match="outside managed storage"):
         evidence_storage.safe_storage_path(str(tmp_path.parent / "outside.txt"))
+    with pytest.raises(HTTPException, match="outside managed storage"):
+        evidence_storage.store_evidence_bytes("case", "note.txt", b"x", subdir="../../outside")

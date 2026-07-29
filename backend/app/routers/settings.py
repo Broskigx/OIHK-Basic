@@ -87,7 +87,7 @@ async def save_application_settings(
     if row is None:
         row = models.ApplicationSettings(user_id=current.id)
         session.add(row)
-    row.schema_version = 1
+    row.schema_version = 2
     row.onboarding_complete = payload.onboarding_complete
     row.general = payload.general.model_dump()
     row.appearance = payload.appearance.model_dump()
