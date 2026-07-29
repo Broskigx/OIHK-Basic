@@ -10,7 +10,10 @@ Usage:
 import argparse
 import os
 import sys
+import threading
+import time
 from contextlib import suppress
+from pathlib import Path
 
 # PyInstaller's windowed bootloader does not attach console streams on Windows.
 # Uvicorn and the startup banner still expect writable streams, so route them to
@@ -23,6 +26,43 @@ if sys.stderr is None:
 import uvicorn
 
 
+def _parent_is_alive(parent_pid: int) -> bool:
+    if parent_pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        synchronize = 0x00100000
+        wait_timeout = 0x00000102
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel32.OpenProcess(synchronize, False, parent_pid)
+        if not handle:
+            return False
+        try:
+            return kernel32.WaitForSingleObject(handle, 0) == wait_timeout
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(parent_pid, 0)
+    except (OSError, ProcessLookupError):
+        return False
+    return True
+
+
+def _watch_parent(server, parent_pid: int, poll_interval: float = 1.0) -> None:
+    while not server.should_exit:
+        if not _parent_is_alive(parent_pid):
+            server.should_exit = True
+            return
+        time.sleep(poll_interval)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="OIHK Basic — Local-first investigation and OSINT platform",
@@ -33,6 +73,8 @@ def main() -> None:
         help="Bind address (default: 127.0.0.1, use 0.0.0.0 with caution)",
     )
     parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
+    parser.add_argument("--parent-pid", type=int, default=0, help=argparse.SUPPRESS)
+    parser.add_argument("--data-dir", default="", help=argparse.SUPPRESS)
     parser.add_argument("--reload", action="store_true", help="Enable auto-reload for development")
     parser.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"])
 
@@ -43,6 +85,13 @@ def main() -> None:
             parser.set_defaults(port=int(env_port))
 
     args = parser.parse_args()
+    os.environ.pop("OIHK_PACKAGED_DATA_DIR", None)
+    if args.data_dir:
+        requested_data_dir = Path(args.data_dir)
+        if not requested_data_dir.is_absolute():
+            parser.error("The managed data directory must be absolute.")
+        data_dir = requested_data_dir.resolve()
+        os.environ["OIHK_PACKAGED_DATA_DIR"] = str(data_dir)
 
     from app.core.config import get_settings
 
@@ -74,6 +123,13 @@ def main() -> None:
         )
     )
     app.state.shutdown_callback = lambda: setattr(server, "should_exit", True)
+    if args.parent_pid:
+        threading.Thread(
+            target=_watch_parent,
+            args=(server, args.parent_pid),
+            name="oihk-parent-watchdog",
+            daemon=True,
+        ).start()
     server.run()
 
 

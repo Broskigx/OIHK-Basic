@@ -44,7 +44,7 @@ Use a disposable Windows Sandbox or clean VM:
 
 1. Install the previous signed `0.1.0` build without Python, Node, Rust, or the repository.
 2. Create the representative fixture: cases, entities, relationships, reports, managed evidence, Copilot conversations/messages, settings, audit history, sources, and an older backup.
-3. Point the test build at a controlled HTTPS alpha endpoint containing a signed `0.1.1` candidate.
+3. Point the test build at a controlled HTTPS alpha endpoint containing the signed `0.1.1-alpha.1` candidate.
 4. Confirm startup only reports availability.
 5. Confirm release notes, date, size, progress, safe cancellation, retry, and explicit restart.
 6. Confirm an invalid signature is blocked before backup/install.
@@ -53,7 +53,7 @@ Use a disposable Windows Sandbox or clean VM:
 9. Confirm migration history, pre-update metadata/SHA, local sanitized log, sidecar startup, and uninstall preservation of `%APPDATA%\OIHK-Basic`.
 10. Exercise a forced install failure and a migration failure, then validate restart/recovery instructions.
 
-`tests/test_update_upgrade_fixture.py` automates the data-preservation portion of `0.1.0 -> 0.1.1`; it does not replace the signed installer/VM test.
+`tests/test_update_upgrade_fixture.py` automates the data-preservation portion of `0.1.0 -> 0.1.1-alpha.1`; it does not replace the signed installer/VM test.
 
 ## Publish and promote
 

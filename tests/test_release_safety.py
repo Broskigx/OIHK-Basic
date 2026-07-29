@@ -156,3 +156,37 @@ def test_official_updater_is_signature_gated_to_release_builds() -> None:
     assert '#[cfg(feature = "updater-release")]' in rust
     assert "TAURI_SIGNING_PRIVATE_KEY" not in base_config
     assert '"pubkey"' not in base_config
+    build = (ROOT / "scripts" / "build-windows.ps1").read_text(encoding="utf-8")
+    assert "--example verify_update_signature" in build
+    assert "$env:TAURI_UPDATER_PUBLIC_KEY" in build
+    assert not (
+        ROOT / "src-tauri" / "src" / "bin" / "verify_update_signature.rs"
+    ).exists()
+    assert (ROOT / "src-tauri" / "examples" / "verify_update_signature.rs").is_file()
+
+
+def test_official_build_smokes_clean_install_restart_and_uninstall() -> None:
+    build = (ROOT / "scripts" / "build-windows.ps1").read_text(encoding="utf-8")
+    smoke = (ROOT / "scripts" / "smoke-installer.ps1").read_text(encoding="utf-8")
+    assert "scripts\\smoke-installer.ps1" in build
+    assert "/D=$installDir" in smoke
+    assert '$env:PATH = "$env:SystemRoot\\System32;$env:SystemRoot"' in smoke
+    assert "Installed data did not survive restart" in smoke
+    assert "The NSIS uninstaller removed the user's SQLite database." in smoke
+    assert (
+        "The NSIS uninstaller removed the user's managed evidence directory." in smoke
+    )
+
+
+def test_packaged_sidecar_ignores_working_directory_configuration_and_tracks_parent() -> (
+    None
+):
+    rust = (ROOT / "src-tauri" / "src" / "lib.rs").read_text(encoding="utf-8")
+    backend = (ROOT / "backend" / "run.py").read_text(encoding="utf-8")
+    assert 'env("OIHK_DESKTOP_PACKAGED", "1")' in rust
+    assert '"--parent-pid"' in rust
+    assert '"--data-dir"' in rust
+    assert "current_dir(data_dir)" in rust
+    assert "candidates.push(current_dir.join(backend_name))" not in rust
+    assert ".eval(" not in rust
+    assert "oihk-parent-watchdog" in backend
