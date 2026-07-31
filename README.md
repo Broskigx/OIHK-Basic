@@ -1,3 +1,7 @@
+# ⚠️ NOT ESTABLE — ALPHA PÚBLICA ⚠️
+
+> **Esta versión está en desarrollo activo y puede contener errores graves, perder datos o cambiar sin compatibilidad. No la uses como única copia de evidencia. Mantén backups externos verificados y úsala solamente en investigaciones autorizadas.**
+
 # OIHK Basic
 
 OIHK Basic es la edición comunitaria, local-first y monousuario de OIHK. Organiza investigaciones autorizadas, fuentes, evidencia y relaciones sin requerir una cuenta, una nube ni un modelo de IA.
