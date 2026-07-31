@@ -38,7 +38,7 @@ El código incluye o contempla once áreas principales:
 5. Evidence Lab con carga por streaming, almacenamiento administrado, SHA-256, verificación, asociaciones, manifiesto y análisis forense.
 6. Reports con constructor por secciones, plantillas, historial, Markdown, HTML seguro, JSON y aprobación de borradores.
 7. Copilot con conversaciones persistentes y uso de un modelo local configurado por el usuario.
-8. Local Models para detectar y configurar LM Studio, Ollama o un endpoint compatible dentro de una red privada.
+8. Local Models con compatibilidad actual para LM Studio mediante su endpoint local OpenAI-compatible. Otros backends continúan en desarrollo o validación.
 9. Data Sources para revisar procedencia, citas y confiabilidad.
 10. Settings con apariencia, almacenamiento, privacidad, rendimiento, backups y diagnósticos sanitizados.
 11. About con límites, privacidad, versión y alcance de la edición.
@@ -104,7 +104,23 @@ Que las pruebas automáticas terminen correctamente no garantiza que la aplicaci
 
 Casos, grafo, evidencia administrada, reportes, conversaciones, configuración y backups están diseñados para almacenarse localmente. OIHK Basic no pretende depender obligatoriamente de servicios cloud.
 
-En **Local Models** se contempla la detección de Ollama (`http://127.0.0.1:11434`) y LM Studio (`http://127.0.0.1:1234`), además de endpoints OpenAI-compatible en localhost o redes privadas bajo control del usuario. El Copilot es opcional y su salida siempre debe revisarse.
+### Compatibilidad actual del Copilot
+
+Por ahora, el backend local compatible y recomendado es **LM Studio**, utilizando su servidor OpenAI-compatible en:
+
+```text
+http://127.0.0.1:1234
+```
+
+El usuario debe cargar y mantener el modelo dentro de LM Studio. OIHK Basic no incluye pesos de modelos ni descarga modelos automáticamente. La compatibilidad con Ollama y otros endpoints locales o privados puede existir parcialmente en el código, pero continúa en desarrollo y no se garantiza en esta vista previa.
+
+Para obtener mejores resultados en tareas de investigación, planificación y uso de herramientas, se recomienda utilizar, cuando el hardware lo permita:
+
+- modelos locales de tipo **orchestrator**, preparados para coordinar instrucciones, herramientas y flujos de trabajo complejos;
+- variantes **abliterated**, cuando el usuario necesite reducir rechazos injustificados en tareas legítimas y autorizadas;
+- modelos con buen seguimiento de instrucciones, contexto amplio y capacidad de razonamiento.
+
+Los modelos abliterated no vuelven correctas, legales ni seguras todas sus respuestas. Pueden producir contenido erróneo, inseguro o excesivamente permisivo. Toda salida del Copilot debe ser revisada por una persona antes de utilizarse, incorporarse a un informe o aplicarse sobre una investigación real.
 
 Algunas fuentes externas, como DNS, RDAP/WHOIS, transparencia de certificados, Brave o SearXNG, pueden requerir conexión de red, una clave o un endpoint aportado por el usuario. El repositorio no debe contener credenciales privadas ni claves de proveedores.
 
