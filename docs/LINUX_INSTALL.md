@@ -11,15 +11,15 @@
 
 ### AppImage (Recommended)
 
-1. Download `OIHK-Basic_0.1.0_amd64.AppImage` from the Releases page
-2. Make it executable: `chmod +x OIHK-Basic_0.1.0_amd64.AppImage`
-3. Run it: `./OIHK-Basic_0.1.0_amd64.AppImage`
+1. Download `OIHK-Basic_0.1.1-alpha.2_amd64.AppImage` from the Releases page
+2. Make it executable: `chmod +x OIHK-Basic_0.1.1-alpha.2_amd64.AppImage`
+3. Run it: `./OIHK-Basic_0.1.1-alpha.2_amd64.AppImage`
 
 ### Debian/Ubuntu Package
 
-1. Download `OIHK-Basic_0.1.0_amd64.deb`
-2. Install: `sudo dpkg -i OIHK-Basic_0.1.0_amd64.deb`
-3. Or: `sudo apt install ./OIHK-Basic_0.1.0_amd64.deb`
+1. Download `OIHK-Basic_0.1.1-alpha.2_amd64.deb`
+2. Install: `sudo dpkg -i OIHK-Basic_0.1.1-alpha.2_amd64.deb`
+3. Or: `sudo apt install ./OIHK-Basic_0.1.1-alpha.2_amd64.deb`
 4. Launch from the application menu or via `oihk-basic`
 
 ## First Run

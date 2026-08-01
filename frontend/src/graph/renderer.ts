@@ -150,6 +150,11 @@ function drawLabel(
   ctx.fillText(text, x, labelY);
 }
 
+// ── Level of detail thresholds ──
+const LOD_LABEL_THRESHOLD = 800; // hide labels below this zoom for large graphs
+const LOD_NO_SHADOW_THRESHOLD = 3000; // skip expensive shadows/glow for huge graphs
+const LOD_MIN_LABEL_ZOOM = 0.5;
+
 // ── Main render function ──
 
 export interface RenderScene {
@@ -178,6 +183,11 @@ export function renderGraph(
   void dirty;
   const { nodes, edges, camera, selectedId, selectedIds = new Set(selectedId ? [selectedId] : []), hoveredId, compact, cameraZoom } = scene;
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+
+  // Level of detail: degrade labels and shadows for very large graphs so the
+  // main thread stays responsive while panning and zooming.
+  const hideLabels = !compact && nodes.length > LOD_LABEL_THRESHOLD && cameraZoom < LOD_MIN_LABEL_ZOOM;
+  const skipShadows = nodes.length > LOD_NO_SHADOW_THRESHOLD;
 
   // 1. Background
   ctx.fillStyle = compact ? "transparent" : "#041012";
@@ -256,8 +266,8 @@ export function renderGraph(
     const radius = node.radius * (isSelected ? 1.25 : isHovered ? 1.1 : 1);
     const alpha = dimmed ? 0.3 : 1;
 
-    // Glow for selected
-    if (isSelected) {
+    // Glow for selected (skipped when the graph is huge to save fill rate)
+    if (isSelected && !skipShadows) {
       ctx.save();
       ctx.globalAlpha = 0.2;
       ctx.shadowColor = config.color;
@@ -272,15 +282,17 @@ export function renderGraph(
     // Node fill
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.shadowColor = "rgba(0,0,0,0.4)";
-    ctx.shadowBlur = 6;
-    ctx.shadowOffsetY = 2;
+    if (!skipShadows) {
+      ctx.shadowColor = "rgba(0,0,0,0.4)";
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 2;
+    }
     drawShape(ctx, config.shape, node.x, node.y, radius);
     ctx.fillStyle = dimmed ? "#1e293b" : config.color;
     ctx.fill();
 
     // Border
-    ctx.shadowBlur = 0;
+    if (!skipShadows) ctx.shadowBlur = 0;
     ctx.lineWidth = isSelected ? 2.5 : 1.5;
     ctx.strokeStyle = isSelected
       ? "#ffffff"
@@ -290,8 +302,8 @@ export function renderGraph(
     ctx.stroke();
     ctx.restore();
 
-    // Label
-    if (!dimmed || isSelected) {
+    // Label (LOD-aware; selected and hovered labels always survive LOD)
+    if ((!dimmed || isSelected) && (!hideLabels || isSelected || isHovered)) {
       drawLabel(ctx, node.label, node.x, node.y, cameraZoom);
     }
   }

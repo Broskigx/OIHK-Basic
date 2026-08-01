@@ -177,11 +177,15 @@ class UpdateRecoveryRead(BaseModel):
 class ConversationCreate(BaseModel):
     case_id: str | None = None
     title: str = Field(default="New conversation", min_length=1, max_length=160)
+    model: str = Field(default="", max_length=240)
+    settings: dict[str, Any] = Field(default_factory=dict)
 
 
 class ConversationUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=160)
     archived: bool | None = None
+    model: str | None = Field(default=None, max_length=240)
+    settings: dict[str, Any] | None = None
 
 
 class ConversationRead(BaseModel):
@@ -189,6 +193,8 @@ class ConversationRead(BaseModel):
     case_id: str | None
     title: str
     archived: bool
+    model: str = ""
+    settings: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
     message_count: int = 0

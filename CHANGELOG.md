@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.1-alpha.2 — 2026-07-31
+
+Second alpha candidate for testers: streaming Copilot, per-conversation model settings, a faster Canvas layout engine and a clear split between local unsigned builds and signed alpha releases.
+
+### Added
+
+- Server-Sent-Events (SSE) streaming for Copilot replies with incremental deltas, bounded retries and no lost user turns on disconnect.
+- Per-conversation model and settings persistence (schema migration 4) so each chat remembers the model it was drafted with.
+- Packed numeric spatial-grid keys in the Canvas layout engine: bijective cell packing, canonical cell-pair iteration and no per-tick string-keyed deduplication. Small graphs keep exact all-pairs repulsion.
+- Graph performance regression tests for small, medium and large graphs (50/500/2500 nodes) plus spatial hit-test and fit-to-view coverage.
+- `npm run check`, `npm run tauri:build`, `npm run release:local` (unsigned, no updater, no signing keys) and `npm run release:alpha` (signed updater), with `src-tauri/tauri.local.conf.json` keeping local builds updater-free.
+- `PRIVACY.md`, `THREAT_MODEL.md` and `RESPONSIBLE_USE.md`, plus `OIHK_AUDIT.md` and `backend/.env.example`.
+- Database migration runner now skips `ALTER TABLE ADD COLUMN` statements whose columns already exist on fresh databases.
+
+### Security
+
+- Copilot still talks only to loopback/private endpoints; streaming does not change the local-model trust boundary.
+- Local unsigned builds cannot silently degrade into signed releases: missing signing keys fail the build with a clear message.
+
+### Quality
+
+- Version metadata synchronized to 0.1.1-alpha.2 across every build surface.
+- Documentation aligned on Node.js 22 (matching `frontend/package.json` engines) and the current alpha/testing status.
+
 ## 0.1.1-alpha.1 — 2026-07-28
 
 First public-alpha candidate for the standalone OIHK Basic desktop application.

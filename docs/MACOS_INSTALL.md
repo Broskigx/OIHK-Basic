@@ -9,8 +9,8 @@
 ## Installation
 
 1. Download the appropriate `.dmg` for your Mac:
-   - **Intel Macs:** `OIHK-Basic_0.1.0_x64.dmg`
-   - **Apple Silicon Macs:** `OIHK-Basic_0.1.0_arm64.dmg`
+   - **Intel Macs:** `OIHK-Basic_0.1.1-alpha.2_x64.dmg`
+   - **Apple Silicon Macs:** `OIHK-Basic_0.1.1-alpha.2_arm64.dmg`
 2. Open the `.dmg` file
 3. Drag "OIHK Basic.app" to your Applications folder
 4. Launch from Applications or via Spotlight

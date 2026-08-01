@@ -1,0 +1,6 @@
+{
+  "bundle": {
+    "externalBin": ["../dist/sidecar/oihk-basic-backend"],
+    "createUpdaterArtifacts": false
+  }
+}

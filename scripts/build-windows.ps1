@@ -4,11 +4,19 @@
 
 param(
     [switch]$Release,
-    [ValidateSet("alpha", "beta", "stable")]
-    [string]$Channel = "alpha"
+    [ValidateSet("alpha", "beta", "stable", "local")]
+    [string]$Channel = "alpha",
+    [switch]$Unsigned,
+    [switch]$SkipUpdater
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
+
+# Local/unsigned builds never touch updater or signing artifacts.
+$SkipUpdaterEffective = $SkipUpdater -or $Unsigned -or ($Channel -eq "local")
+$NeedsUpdater = $Release -and -not $SkipUpdaterEffective
+
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 $BackendDir = Join-Path $ProjectRoot "backend"
 $FrontendDir = Join-Path $ProjectRoot "frontend"
@@ -17,6 +25,7 @@ $DistDir = Join-Path $ProjectRoot "dist"
 $SidecarDir = Join-Path $DistDir "sidecar"
 $ReleaseConfig = Join-Path $TauriDir "tauri.release.conf.json"
 $RequirementsLock = Join-Path $BackendDir "requirements.lock"
+$BuildStarted = Get-Date
 
 function Assert-WorkspacePath([string]$Path) {
     $resolvedRoot = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\') + '\'
@@ -28,12 +37,17 @@ function Assert-WorkspacePath([string]$Path) {
 
 Write-Host "=== OIHK Basic Build (Windows) ===" -ForegroundColor Cyan
 Write-Host "Project root: $ProjectRoot" -ForegroundColor White
+if ($NeedsUpdater) {
+    Write-Host "Mode: signed release ($Channel, updater enabled)" -ForegroundColor Yellow
+} else {
+    Write-Host "Mode: local unsigned build (no updater, no signing keys)" -ForegroundColor Yellow
+}
 python (Join-Path $ProjectRoot "scripts\version.py") check
 if ($LASTEXITCODE -ne 0) { throw "Version metadata validation failed." }
 
-if ($Release) {
+if ($NeedsUpdater) {
     if (-not $env:TAURI_SIGNING_PRIVATE_KEY) {
-        throw "TAURI_SIGNING_PRIVATE_KEY is required for a signed updater release build."
+        throw "TAURI_SIGNING_PRIVATE_KEY is required for a signed updater release build. Configure TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD and TAURI_UPDATER_PUBLIC_KEY (see docs/BUILDING.md), or run npm run release:local for an unsigned local build."
     }
     if (-not $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD) {
         throw "TAURI_SIGNING_PRIVATE_KEY_PASSWORD is required for a signed updater release build."
@@ -80,7 +94,8 @@ if ($LASTEXITCODE -ne 0) { throw "Python dependency audit failed." }
 
 # 4. Run lint
 Write-Host "`n[4/8] Running lint..." -ForegroundColor Yellow
-& $venvPython -m ruff check "$BackendDir\app" "$BackendDir\run.py" "$ProjectRoot\scripts" "$ProjectRoot\tests" --quiet
+Set-Location $ProjectRoot
+& $venvPython -m ruff check "$BackendDir\app" "$BackendDir\run.py" "$ProjectRoot\scripts" "$ProjectRoot\tests" --config "$BackendDir\pyproject.toml" --quiet
 if ($LASTEXITCODE -ne 0) { throw "Python lint failed." }
 Write-Host "  Lint passed" -ForegroundColor Green
 
@@ -156,8 +171,8 @@ Assert-WorkspacePath $bundleDir
 if (Test-Path -LiteralPath $bundleDir) {
     Remove-Item -LiteralPath $bundleDir -Recurse -Force
 }
-$tauriConfig = if ($Release) { "src-tauri/tauri.release.conf.json" } else { "src-tauri/tauri.sidecar.conf.json" }
-if ($Release) {
+$tauriConfig = if ($NeedsUpdater) { "src-tauri/tauri.release.conf.json" } else { "src-tauri/tauri.local.conf.json" }
+if ($NeedsUpdater) {
     & (Join-Path $FrontendDir "node_modules\.bin\tauri.cmd") build --bundles nsis --config $tauriConfig --features updater-release --ci
 } else {
     & (Join-Path $FrontendDir "node_modules\.bin\tauri.cmd") build --bundles nsis --config $tauriConfig --ci
@@ -180,27 +195,44 @@ $installerSource = $installerCandidates[0]
 $windowsDist = Join-Path $DistDir "windows"
 Assert-WorkspacePath $windowsDist
 if (Test-Path -LiteralPath $windowsDist) {
-    Remove-Item -LiteralPath $windowsDist -Recurse -Force
+    $oldName = "windows-old-" + (Get-Date -Format "yyyyMMdd-HHmmssfff")
+    Rename-Item -LiteralPath $windowsDist -NewName $oldName
+    Write-Host "  Archived previous build output to dist\$oldName" -ForegroundColor Yellow
 }
 New-Item -ItemType Directory -Force -Path $windowsDist | Out-Null
 Copy-Item $installerSource.FullName $windowsDist -Force
+if (-not (Test-Path -LiteralPath (Join-Path $windowsDist $installerSource.Name))) {
+    throw "The installer was not copied to dist\windows."
+}
 Write-Host "  Installer: $($installerSource.Name)" -ForegroundColor Green
-if ($Release) {
+if ($NeedsUpdater) {
     Get-ChildItem "$bundleDir\*.nsis.zip*" | Copy-Item -Destination $windowsDist -Force
 }
 & (Join-Path $ProjectRoot "scripts\smoke-installer.ps1") `
     -InstallerPath (Join-Path $windowsDist $installerSource.Name)
 if ($LASTEXITCODE -ne 0) { throw "Clean NSIS installer smoke test failed." }
 
-# Generate SHA-256
+# Generate SHA-256 and verify the installer was produced by this run
 $artifacts = Get-ChildItem (Join-Path $DistDir "windows\") -Filter "*.exe"
+if (-not $artifacts) { throw "No installer was produced in dist\windows." }
+$newestInstaller = $artifacts | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($newestInstaller.Length -le 0) { throw "The generated installer is empty." }
+if ($newestInstaller.LastWriteTime -lt $BuildStarted) {
+    throw "The installer in dist\windows predates this build run; refusing stale artifacts."
+}
+Write-Host "  New installer: $($newestInstaller.Name) ($($newestInstaller.Length) bytes)" -ForegroundColor Green
 foreach ($artifact in $artifacts) {
     $hash = Get-FileHash $artifact.FullName -Algorithm SHA256
     "$($hash.Hash)  $($artifact.Name)" | Out-File "$($artifact.FullName).sha256" -Encoding ascii
     Write-Host "  SHA256 ($($artifact.Name)): $($hash.Hash)" -ForegroundColor Green
 }
+$shaText = (Get-Content -LiteralPath "$($newestInstaller.FullName).sha256" -Raw).Trim()
+$computedHash = (Get-FileHash $newestInstaller.FullName -Algorithm SHA256).Hash
+if (-not $shaText.StartsWith($computedHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "The generated .sha256 sidecar does not match the installer hash."
+}
 
-if ($Release) {
+if ($NeedsUpdater) {
     $updaterArchive = Get-ChildItem "$windowsDist\*.nsis.zip" | Select-Object -First 1
     $updaterSignature = Get-ChildItem "$windowsDist\*.nsis.zip.sig" | Select-Object -First 1
     if (-not $installerSource -or -not $updaterArchive -or -not $updaterSignature) {
@@ -218,6 +250,7 @@ if ($Release) {
         --updater $updaterArchive.FullName `
         --signature $updaterSignature.FullName `
         --output-dir $windowsDist
+    if ($LASTEXITCODE -ne 0) { throw "Update metadata generation failed." }
     python (Join-Path $ProjectRoot "scripts\validate_release_artifacts.py") $windowsDist --channel $Channel
     if ($LASTEXITCODE -ne 0) { throw "Release artifact validation failed." }
 }
