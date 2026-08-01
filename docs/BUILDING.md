@@ -3,7 +3,7 @@
 ## Requisitos
 
 - Python 3.11 o superior.
-- Node.js 18 o superior.
+- Node.js 22 (el `engines` de `frontend/package.json` exige `>=22 <23`; Vite 7 no soporta Node 18).
 - Rust estable y Cargo.
 - Herramientas nativas de compilación de la plataforma.
 - Windows: Microsoft C++ Build Tools y WebView2.
@@ -21,7 +21,33 @@ Desde la raíz:
 .\scripts\build-windows.ps1
 ```
 
-El build local anterior no registra el plugin de updater ni genera sus artefactos. Un candidato firmado activa la feature `updater-release` y requiere las tres variables de firma:
+### Build local sin firma (QA y pruebas)
+
+No genera artefactos del updater, no requiere ninguna clave privada y es la vía recomendada para probar el instalador localmente:
+
+```powershell
+cd frontend
+npm run release:local
+```
+
+Equivalente a:
+
+```powershell
+.\scripts\build-windows.ps1 -Release -Channel local -Unsigned -SkipUpdater
+```
+
+Este modo: compila frontend y sidecar PyInstaller, desactiva `createUpdaterArtifacts` (overlay `src-tauri/tauri.local.conf.json`), genera el instalador NSIS, lo copia a `dist/windows`, calcula y verifica el SHA-256 y ejecuta los smoke tests. El instalador **no está firmado** (ni updater ni Authenticode) y no debe distribuirse públicamente. Las claves de firma no son necesarias; el script falla con un mensaje claro si intenta usarse un modo firmado sin claves.
+
+`npm run tauri:build` compila únicamente el binario Tauri con el overlay local (incluye el sidecar ya construido en `dist/sidecar/`). Para el pipeline completo usa `npm run release:local`.
+
+### Release alpha firmado (updater)
+
+```powershell
+cd frontend
+npm run release:alpha
+```
+
+Equivalente a:
 
 ```powershell
 $env:TAURI_SIGNING_PRIVATE_KEY = "<secret-store value>"
@@ -29,6 +55,10 @@ $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<secret-store value>"
 $env:TAURI_UPDATER_PUBLIC_KEY = "<repository public variable>"
 .\scripts\build-windows.ps1 -Release -Channel alpha
 ```
+
+Este modo verifica las tres variables, genera el overlay `src-tauri/tauri.release.conf.json` (ignorado por Git) con `createUpdaterArtifacts: true`, activa la feature `updater-release`, produce `.nsis.zip` + `.sig` y el JSON de metadatos del canal. Sin las claves **falla** con un mensaje claro; nunca degrada silenciosamente a un build sin firmar.
+
+**Diferencia entre firmas:** la firma del updater de Tauri (Minisign sobre `.nsis.zip`) y la firma Authenticode del ejecutable de Windows son cosas distintas. El pipeline actual firma el artefacto del **updater**; no firma el ejecutable con un certificado de código. No asumas que el instalador está firmado con Authenticode.
 
 El script genera un overlay Tauri ignorado por Git. No escribe la clave privada en disco.
 
@@ -52,7 +82,7 @@ dist/
   macos/     # app/dmg por arquitectura y checksums
 ```
 
-El build Windows base produce `OIHK Basic_0.1.1-alpha.1_x64-setup.exe`. El candidato con updater firmado no se declara validado hasta completar el checklist manual con claves y endpoint de prueba.
+El build Windows base produce `OIHK Basic_0.1.1-alpha.2_x64-setup.exe`. El candidato con updater firmado no se declara validado hasta completar el checklist manual con claves y endpoint de prueba.
 
 ## Pasos manuales
 

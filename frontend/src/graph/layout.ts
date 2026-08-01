@@ -21,6 +21,28 @@ const CONVERGENCE_THRESHOLD = 0.05;
 const CONVERGENCE_FRAMES = 20; // must be below threshold for this many frames
 const EXACT_REPULSION_LIMIT = 500;
 const REPULSION_CELL_SIZE = 120;
+const CELL_OFFSET = 0x8000; // spatial-grid cell coords in [-32768, 32767]
+const CELL_STRIDE = 0x10001;
+
+/** Pack a cell coordinate pair into a single numeric map key (bijective).
+ *
+ * Mixed-radix encoding with digit range [0, 0xFFFF] and stride 0x10001
+ * (65537): because the stride exceeds any single digit, every (x, y) pair
+ * with x, y in [-32768, 32767] maps to a unique key — no two cells can
+ * collide. The largest key is 0xFFFF * 0x10001 + 0xFFFF = 4,295,032,830,
+ * far below Number.MAX_SAFE_INTEGER (2^53 - 1), so arithmetic stays exact.
+ * The documented envelope covers every physically reachable layout: cells
+ * are 120 px wide and forces keep nodes within a few thousand px of the
+ * origin, i.e. well inside ±32768 cells.
+ */
+function cellKey(x: number, y: number): number {
+  return (x + CELL_OFFSET) * CELL_STRIDE + (y + CELL_OFFSET);
+}
+
+/** Unpack a numeric cell key into its [x, y] coordinates. */
+function cellKeyDecode(key: number): { x: number; y: number } {
+  return { x: Math.floor(key / CELL_STRIDE) - CELL_OFFSET, y: (key % CELL_STRIDE) - CELL_OFFSET };
+}
 
 /** Compute a visual radius for a node based on type + degree */
 export function nodeRadius(type: string, degree: number, maxDegree: number): number {
@@ -130,30 +152,39 @@ export class GraphLayoutEngine {
     } else {
       // Large graphs use a uniform spatial grid. Only nearby cells need exact
       // collision repulsion; attraction and gravity provide the global shape.
-      const grid = new Map<string, LayoutNode[]>();
+      // Cells are iterated canonically so every unordered pair inside the
+      // 3x3 neighborhood is processed exactly once — no string-keyed dedup,
+      // which used to dominate the cost on dense graphs.
+      const grid = new Map<number, LayoutNode[]>();
       for (const node of nodes) {
         const x = Math.floor(node.x / REPULSION_CELL_SIZE);
         const y = Math.floor(node.y / REPULSION_CELL_SIZE);
-        const key = `${x}:${y}`;
+        const key = cellKey(x, y);
         const cell = grid.get(key);
         if (cell) cell.push(node);
         else grid.set(key, [node]);
       }
-      const visited = new Set<string>();
-      for (const node of nodes) {
-        const cellX = Math.floor(node.x / REPULSION_CELL_SIZE);
-        const cellY = Math.floor(node.y / REPULSION_CELL_SIZE);
-        for (let x = cellX - 1; x <= cellX + 1; x++) {
-          for (let y = cellY - 1; y <= cellY + 1; y++) {
-            for (const other of grid.get(`${x}:${y}`) ?? []) {
-              if (node.id === other.id) continue;
-              const pairKey = node.id < other.id ? `${node.id}|${other.id}` : `${other.id}|${node.id}`;
-              if (visited.has(pairKey)) continue;
-              visited.add(pairKey);
-              repelPair(node, other);
-            }
-          }
+      const repelCellPair = (cellA: LayoutNode[], cellB: LayoutNode[]) => {
+        for (const a of cellA) {
+          for (const b of cellB) repelPair(a, b);
         }
+      };
+      for (const [key, cell] of grid) {
+        // Unordered pairs inside the same cell
+        for (let i = 0; i < cell.length; i++) {
+          for (let j = i + 1; j < cell.length; j++) repelPair(cell[i], cell[j]);
+        }
+        const { x: cellX, y: cellY } = cellKeyDecode(key);
+        // One canonical direction per unordered cell pair (right, down,
+        // down-right, down-left cover all 8 neighbor offsets exactly once).
+        const right = grid.get(cellKey(cellX + 1, cellY));
+        if (right) repelCellPair(cell, right);
+        const down = grid.get(cellKey(cellX, cellY + 1));
+        if (down) repelCellPair(cell, down);
+        const downRight = grid.get(cellKey(cellX + 1, cellY + 1));
+        if (downRight) repelCellPair(cell, downRight);
+        const downLeft = grid.get(cellKey(cellX - 1, cellY + 1));
+        if (downLeft) repelCellPair(cell, downLeft);
       }
     }
 

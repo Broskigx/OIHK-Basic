@@ -4,22 +4,22 @@
 
 > **Este repositorio se publica únicamente para que otras personas puedan ver, estudiar y revisar el código fuente de OIHK Basic. La aplicación todavía no está lista para uso normal ni para producción. Puede contener muchos fallos, funciones incompletas, cambios incompatibles y problemas que causen pérdida o corrupción de datos.**
 >
-> **Actualmente no existe un release público, instalador oficial ni versión estable de OIHK Basic. Los resultados o artefactos de GitHub Actions, cuando existan, son pruebas internas de desarrollo y no deben considerarse una distribución oficial ni una descarga recomendada.**
+> **Actualmente no existe una versión estable ni un instalador oficial recomendado para producción. La única distribución prevista es una candidata alpha experimental (0.1.1-alpha.2), publicada como prerelease de prueba para testers. Los artefactos de GitHub Actions y los binarios alpha no deben considerarse una distribución oficial ni una descarga recomendada para uso real.**
 >
 > **No uses esta versión como única copia de evidencia, datos importantes o investigaciones reales.**
 
 ## Estado del proyecto
 
-OIHK Basic se encuentra en desarrollo activo y se ofrece por ahora como una **vista previa del código fuente**.
+OIHK Basic se encuentra en desarrollo activo. Se publica una **candidata alpha experimental (0.1.1-alpha.2)** como prerelease dirigida a testers, además de la vista previa del código fuente.
 
 - No hay una versión estable disponible.
-- No hay releases públicos ni instaladores oficiales.
-- GitHub Actions no es un canal público de distribución.
+- La única distribución prevista es la candidata alpha experimental; no hay instaladores oficiales.
+- GitHub Actions no es un canal público de distribución para usuarios finales.
 - La compilación manual está destinada únicamente a desarrollo, revisión técnica y pruebas controladas.
 - No se garantiza compatibilidad entre commits, integridad de datos, soporte ni funcionamiento completo.
 - Cualquier prueba debe realizarse con datos desechables y backups externos verificados.
 
-Cuando el proyecto alcance un nivel adecuado de estabilidad, se publicará una alpha identificada expresamente como experimental. Hasta entonces, hacer público el repositorio **no significa que la aplicación esté lanzada**.
+Publicar una candidata alpha experimental **no significa que la aplicación esté lanzada ni sea estable**. La alpha está identificada expresamente como tal y se espera que los testers informen de fallos.
 
 ## Descripción
 
@@ -57,7 +57,7 @@ Varias de estas funciones pueden estar incompletas, desactivadas, sujetas a redi
 
 ## Compilar y ejecutar — solo desarrollo
 
-No existe actualmente un instalador público recomendado. Quienes revisen el proyecto pueden compilarlo manualmente bajo su propia responsabilidad.
+No existe un instalador estable recomendado. La candidata alpha (prerelease) y la compilación manual están destinadas únicamente a testers y revisión técnica bajo su propia responsabilidad.
 
 Requisitos de desarrollo:
 
@@ -137,9 +137,9 @@ Para cualquier prueba:
 
 ## Distribución y actualizaciones
 
-El diseño contempla instaladores y actualizaciones firmadas en el futuro, pero **ese canal todavía no está publicado ni habilitado para usuarios finales**.
+Los candidatos alpha (0.1.1-alpha.x) se publican como prereleases dentro de **GitHub Releases** con notas de versión y firma del updater, pero **ese canal no está habilitado para usuarios finales** y puede cambiar o retirarse.
 
-No descargues ni redistribuyas binarios generados automáticamente como si fueran una versión oficial. Una publicación real aparecerá expresamente dentro de **GitHub Releases**, incluirá notas de versión y estará marcada según su nivel de estabilidad.
+No descargues ni redistribuyas binarios como si fueran una versión estable u oficial.
 
 La arquitectura prevista se describe en [docs/UPDATES.md](docs/UPDATES.md) y el proceso futuro de publicación en [docs/RELEASING.md](docs/RELEASING.md).
 

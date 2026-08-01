@@ -11,14 +11,14 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createCopilotConversation,
   deleteCopilotConversation,
   getLocalModelConfiguration,
   listCopilotConversations,
   listCopilotMessages,
-  sendCopilotMessage,
+  streamCopilotMessage,
   updateCopilotConversation,
 } from "../../api";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
@@ -26,6 +26,38 @@ import type { CopilotConversation, CopilotMessage, LocalModelConfiguration } fro
 
 function timestamp(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+/** Session-scoped persistence key so switching views (or areas) restores the last conversation. */
+function sessionKey(caseId: string | null): string {
+  return `oihk.copilot.session.${caseId ?? "global"}`;
+}
+
+type SavedSession = { caseId: string | null; activeId: string; draft: string };
+
+function readSession(key: string): SavedSession | null {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as SavedSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(key: string, session: SavedSession): void {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(session));
+  } catch {
+    // Storage unavailable (private mode / quota) — the server is the source of truth.
+  }
+}
+
+function clearSession(key: string): void {
+  try {
+    window.sessionStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
 }
 
 export function CopilotWorkspaceView({
@@ -50,45 +82,88 @@ export function CopilotWorkspaceView({
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  async function refreshConversations(preferredId = activeId) {
-    const rows = await listCopilotConversations(caseId, includeArchived);
-    setConversations(rows);
-    const nextId = rows.some((row) => row.id === preferredId) ? preferredId : (rows[0]?.id ?? "");
-    setActiveId(nextId);
-    setMessages(nextId ? await listCopilotMessages(nextId) : []);
-  }
+  // Guards against out-of-order async responses (the root cause of "empty chats"
+  // and "unexpected new chats"). Every load increments the generation; only the
+  // latest generation may commit state.
+  const generationRef = useRef(0);
+  // Mirrors the latest activeId so async callbacks can verify the conversation
+  // the user is viewing without depending on stale closures.
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  // Explicit intent to start a fresh conversation (set by the "New conversation" button).
+  const intentNewRef = useRef(false);
 
+  const storageKey = useMemo(() => sessionKey(caseId), [caseId]);
+
+  const applyIfCurrent = useCallback((generation: number, fn: () => void) => {
+    if (generation === generationRef.current) fn();
+  }, []);
+
+  /** Reload the conversation list, keeping the current/preferred conversation when possible. */
+  const refreshConversations = useCallback(
+    async (preferredId = activeId) => {
+      const generation = ++generationRef.current;
+      try {
+        const rows = await listCopilotConversations(caseId, includeArchived);
+        if (generation !== generationRef.current) return;
+        setConversations(rows);
+        const candidate = preferredId || activeId;
+        const nextId = rows.some((row) => row.id === candidate) ? candidate : (rows[0]?.id ?? "");
+        setActiveId(nextId);
+        if (nextId) writeSession(storageKey, { caseId, activeId: nextId, draft });
+        const history = nextId ? await listCopilotMessages(nextId) : [];
+        if (generation === generationRef.current) setMessages(history);
+      } catch (cause) {
+        applyIfCurrent(generation, () => {
+          setError(cause instanceof Error ? cause.message : "Could not load local conversations");
+        });
+      }
+    },
+    [activeId, applyIfCurrent, caseId, draft, includeArchived, storageKey],
+  );
+
+  // Initial load + restore the session the user was working on before switching views.
   useEffect(() => {
     let cancelled = false;
+    const generation = ++generationRef.current;
     setLoading(true);
     setError("");
-    Promise.all([
-      listCopilotConversations(caseId, includeArchived),
-      getLocalModelConfiguration(),
-    ])
+    const saved = readSession(storageKey);
+    Promise.all([listCopilotConversations(caseId, includeArchived), getLocalModelConfiguration()])
       .then(async ([rows, modelConfiguration]) => {
-        if (cancelled) return;
+        if (cancelled || generation !== generationRef.current) return;
         setConversations(rows);
         setConfiguration(modelConfiguration);
-        const nextId = rows[0]?.id ?? "";
-        setActiveId(nextId);
-        setMessages(nextId ? await listCopilotMessages(nextId) : []);
+        const restored =
+          saved && saved.caseId === caseId && rows.some((row) => row.id === saved.activeId)
+            ? saved.activeId
+            : (rows[0]?.id ?? "");
+        setActiveId(restored);
+        setMessages(restored ? await listCopilotMessages(restored) : []);
+        if (saved && saved.caseId === caseId && saved.draft) setDraft(saved.draft);
       })
       .catch((cause) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load local conversations");
+        if (!cancelled && generation === generationRef.current) {
+          setError(cause instanceof Error ? cause.message : "Could not load local conversations");
+        }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && generation === generationRef.current) setLoading(false);
       });
     return () => {
       cancelled = true;
       abortRef.current?.abort();
     };
-  }, [caseId, includeArchived]);
+  }, [caseId, includeArchived, storageKey]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
+
+  // Persist the active conversation + draft across view switches.
+  useEffect(() => {
+    if (!loading) writeSession(storageKey, { caseId, activeId, draft });
+  }, [activeId, caseId, draft, loading, storageKey]);
 
   const visibleConversations = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
@@ -100,15 +175,23 @@ export function CopilotWorkspaceView({
   const modelReady = Boolean(configuration?.endpoint && configuration?.model);
 
   async function openConversation(conversationId: string) {
+    // If a generation is in flight for another conversation, cancel it so its
+    // reply can never be applied to the newly selected conversation.
+    abortRef.current?.abort();
+    const generation = ++generationRef.current;
+    intentNewRef.current = false;
     setActiveId(conversationId);
     setLoading(true);
     setError("");
     try {
-      setMessages(await listCopilotMessages(conversationId));
+      const history = await listCopilotMessages(conversationId);
+      applyIfCurrent(generation, () => setMessages(history));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not open the conversation");
+      applyIfCurrent(generation, () => {
+        setError(cause instanceof Error ? cause.message : "Could not open the conversation");
+      });
     } finally {
-      setLoading(false);
+      applyIfCurrent(generation, () => setLoading(false));
     }
   }
 
@@ -121,36 +204,91 @@ export function CopilotWorkspaceView({
     let conversationId = activeId;
     try {
       if (!conversationId) {
-        const created = await createCopilotConversation({ case_id: caseId, title: "New conversation" });
-        conversationId = created.id;
-        setActiveId(created.id);
-        setConversations((current) => [created, ...current]);
+        // Never create a conversation silently while an active session exists.
+        // Only create when the user explicitly chose "New conversation" or when
+        // there are no conversations at all.
+        if (!intentNewRef.current && conversations.length > 0) {
+          conversationId = conversations[0].id;
+          setActiveId(conversationId);
+        } else {
+          const created = await createCopilotConversation({
+            case_id: caseId,
+            title: "New conversation",
+            model: configuration?.model ?? "",
+          });
+          conversationId = created.id;
+          intentNewRef.current = false;
+          setActiveId(created.id);
+          setConversations((current) => [created, ...current]);
+          writeSession(storageKey, { caseId, activeId: created.id, draft: "" });
+        }
       }
-      const optimistic: CopilotMessage = {
-        id: `pending-${Date.now()}`,
-        conversation_id: conversationId,
-        case_id: caseId,
-        role: "user",
-        content,
-        provider: "local",
-        tool_calls: [],
-        created_at: new Date().toISOString(),
-      };
-      setMessages((current) => [...current, optimistic]);
+
+      const userPendingId = `pending-user-${Date.now()}`;
+      const assistantPendingId = `pending-assistant-${Date.now()}`;
+      setMessages((current) => [
+        ...current,
+        {
+          id: userPendingId,
+          conversation_id: conversationId,
+          case_id: caseId,
+          role: "user",
+          content,
+          provider: "local",
+          tool_calls: [],
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: assistantPendingId,
+          conversation_id: conversationId,
+          case_id: caseId,
+          role: "assistant",
+          content: "",
+          provider: configuration?.provider ?? "local",
+          tool_calls: [],
+          created_at: new Date().toISOString(),
+        },
+      ]);
       setDraft("");
       const controller = new AbortController();
       abortRef.current = controller;
-      const reply = await sendCopilotMessage(conversationId, content, controller.signal);
-      setMessages((current) => [
-        ...current.filter((item) => item.id !== optimistic.id),
-        reply.user_message,
-        reply.assistant_message,
-      ]);
-      await refreshConversations(conversationId);
+
+      const reply = await streamCopilotMessage(conversationId, content, controller.signal, (delta) => {
+        setMessages((current) =>
+          current.map((item) =>
+            item.id === assistantPendingId ? { ...item, content: item.content + delta } : item,
+          ),
+        );
+      });
+      // Only commit the reply to the UI if the user is still viewing this
+      // conversation. If they switched away (allowed during streaming), the
+      // messages they switched to are already loaded — do not overwrite them.
+      if (activeIdRef.current && activeIdRef.current !== conversationId) {
+        const targetHistory = await listCopilotMessages(activeIdRef.current).catch(() => null);
+        if (targetHistory) setMessages(targetHistory);
+      } else if (activeIdRef.current === conversationId) {
+        setMessages((current) => [
+          ...current.filter((item) => item.id !== userPendingId && item.id !== assistantPendingId),
+          reply.user_message,
+          reply.assistant_message,
+        ]);
+        await refreshConversations(conversationId);
+      }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The local model did not respond");
-      if (conversationId) {
-        setMessages(await listCopilotMessages(conversationId).catch(() => []));
+      const detail = cause instanceof Error ? cause.message : "The local model did not respond";
+      // Suppress the error banner when the abort was intentional (the user
+      // switched away or started a new conversation), so it never leaks into
+      // the new context.
+      const userInitiatedAbort =
+        detail === "Operation cancelled"
+        && (intentNewRef.current || !activeIdRef.current || activeIdRef.current !== conversationId);
+      if (!userInitiatedAbort) setError(detail);
+      // Reload the persisted state for the conversation the user is actually
+      // viewing. If they switched away (which aborts the in-flight request),
+      // the target conversation already shows its own history — do nothing.
+      if (conversationId && activeIdRef.current === conversationId) {
+        const history = await listCopilotMessages(conversationId).catch(() => null);
+        if (history) setMessages(history);
       }
     } finally {
       abortRef.current = null;
@@ -162,20 +300,45 @@ export function CopilotWorkspaceView({
     if (!active) return;
     const title = window.prompt("Conversation name", active.title)?.trim();
     if (!title || title === active.title) return;
-    await updateCopilotConversation(active.id, { title });
-    await refreshConversations(active.id);
+    try {
+      await updateCopilotConversation(active.id, { title });
+      await refreshConversations(active.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not rename the conversation");
+    }
   }
 
   async function toggleArchive() {
     if (!active) return;
-    await updateCopilotConversation(active.id, { archived: !active.archived });
-    await refreshConversations("");
+    try {
+      await updateCopilotConversation(active.id, { archived: !active.archived });
+      await refreshConversations("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not update the conversation");
+    }
   }
 
   async function removeActive() {
     if (!active || !window.confirm(`Delete “${active.title}” and all of its local messages?`)) return;
-    await deleteCopilotConversation(active.id);
-    await refreshConversations("");
+    try {
+      await deleteCopilotConversation(active.id);
+      clearSession(storageKey);
+      await refreshConversations("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete the conversation");
+    }
+  }
+
+  function startNewConversation() {
+    // Stop any in-flight generation before switching to the fresh session.
+    abortRef.current?.abort();
+    const generation = ++generationRef.current;
+    intentNewRef.current = true;
+    setActiveId("");
+    setMessages([]);
+    setDraft("");
+    setError("");
+    applyIfCurrent(generation, () => setLoading(false));
   }
 
   return (
@@ -185,7 +348,7 @@ export function CopilotWorkspaceView({
         title="Copilot"
         description="Durable investigation conversations powered only by the local model endpoint you choose. Model output remains an unverified draft."
         actions={
-          <button type="button" onClick={() => { setActiveId(""); setMessages([]); setError(""); }}>
+          <button type="button" onClick={startNewConversation} disabled={sending}>
             <MessageSquarePlus size={14} /> New conversation
           </button>
         }
@@ -204,12 +367,12 @@ export function CopilotWorkspaceView({
       <div className="copilot-layout">
         <aside className="copilot-history">
           <label className="copilot-search"><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations" /></label>
-          <label className="local-checkbox"><input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.target.checked)} /> Include archived</label>
+          <label className="local-checkbox"><input type="checkbox" checked={includeArchived} disabled={sending} onChange={(event) => setIncludeArchived(event.target.checked)} /> Include archived</label>
           <div className="copilot-history-list">
             {visibleConversations.length === 0 ? (
               <p>No saved conversations.</p>
             ) : visibleConversations.map((item) => (
-              <button type="button" key={item.id} className={item.id === activeId ? "active" : ""} onClick={() => void openConversation(item.id)}>
+              <button type="button" key={item.id} className={item.id === activeId ? "active" : ""} onClick={() => void openConversation(item.id)} disabled={sending}>
                 <strong>{item.title}</strong><span>{item.message_count} messages · {timestamp(item.updated_at)}</span>
               </button>
             ))}
@@ -231,7 +394,7 @@ export function CopilotWorkspaceView({
             ) : messages.map((message) => (
               <article key={message.id} className={message.role}>
                 <span>{message.role === "user" ? "You" : message.provider}</span>
-                <p>{message.content}</p>
+                <p>{message.content || (message.id.startsWith("pending-assistant") ? "…" : "")}</p>
                 <time>{timestamp(message.created_at)}</time>
               </article>
             ))}

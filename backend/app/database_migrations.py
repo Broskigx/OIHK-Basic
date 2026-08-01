@@ -42,12 +42,35 @@ MIGRATIONS = (
         "update_readiness_indexes",
         ("CREATE INDEX IF NOT EXISTS ix_audit_events_created_at ON audit_events (created_at)",),
     ),
+    Migration(
+        4,
+        "assistant_conversation_model_settings",
+        (
+            "ALTER TABLE assistant_conversations ADD COLUMN model VARCHAR(240) NOT NULL DEFAULT ''",
+            "ALTER TABLE assistant_conversations ADD COLUMN settings JSON NOT NULL DEFAULT '{}'",
+        ),
+    ),
 )
+
+# Migration version → table whose ALTER ADD COLUMN statements must be guarded so
+# they are skipped when the column already exists (fresh databases created via
+# ``Base.metadata.create_all`` already contain the new columns).
+_ALTER_GUARD_TABLES: dict[int, str] = {
+    2: "cases",
+    4: "assistant_conversations",
+}
 
 
 async def _table_columns(conn: AsyncConnection, table: str) -> set[str]:
     result = await conn.exec_driver_sql(f'PRAGMA table_info("{table}")')
     return {str(row[1]) for row in result}
+
+
+async def _table_exists(conn: AsyncConnection, table: str) -> bool:
+    result = await conn.exec_driver_sql(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    )
+    return result.scalar() is not None
 
 
 async def run_migrations(conn: AsyncConnection) -> int:
@@ -71,13 +94,29 @@ async def run_migrations(conn: AsyncConnection) -> int:
                 raise MigrationError(f"Migration {migration.version} metadata does not match the installed database.")
             continue
 
-        case_columns = await _table_columns(conn, "cases") if migration.version == 2 else set()
+        guard_table = _ALTER_GUARD_TABLES.get(migration.version)
         try:
-            for statement in migration.statements:
-                if migration.version == 2:
-                    column = statement.split(" ADD COLUMN ", 1)[1].split(" ", 1)[0]
-                    if column in case_columns:
-                        continue
+            if guard_table and not await _table_exists(conn, guard_table):
+                # The table does not exist in this schema (a legacy database
+                # that predates the feature). The table and its columns are
+                # created fresh by ``Base.metadata.create_all`` on the next
+                # startup, so there is nothing to alter here.
+                statements: tuple[str, ...] = ()
+            else:
+                existing_columns = (
+                    await _table_columns(conn, guard_table) if guard_table else set()
+                )
+                statements = tuple(
+                    statement
+                    for statement in migration.statements
+                    if not (
+                        guard_table
+                        and " ADD COLUMN " in statement
+                        and statement.split(" ADD COLUMN ", 1)[1].split(" ", 1)[0]
+                        in existing_columns
+                    )
+                )
+            for statement in statements:
                 await conn.exec_driver_sql(statement)
             await conn.exec_driver_sql(
                 "INSERT INTO schema_migrations(version, name, checksum) VALUES (?, ?, ?)",

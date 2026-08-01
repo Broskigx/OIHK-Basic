@@ -222,6 +222,8 @@ class AssistantConversation(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(160), default="New conversation")
     archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    model: Mapped[str] = mapped_column(String(240), default="")
+    settings: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 

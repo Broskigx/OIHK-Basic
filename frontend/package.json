@@ -1,6 +1,6 @@
 {
   "name": "oihk-basic-frontend",
-  "version": "0.1.1-alpha.1",
+  "version": "0.1.1-alpha.2",
   "private": true,
   "license": "MIT",
   "author": "OIHK Basic",
@@ -15,8 +15,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
+    "check": "tsc -b --noEmit && eslint .",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "tauri build",
+    "tauri:build": "tauri build --config ../src-tauri/tauri.local.conf.json",
+    "release:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/build-windows.ps1 -Release -Channel local -Unsigned -SkipUpdater",
+    "release:alpha": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/build-windows.ps1 -Release -Channel alpha"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
