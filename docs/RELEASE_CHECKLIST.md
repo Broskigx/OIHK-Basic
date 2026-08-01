@@ -26,7 +26,7 @@ This checklist records required evidence. A checked item must link to a CI run, 
 ## Signed update gate
 
 - [ ] Custodians supply `TAURI_SIGNING_PRIVATE_KEY` and its password through protected CI secrets; the public key is configured as `TAURI_UPDATER_PUBLIC_KEY`.
-- [ ] A signed prior `0.1.0` build and signed `0.1.1-alpha.1` candidate are available in an isolated test channel.
+- [ ] A signed prior `0.1.1-alpha.1` build and signed `0.1.1-alpha.2` candidate are available in an isolated test channel.
 - [ ] `latest-alpha.json`, installer, updater archive, signature, checksums, manifest, and notes are anonymously reachable over HTTPS.
 - [ ] Validate availability-only check, notes, consent, progress, safe cancellation, valid signature, invalid signature, and hash mismatch.
 - [ ] Validate pre-update backup, integrity check, busy SQLite/write draining, sidecar shutdown, install, restart, migration, and recovery after forced install/migration failures.

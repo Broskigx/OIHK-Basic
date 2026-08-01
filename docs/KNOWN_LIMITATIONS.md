@@ -12,7 +12,7 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 ## Models
 
 - No model weights or inference server are bundled.
-- Copilot and assisted report drafts require LM Studio, Ollama or a private compatible endpoint configured by the user.
+- Copilot and assisted report drafts require a local or private compatible endpoint configured by the user. LM Studio is the currently validated backend; Ollama and other OpenAI-compatible endpoints exist in code but are not guaranteed in this preview.
 - Model output is unverified and cannot approve or mutate evidence automatically.
 
 ## Evidence and reports

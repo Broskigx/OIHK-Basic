@@ -40,8 +40,25 @@ export const NODE_TYPE_CONFIGS: Record<string, NodeTypeConfig> = {
   photo:        { type: "photo",        label: "Foto",            category: "evidence", color: "#fbbf24", borderColor: "#b45309", shape: "triangle" },
   evidence:     { type: "evidence",     label: "Evidencia",       category: "evidence", color: "#a3e635", borderColor: "#4d7c0f", shape: "triangle" },
   crypto:       { type: "crypto",       label: "Criptomoneda",    category: "crypto",   color: "#facc15", borderColor: "#a16207", shape: "hexagon" },
+  file:         { type: "file",         label: "Archivo",         category: "evidence", color: "#fda4af", borderColor: "#9f1239", shape: "square" },
+  hash:         { type: "hash",         label: "Hash",            category: "evidence", color: "#c4b5fd", borderColor: "#6d28d9", shape: "square" },
+  location:     { type: "location",     label: "Ubicación",       category: "other",    color: "#6ee7b7", borderColor: "#047857", shape: "circle" },
+  username:     { type: "username",     label: "Usuario",         category: "person",   color: "#f9a8d4", borderColor: "#be185d", shape: "circle" },
+  custom:       { type: "custom",       label: "Entidad personalizada", category: "other", color: "#e2e8f0", borderColor: "#64748b", shape: "hexagon" },
+  cve:          { type: "cve",          label: "CVE",             category: "other",    color: "#fda4af", borderColor: "#9f1239", shape: "diamond" },
+  btc:          { type: "btc",          label: "Bitcoin",         category: "crypto",   color: "#facc15", borderColor: "#a16207", shape: "hexagon" },
+  eth:          { type: "eth",          label: "Ethereum",        category: "crypto",   color: "#94a3b8", borderColor: "#475569", shape: "hexagon" },
   note:         { type: "note",         label: "Nota",            category: "other",    color: "#e2e8f0", borderColor: "#64748b", shape: "square" },
 };
+
+// Aliases — extra producer types (IOC extractor, forensics, upstream tools) that
+// render with the visual identity of their canonical counterpart. These are
+// intentional shared references: never mutate a returned NodeTypeConfig.
+NODE_TYPE_CONFIGS.user = NODE_TYPE_CONFIGS.username;
+NODE_TYPE_CONFIGS.ipv4 = NODE_TYPE_CONFIGS.ip;
+NODE_TYPE_CONFIGS.md5 = NODE_TYPE_CONFIGS.hash;
+NODE_TYPE_CONFIGS.sha1 = NODE_TYPE_CONFIGS.hash;
+NODE_TYPE_CONFIGS.sha256 = NODE_TYPE_CONFIGS.hash;
 
 export const CATEGORY_LABELS: Record<NodeCategory, string> = {
   person:   "Personas & Contactos",

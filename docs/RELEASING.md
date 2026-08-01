@@ -42,9 +42,9 @@ Required candidate assets:
 
 Use a disposable Windows Sandbox or clean VM:
 
-1. Install the previous signed `0.1.0` build without Python, Node, Rust, or the repository.
+1. Install the previous signed `0.1.1-alpha.1` candidate without Python, Node, Rust, or the repository.
 2. Create the representative fixture: cases, entities, relationships, reports, managed evidence, Copilot conversations/messages, settings, audit history, sources, and an older backup.
-3. Point the test build at a controlled HTTPS alpha endpoint containing the signed `0.1.1-alpha.1` candidate.
+3. Point the test build at a controlled HTTPS alpha endpoint containing the signed `0.1.1-alpha.2` candidate.
 4. Confirm startup only reports availability.
 5. Confirm release notes, date, size, progress, safe cancellation, retry, and explicit restart.
 6. Confirm an invalid signature is blocked before backup/install.

@@ -224,6 +224,7 @@ export function listCopilotConversations(
 export function createCopilotConversation(payload: {
   case_id?: string | null;
   title?: string;
+  model?: string;
 }): Promise<CopilotConversation> {
   return request<CopilotConversation>("/assistant/conversations", {
     method: "POST",
@@ -259,6 +260,105 @@ export function sendCopilotMessage(
     body: JSON.stringify({ content }),
     signal,
   });
+}
+
+/**
+ * Stream a Copilot reply via Server-Sent Events.
+ *
+ * The backend persists the user message before generating, so aborting the
+ * controller never loses the user's turn. Emits `delta` events as they arrive
+ * and resolves with the final persisted reply pair.
+ */
+export async function streamCopilotMessage(
+  conversationId: string,
+  content: string,
+  signal?: AbortSignal,
+  onDelta?: (delta: string) => void,
+): Promise<CopilotReply> {
+  const csrfToken = getCsrfToken();
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}/assistant/conversations/${conversationId}/stream`, {
+      method: "POST",
+      credentials: "include",
+      signal,
+      headers: authHeaders({
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      }),
+      body: JSON.stringify({ content }),
+    });
+  } catch (cause) {
+    if (cause instanceof DOMException && cause.name === "AbortError") throw new Error("Operation cancelled");
+    if (cause instanceof TypeError && String(cause.message).includes("fetch")) {
+      throw new Error("Local service unavailable. OIHK Basic could not connect to its local data service.");
+    }
+    throw new Error("Network error. Please check your connection and try again.");
+  }
+  if (response.status === 401) {
+    clearToken();
+    throw new Error("Session expired. Please sign in again.");
+  }
+  if (!response.ok || !response.body) {
+    const err = await response.json().catch(() => ({ detail: response.statusText }));
+    throw new Error(typeof err.detail === "string" ? err.detail : `Request failed (${response.status})`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let userMessage: CopilotMessage | null = null;
+  let assistantMessage: CopilotMessage | null = null;
+
+  const handleEvent = (payload: Record<string, unknown>) => {
+    switch (payload.type) {
+      case "message":
+        userMessage = payload.message as CopilotMessage;
+        break;
+      case "delta":
+        onDelta?.(String(payload.content ?? ""));
+        break;
+      case "done":
+        userMessage = payload.user_message as CopilotMessage;
+        assistantMessage = payload.assistant_message as CopilotMessage;
+        break;
+      case "error":
+        throw new Error(String(payload.message ?? "The local model did not respond"));
+      default:
+        break;
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let separator = buffer.indexOf("\n\n");
+    while (separator >= 0) {
+      const raw = buffer.slice(0, separator);
+      buffer = buffer.slice(separator + 2);
+      const line = raw
+        .split("\n")
+        .find((part) => part.startsWith("data:"))
+        ?.slice(5)
+        .trim();
+      if (line) handleEvent(JSON.parse(line) as Record<string, unknown>);
+      separator = buffer.indexOf("\n\n");
+    }
+  }
+  if (buffer.trim()) {
+    const line = buffer
+      .split("\n")
+      .find((part) => part.startsWith("data:"))
+      ?.slice(5)
+      .trim();
+    if (line) handleEvent(JSON.parse(line) as Record<string, unknown>);
+  }
+
+  if (!userMessage || !assistantMessage) {
+    throw new Error("The local model closed the stream without a complete reply");
+  }
+  return { user_message: userMessage, assistant_message: assistantMessage };
 }
 
 // Streamed agent investigation: NDJSON events (thought/tool/finding/graph/final).

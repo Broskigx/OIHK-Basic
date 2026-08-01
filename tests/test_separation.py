@@ -48,7 +48,7 @@ def _check_file_for_patterns(filepath: Path, patterns: list[str]) -> list[str]:
     """Check a file for any of the given regex patterns."""
     issues = []
     try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+        with open(filepath, encoding="utf-8", errors="ignore") as f:
             content = f.read()
     except (OSError, PermissionError):
         return [f"Cannot read {filepath}"]

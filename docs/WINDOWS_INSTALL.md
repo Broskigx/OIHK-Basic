@@ -8,7 +8,7 @@
 
 ## Install
 
-1. Download `OIHK Basic_0.1.1-alpha.1_x64-setup.exe` from the approved alpha-candidate location.
+1. Download `OIHK Basic_0.1.1-alpha.2_x64-setup.exe` from the approved alpha-candidate location.
 2. Verify the adjacent `.sha256` file when supplied.
 3. Run the installer. The default NSIS mode installs for the current user.
 4. Launch OIHK Basic and complete or skip the onboarding.

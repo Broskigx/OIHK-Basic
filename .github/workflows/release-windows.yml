@@ -74,7 +74,7 @@ jobs:
       - name: Pre-build quality gates
         shell: pwsh
         run: |
-          python -m ruff check backend/app backend/run.py scripts tests
+          python -m ruff check backend/app backend/run.py scripts tests --config backend/pyproject.toml
           python -m pytest -q
           Push-Location frontend
           npm run lint

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -71,6 +72,40 @@ class LocalModelProvider(ABC):
     ) -> str:
         raise NotImplementedError
 
+    @abstractmethod
+    async def stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        stop: list[str] | None = None,
+    ):
+        """Yield incremental text deltas. Must be an async iterator."""
+        raise NotImplementedError
+
+    async def stream_complete(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        stop: list[str] | None = None,
+    ) -> str:
+        """Convenience: consume ``stream`` and join the deltas."""
+        chunks: list[str] = []
+        async for chunk in self.stream(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stop=stop,
+        ):
+            chunks.append(chunk)
+        return "".join(chunks)
+
 
 class OpenAICompatibleLocalProvider(LocalModelProvider):
     async def list_models(self) -> list[ModelDescriptor]:
@@ -103,7 +138,48 @@ class OpenAICompatibleLocalProvider(LocalModelProvider):
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(f"{_openai_base(self.endpoint)}/chat/completions", json=payload)
             response.raise_for_status()
-            return str(response.json()["choices"][0]["message"]["content"])
+            choices = response.json().get("choices") or []
+            if not choices:
+                return ""
+            return str((choices[0] or {}).get("message", {}).get("content", ""))
+
+    async def stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        stop: list[str] | None = None,
+    ):
+        payload: dict = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        if stop:
+            payload["stop"] = stop
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST", f"{_openai_base(self.endpoint)}/chat/completions", json=payload
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:") :].strip()
+                    if not data or data == "[DONE]":
+                        continue
+                    try:
+                        chunk = json.loads(data)
+                    except (ValueError, TypeError):
+                        continue
+                    choices = chunk.get("choices") or [{}]
+                    delta = ((choices[0] or {}).get("delta") or {}).get("content")
+                    if delta:
+                        yield delta
 
 
 class LMStudioProvider(OpenAICompatibleLocalProvider):
@@ -145,6 +221,38 @@ class OllamaProvider(LocalModelProvider):
             )
             response.raise_for_status()
             return str(response.json().get("message", {}).get("content", ""))
+
+    async def stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+        stop: list[str] | None = None,
+    ):
+        options: dict = {"temperature": temperature, "num_predict": max_tokens}
+        if stop:
+            options["stop"] = stop
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with client.stream(
+                "POST",
+                f"{_ollama_base(self.endpoint)}/api/chat",
+                json={"model": model, "messages": messages, "stream": True, "options": options},
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except (ValueError, TypeError):
+                        continue
+                    content = (chunk.get("message") or {}).get("content")
+                    if content:
+                        yield content
+                    if chunk.get("done"):
+                        return
 
 
 def build_local_provider(provider: str, endpoint: str, timeout_seconds: int = 60) -> LocalModelProvider:

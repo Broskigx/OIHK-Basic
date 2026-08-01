@@ -337,6 +337,8 @@ export type CopilotConversation = {
   case_id: string | null;
   title: string;
   archived: boolean;
+  model: string;
+  settings: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   message_count: number;
