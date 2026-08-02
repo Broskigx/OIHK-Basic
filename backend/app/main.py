@@ -83,6 +83,56 @@ def _enforce_hardening() -> None:
         raise RuntimeError("Refusing to start in production with OIHK_TEMPORARY_BASIC_LOGIN=true.")
 
 
+async def _ensure_loopback_system_user() -> None:
+    """Seed the virtual system user when auth is disabled (loopback single-user).
+
+    With OIHK_AUTH_ENABLED=false the dependency layer authenticates every request
+    as the built-in ``system`` user. Local model configurations and Copilot
+    conversations store ``user_id`` against the users table, so the row must
+    exist or every write fails with a FOREIGN KEY constraint error.
+
+    The password hash is a random, uncrackable value in the expected scrypt
+    format so the public login endpoint never trips over an unparsable literal
+    (``verify_password`` splits on ``$``), even though this account can never
+    authenticate (``is_active=False`` and auth is disabled in this mode).
+    """
+    settings = get_settings()
+    if settings.auth_enabled:
+        return
+    import secrets
+
+    from sqlalchemy import select
+
+    from app import models
+    from app.core.security import hash_password
+
+    placeholder = "!loopback-auth-disabled!"
+    async with SessionLocal() as session:
+        row = (
+            await session.execute(select(models.User).where(models.User.id == "system"))
+        ).scalar_one_or_none()
+        if row is not None:
+            # Upgrade databases seeded before the well-formed hash existed.
+            if row.hashed_password == placeholder:
+                row.hashed_password = hash_password(secrets.token_urlsafe(48))
+                await session.commit()
+                logger.info("Upgraded loopback system user password hash")
+            return
+        session.add(
+            models.User(
+                id="system",
+                email="system@oihk-basic.local",
+                username="system",
+                hashed_password=hash_password(secrets.token_urlsafe(48)),
+                role="admin",
+                organization_id="system",
+                is_active=False,
+            )
+        )
+        await session.commit()
+        logger.info("Seeded loopback system user for single-user mode")
+
+
 async def _bootstrap_admin() -> None:
     settings = get_settings()
     from sqlalchemy import select
@@ -129,6 +179,7 @@ async def lifespan(app: FastAPI):
     print(_startup_banner(), flush=True)
     _enforce_hardening()
     await init_db()
+    await _ensure_loopback_system_user()
     await _bootstrap_admin()
     try:
         yield
