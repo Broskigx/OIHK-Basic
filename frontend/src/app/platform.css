@@ -2134,6 +2134,61 @@ body { margin: 0; min-height: 100vh; background: var(--bg-root); }
   background: var(--bg-active);
   border-color: var(--border-accent);
 }
+.platform-graph-layout {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
+  margin-inline: 24px;
+  min-width: 0;
+  transition: grid-template-columns var(--transition-fast);
+}
+.platform-graph-layout.inspected {
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+.platform-graph-inspector {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-panel);
+  min-height: 640px;
+  overflow-y: auto;
+  padding: 16px;
+}
+.platform-graph-inspector h2 {
+  color: var(--text-primary);
+  font-size: 16px;
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+.platform-graph-inspector > p {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+}
+.platform-entity-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.platform-entity-meta span {
+  background: var(--bg-panel-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  padding: 3px 9px;
+}
+.platform-graph-inspector .platform-property-list {
+  border-top: 1px solid var(--divider);
+  margin-top: 14px;
+  padding-top: 10px;
+}
+.platform-graph-inspector .platform-primary { margin-top: 16px; }
 .platform-inline-error,
 .platform-inline-success,
 .platform-context-note { align-items: center; border: 1px solid; border-radius: var(--radius-md); display: flex; font-size: 11px; gap: 7px; padding: 9px 11px; }
@@ -2715,6 +2770,8 @@ body { margin: 0; min-height: 100vh; background: var(--bg-root); }
   .platform-graph-canvas .graph-view-tabs { grid-template-columns: repeat(3, minmax(110px, 1fr)); }
   .platform-graph-canvas .graph-view-tabs-future { display: none; }
   .platform-graph-canvas .graph-controls-hint { display: none; }
+  .platform-graph-layout.inspected { grid-template-columns: minmax(0, 1fr); }
+  .platform-graph-inspector { min-height: 420px; }
 }
 
 @media (max-width: 768px) {
@@ -2727,6 +2784,7 @@ body { margin: 0; min-height: 100vh; background: var(--bg-root); }
   .platform-kpi-strip { grid-template-columns: 1fr 1fr; }
   .platform-dash-header { flex-direction: column; }
   .platform-entity-create { grid-template-columns: 1fr; margin-inline: 12px; }
+  .platform-graph-layout { margin-inline: 12px; }
   .platform-graph-canvas .graph-view-tabs { grid-template-columns: 1fr; }
   .platform-graph-canvas .graph-tabbar,
   .platform-graph-canvas .graph-tabbar > div:first-child { align-items: stretch; flex-direction: column; }
