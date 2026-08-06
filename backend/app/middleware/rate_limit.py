@@ -22,11 +22,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._last_sweep = 0.0
 
     def _client_key(self, request: Request) -> str:
-        if get_settings().rate_limit_trust_forwarded:
-            forwarded = request.headers.get("x-forwarded-for")
-            if forwarded:
-                return forwarded.split(",")[0].strip()
-        return request.client.host if request.client else "unknown"
+        direct_ip = request.client.host if request.client else "unknown"
+        settings = get_settings()
+        if settings.rate_limit_trust_forwarded:
+            # Only trust X-Forwarded-For when the real peer is a proxy we
+            # explicitly recognize; otherwise anyone could spoof the header
+            # to evade the limiter. An empty trust list disables header trust.
+            trusted = settings.trusted_proxy_ip_list
+            if direct_ip in trusted:
+                forwarded = request.headers.get("x-forwarded-for")
+                if forwarded:
+                    return forwarded.split(",")[0].strip()
+        return direct_ip
 
     def _sweep(self, now: float) -> None:
         cutoff = now - _WINDOW_SECONDS

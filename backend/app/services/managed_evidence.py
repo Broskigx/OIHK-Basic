@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import tempfile
@@ -70,9 +71,12 @@ async def store_upload(case_id: str, upload: UploadFile) -> dict[str, str | int]
                         detail=f"Evidence file exceeds the configured {limit // (1024 * 1024)} MB limit.",
                     )
                 digest.update(chunk)
-                destination.write(chunk)
-            destination.flush()
-            os.fsync(destination.fileno())
+                # Disk write/flush/fsync are blocking I/O inside an async
+                # route — offload each to a worker thread so the event loop
+                # keeps serving requests during large uploads.
+                await asyncio.to_thread(destination.write, chunk)
+            await asyncio.to_thread(destination.flush)
+            await asyncio.to_thread(os.fsync, destination.fileno())
         final_path = (case_root / f"{uuid4()}-{safe_name}").resolve()
         try:
             final_path.relative_to(case_root)

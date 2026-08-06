@@ -479,6 +479,22 @@ export type TransformCatalog = {
   transforms: TransformSpec[];
 };
 
+export type TransformRun = {
+  id: string;
+  case_id: string;
+  entity_id: string;
+  entity_label: string;
+  entity_type: string;
+  transform_id: string;
+  transform_title: string;
+  status: "completed" | "failed";
+  new_nodes: number;
+  new_edges: number;
+  detail: string;
+  actor: string;
+  created_at: string;
+};
+
 export type CsvImportResult = {
   nodes: number;
   edges: number;

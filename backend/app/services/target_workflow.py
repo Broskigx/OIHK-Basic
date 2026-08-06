@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.services.public_search import search_public
+
+logger = logging.getLogger(__name__)
 
 
 def parse_aliases(raw: str) -> list[str]:
@@ -115,6 +119,7 @@ async def run_target_search(
             results = await search_public(query, max_results=5)
             all_results.extend(results)
         except Exception:
+            logger.warning("Public search failed for query %r; continuing with other queries", query, exc_info=True)
             continue
 
     seen_urls: set[str] = set()

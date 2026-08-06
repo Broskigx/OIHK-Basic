@@ -24,23 +24,32 @@ export type NavigationItem = {
   label: string;
   caseScoped: boolean;
   sidebar?: boolean;
+  group?: string;
 };
 
+export const SIDEBAR_GROUPS: { id: string; label: string }[] = [
+  { id: "workspace", label: "Workspace" },
+  { id: "analysis", label: "Analysis" },
+  { id: "evidence", label: "Evidence" },
+  { id: "ai", label: "AI" },
+  { id: "system", label: "System" },
+];
+
 export const MAIN_NAVIGATION: NavigationItem[] = [
-  { id: "dashboard", label: "Dashboard", caseScoped: false },
-  { id: "investigations", label: "Investigations", caseScoped: false },
-  { id: "graph", label: "Intelligence Graph", caseScoped: true },
-  { id: "osint", label: "OSINT Workspace", caseScoped: true },
-  { id: "evidence", label: "Evidence Lab", caseScoped: true },
-  { id: "reports", label: "Reports", caseScoped: true },
-  { id: "copilot", label: "Copilot", caseScoped: true },
-  { id: "models", label: "Local Models", caseScoped: false },
-  { id: "sources", label: "Data Sources", caseScoped: true },
-  { id: "settings", label: "Settings", caseScoped: false },
-  { id: "about", label: "About", caseScoped: false },
-  { id: "entities", label: "Entities", caseScoped: true, sidebar: false },
-  { id: "timeline", label: "Timeline", caseScoped: true, sidebar: false },
-  { id: "tools", label: "Forensics", caseScoped: true, sidebar: false },
+  { id: "dashboard", label: "Dashboard", caseScoped: false, group: "workspace" },
+  { id: "investigations", label: "Investigations", caseScoped: false, group: "workspace" },
+  { id: "entities", label: "Entities", caseScoped: true, group: "analysis" },
+  { id: "graph", label: "Intelligence Graph", caseScoped: true, group: "analysis" },
+  { id: "timeline", label: "Timeline", caseScoped: true, group: "analysis" },
+  { id: "osint", label: "OSINT Workspace", caseScoped: true, group: "analysis" },
+  { id: "tools", label: "Tools", caseScoped: true, group: "analysis" },
+  { id: "evidence", label: "Evidence Lab", caseScoped: true, group: "evidence" },
+  { id: "sources", label: "Data Sources", caseScoped: true, group: "evidence" },
+  { id: "reports", label: "Reports", caseScoped: true, group: "evidence" },
+  { id: "copilot", label: "Copilot", caseScoped: true, group: "ai" },
+  { id: "models", label: "Local Models", caseScoped: false, group: "ai" },
+  { id: "settings", label: "Settings", caseScoped: false, group: "system" },
+  { id: "about", label: "About", caseScoped: false, group: "system" },
 ];
 
 const GLOBAL_AREAS = new Set<PlatformArea>(["dashboard", "investigations", "models", "settings", "about"]);
@@ -75,4 +84,4 @@ export function platformHash(area: PlatformArea, caseId = ""): string {
   if (!caseId) return "#/investigations";
   const section = area === "investigations" ? "overview" : area;
   return `#/investigations/${encodeURIComponent(caseId)}/${section}`;
-}
+}

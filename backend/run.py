@@ -86,6 +86,8 @@ def main() -> None:
 
     args = parser.parse_args()
     os.environ.pop("OIHK_PACKAGED_DATA_DIR", None)
+    # Make the app startup hardening check aware of the real bind address.
+    os.environ["OIHK_SERVER_BIND_HOST"] = args.host
     if args.data_dir:
         requested_data_dir = Path(args.data_dir)
         if not requested_data_dir.is_absolute():

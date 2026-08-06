@@ -482,6 +482,27 @@ class Machine(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class TransformRun(Base):
+    """Immutable record of one transform execution against an entity."""
+
+    __tablename__ = "transform_runs"
+    __table_args__ = (Index("ix_transform_run_case_created", "case_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    entity_label: Mapped[str] = mapped_column(String(500), default="")
+    entity_type: Mapped[str] = mapped_column(String(40), default="")
+    transform_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    transform_title: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(20), default="completed")
+    new_nodes: Mapped[int] = mapped_column(Integer, default=0)
+    new_edges: Mapped[int] = mapped_column(Integer, default=0)
+    detail: Mapped[str] = mapped_column(String(600), default="")
+    actor: Mapped[str] = mapped_column(String(120), default="analyst")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ForensicHashEntry(Base):
     __tablename__ = "forensic_hash_entries"
     __table_args__ = (

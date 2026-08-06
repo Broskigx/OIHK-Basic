@@ -50,3 +50,7 @@ logs/
 
 # OS-specific data directories
 *.oihk-basic/
+
+# Local debugging artifacts and case data
+docs/ui-references/
+investigations/

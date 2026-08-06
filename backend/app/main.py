@@ -65,6 +65,16 @@ def _enforce_hardening() -> None:
         if settings.auth_enabled and settings.jwt_secret_is_default:
             logger.warning("OIHK_JWT_SECRET is the built-in dev default — set a strong secret before production.")
         if not settings.auth_enabled:
+            # With auth disabled the CSRF middleware is bypassed entirely, so the
+            # API must never be reachable from the network — refuse to boot on a
+            # non-loopback bind instead of exposing it silently.
+            if not settings.binds_to_loopback:
+                raise RuntimeError(
+                    "Refusing to start with OIHK_AUTH_ENABLED=false: the server must bind only to a "
+                    f"loopback address (127.0.0.1/::1), but OIHK_SERVER_BIND_HOST='{settings.server_bind_host}'. "
+                    "Set OIHK_SERVER_BIND_HOST to a loopback address or enable authentication "
+                    "(OIHK_AUTH_ENABLED=true) for non-loopback deployments."
+                )
             logger.warning("OIHK_AUTH_ENABLED=false — the single-user API must remain bound to a loopback address.")
         return
     if not settings.auth_enabled:

@@ -803,6 +803,24 @@ class MachineAdhocRun(BaseModel):
     transform_ids: list[str] = Field(min_length=1)
 
 
+class TransformRunRead(BaseModel):
+    id: str
+    case_id: str
+    entity_id: str
+    entity_label: str
+    entity_type: str
+    transform_id: str
+    transform_title: str
+    status: Literal["completed", "failed"] = "completed"
+    new_nodes: int
+    new_edges: int
+    detail: str
+    actor: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # --- CSV Import ---
 class CsvImportRequest(BaseModel):
     csv: str

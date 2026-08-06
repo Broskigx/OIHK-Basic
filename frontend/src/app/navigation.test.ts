@@ -19,8 +19,8 @@ describe("platform navigation", () => {
     expect(parsePlatformHash("#/not-real")).toEqual({ area: "dashboard", caseId: "" });
   });
 
-  it("presents the compatible tools route as the Forensics workspace", () => {
-    expect(MAIN_NAVIGATION.find((item) => item.id === "tools")?.label).toBe("Forensics");
+  it("presents the compatible tools route", () => {
+    expect(MAIN_NAVIGATION.find((item) => item.id === "tools")?.label).toBe("Tools");
     expect(parsePlatformHash("#/investigations/case-123/tools")).toEqual({ area: "tools", caseId: "case-123" });
   });
 });

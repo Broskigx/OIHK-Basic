@@ -1,8 +1,12 @@
 """Transform catalog for OIHK Basic — defines available transforms."""
 
+import logging
+
 import httpx
 
 from app.transforms.base import TransformSpec
+
+logger = logging.getLogger(__name__)
 
 
 async def _dns_resolve(session, *, entity) -> list[dict]:
@@ -38,7 +42,7 @@ async def _whois_lookup(session, *, entity) -> list[dict]:
                                     }
                                 )
     except Exception:
-        pass
+        logger.warning("WHOIS/RDAP lookup failed for domain %r", entity.value, exc_info=True)
     return results
 
 
@@ -66,7 +70,7 @@ async def _cert_search(session, *, entity) -> list[dict]:
                                 }
                             )
     except Exception:
-        pass
+        logger.warning("Certificate search failed for domain %r", entity.value, exc_info=True)
     return results
 
 
@@ -89,7 +93,7 @@ async def _shodan_like(session, *, entity) -> list[dict]:
                         }
                     )
     except Exception:
-        pass
+        logger.warning("IP RDAP lookup failed for address %r", entity.value, exc_info=True)
     return results
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 from dataclasses import dataclass
@@ -79,6 +80,15 @@ def _managed_file_hash(content_ref: str) -> str | None:
     return digest.hexdigest()
 
 
+def _managed_file_stats(content_ref: str) -> tuple[str, int]:
+    """SHA-256 + size of a managed evidence file (blocking I/O for worker threads)."""
+    content_sha256 = _managed_file_hash(content_ref)
+    if not content_sha256:
+        raise ValueError("Managed evidence must exist inside the configured storage directory before sealing.")
+    size_bytes = Path(content_ref.removeprefix("file:")).resolve().stat().st_size
+    return content_sha256, size_bytes
+
+
 async def seal_source(
     session: AsyncSession,
     source: models.Source,
@@ -90,10 +100,8 @@ async def seal_source(
 
     if storage_path:
         content_ref = f"file:{storage_path}"
-        content_sha256 = _managed_file_hash(content_ref)
-        if not content_sha256:
-            raise ValueError("Managed evidence must exist inside the configured storage directory before sealing.")
-        size_bytes = Path(storage_path).stat().st_size
+        # Hashing a large evidence file is blocking I/O — run it off the loop.
+        content_sha256, size_bytes = await asyncio.to_thread(_managed_file_stats, content_ref)
         if raw_bytes is not None and not hmac.compare_digest(hashlib.sha256(raw_bytes).hexdigest(), content_sha256):
             raise ValueError("Managed evidence bytes changed before the custody seal was created.")
     else:
@@ -182,7 +190,7 @@ async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVer
                 hashlib.sha256((source.body or "").encode("utf-8")).hexdigest() == seal.content_sha256
             )
         elif seal.content_ref.startswith("file:"):
-            content_ok = _managed_file_hash(seal.content_ref) == seal.content_sha256
+            content_ok = await asyncio.to_thread(_managed_file_hash, seal.content_ref) == seal.content_sha256
         else:
             content_ok = False
 

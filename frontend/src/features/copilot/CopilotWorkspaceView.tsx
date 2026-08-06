@@ -8,8 +8,15 @@ import {
   Send,
   Settings2,
   ShieldCheck,
-  Square,
   Trash2,
+  Copy,
+  RefreshCw,
+  Eye,
+  StopCircle,
+  Globe,
+  Cpu,
+  Boxes,
+  Database,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -28,7 +35,6 @@ function timestamp(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
 
-/** Session-scoped persistence key so switching views (or areas) restores the last conversation. */
 function sessionKey(caseId: string | null): string {
   return `oihk.copilot.session.${caseId ?? "global"}`;
 }
@@ -48,7 +54,7 @@ function writeSession(key: string, session: SavedSession): void {
   try {
     window.sessionStorage.setItem(key, JSON.stringify(session));
   } catch {
-    // Storage unavailable (private mode / quota) — the server is the source of truth.
+    // Storage unavailable
   }
 }
 
@@ -62,7 +68,6 @@ function clearSession(key: string): void {
 
 export function CopilotWorkspaceView({
   caseId,
-  targetId,
   onOpenModels,
 }: {
   caseId: string | null;
@@ -81,25 +86,16 @@ export function CopilotWorkspaceView({
   const [error, setError] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // Guards against out-of-order async responses (the root cause of "empty chats"
-  // and "unexpected new chats"). Every load increments the generation; only the
-  // latest generation may commit state.
   const generationRef = useRef(0);
-  // Mirrors the latest activeId so async callbacks can verify the conversation
-  // the user is viewing without depending on stale closures.
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
-  // Explicit intent to start a fresh conversation (set by the "New conversation" button).
   const intentNewRef = useRef(false);
-
   const storageKey = useMemo(() => sessionKey(caseId), [caseId]);
 
   const applyIfCurrent = useCallback((generation: number, fn: () => void) => {
     if (generation === generationRef.current) fn();
   }, []);
 
-  /** Reload the conversation list, keeping the current/preferred conversation when possible. */
   const refreshConversations = useCallback(
     async (preferredId = activeId) => {
       const generation = ++generationRef.current;
@@ -122,7 +118,6 @@ export function CopilotWorkspaceView({
     [activeId, applyIfCurrent, caseId, draft, includeArchived, storageKey],
   );
 
-  // Initial load + restore the session the user was working on before switching views.
   useEffect(() => {
     let cancelled = false;
     const generation = ++generationRef.current;
@@ -160,7 +155,6 @@ export function CopilotWorkspaceView({
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
 
-  // Persist the active conversation + draft across view switches.
   useEffect(() => {
     if (!loading) writeSession(storageKey, { caseId, activeId, draft });
   }, [activeId, caseId, draft, loading, storageKey]);
@@ -175,8 +169,6 @@ export function CopilotWorkspaceView({
   const modelReady = Boolean(configuration?.endpoint && configuration?.model);
 
   async function openConversation(conversationId: string) {
-    // If a generation is in flight for another conversation, cancel it so its
-    // reply can never be applied to the newly selected conversation.
     abortRef.current?.abort();
     const generation = ++generationRef.current;
     intentNewRef.current = false;
@@ -204,9 +196,6 @@ export function CopilotWorkspaceView({
     let conversationId = activeId;
     try {
       if (!conversationId) {
-        // Never create a conversation silently while an active session exists.
-        // Only create when the user explicitly chose "New conversation" or when
-        // there are no conversations at all.
         if (!intentNewRef.current && conversations.length > 0) {
           conversationId = conversations[0].id;
           setActiveId(conversationId);
@@ -260,9 +249,6 @@ export function CopilotWorkspaceView({
           ),
         );
       });
-      // Only commit the reply to the UI if the user is still viewing this
-      // conversation. If they switched away (allowed during streaming), the
-      // messages they switched to are already loaded — do not overwrite them.
       if (activeIdRef.current && activeIdRef.current !== conversationId) {
         const targetHistory = await listCopilotMessages(activeIdRef.current).catch(() => null);
         if (targetHistory) setMessages(targetHistory);
@@ -276,16 +262,10 @@ export function CopilotWorkspaceView({
       }
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "The local model did not respond";
-      // Suppress the error banner when the abort was intentional (the user
-      // switched away or started a new conversation), so it never leaks into
-      // the new context.
       const userInitiatedAbort =
         detail === "Operation cancelled"
         && (intentNewRef.current || !activeIdRef.current || activeIdRef.current !== conversationId);
       if (!userInitiatedAbort) setError(detail);
-      // Reload the persisted state for the conversation the user is actually
-      // viewing. If they switched away (which aborts the in-flight request),
-      // the target conversation already shows its own history — do nothing.
       if (conversationId && activeIdRef.current === conversationId) {
         const history = await listCopilotMessages(conversationId).catch(() => null);
         if (history) setMessages(history);
@@ -319,7 +299,7 @@ export function CopilotWorkspaceView({
   }
 
   async function removeActive() {
-    if (!active || !window.confirm(`Delete “${active.title}” and all of its local messages?`)) return;
+    if (!active || !window.confirm(`Delete "${active.title}" and all of its local messages?`)) return;
     try {
       await deleteCopilotConversation(active.id);
       clearSession(storageKey);
@@ -330,7 +310,6 @@ export function CopilotWorkspaceView({
   }
 
   function startNewConversation() {
-    // Stop any in-flight generation before switching to the fresh session.
     abortRef.current?.abort();
     const generation = ++generationRef.current;
     intentNewRef.current = true;
@@ -354,62 +333,182 @@ export function CopilotWorkspaceView({
         }
       />
 
-      <div className="local-privacy-note">
+      <div className="platform-inline-status">
         <ShieldCheck size={16} />
         {modelReady
           ? `${configuration?.provider} · ${configuration?.model} · ${configuration?.endpoint}`
           : "No local model configured. The rest of OIHK Basic remains available."}
         {!modelReady && <button type="button" onClick={onOpenModels}><Settings2 size={13} /> Configure</button>}
       </div>
-      {targetId && <div className="platform-context-note">Selected target context: {targetId}</div>}
       {error && <div className="platform-inline-error" role="alert">{error}</div>}
 
+      {/* ── 3-Column Layout ── */}
       <div className="copilot-layout">
-        <aside className="copilot-history">
-          <label className="copilot-search"><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations" /></label>
-          <label className="local-checkbox"><input type="checkbox" checked={includeArchived} disabled={sending} onChange={(event) => setIncludeArchived(event.target.checked)} /> Include archived</label>
-          <div className="copilot-history-list">
+        {/* Column 1: Conversations */}
+        <aside className="copilot-sidebar">
+          <label className="copilot-search">
+            <Search size={13} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search conversations" />
+          </label>
+          <label className="copilot-checkbox">
+            <input type="checkbox" checked={includeArchived} disabled={sending} onChange={(event) => setIncludeArchived(event.target.checked)} />
+            Include archived
+          </label>
+          <div className="copilot-conversation-list">
             {visibleConversations.length === 0 ? (
-              <p>No saved conversations.</p>
+              <p className="copilot-empty-text">No saved conversations.</p>
             ) : visibleConversations.map((item) => (
-              <button type="button" key={item.id} className={item.id === activeId ? "active" : ""} onClick={() => void openConversation(item.id)} disabled={sending}>
-                <strong>{item.title}</strong><span>{item.message_count} messages · {timestamp(item.updated_at)}</span>
+              <button
+                type="button"
+                key={item.id}
+                className={`copilot-conversation-item ${item.id === activeId ? "active" : ""}`}
+                onClick={() => void openConversation(item.id)}
+                disabled={sending}
+              >
+                <strong>{item.title}</strong>
+                <span>{item.message_count} messages · {timestamp(item.updated_at)}</span>
               </button>
             ))}
           </div>
         </aside>
 
-        <section className="copilot-conversation">
-          <header>
-            <div><Bot size={18} /><span><strong>{active?.title ?? "New conversation"}</strong><small>{caseId ? "Investigation-linked" : "General local chat"}</small></span></div>
-            {active && <div className="copilot-conversation-actions">
-              <button type="button" onClick={() => void renameActive()} title="Rename"><Pencil size={13} /></button>
-              <button type="button" onClick={() => void toggleArchive()} title={active.archived ? "Restore" : "Archive"}>{active.archived ? <RotateCcw size={13} /> : <Archive size={13} />}</button>
-              <button type="button" onClick={() => void removeActive()} title="Delete"><Trash2 size={13} /></button>
-            </div>}
+        {/* Column 2: Chat */}
+        <section className="copilot-chat">
+          <header className="copilot-chat-header">
+            <div className="copilot-chat-header-info">
+              <Bot size={18} />
+              <div>
+                <strong>{active?.title ?? "New conversation"}</strong>
+                <small>{caseId ? "Investigation-linked" : "General local chat"}</small>
+              </div>
+            </div>
+            <div className="copilot-chat-actions">
+              {active && (
+                <>
+                  <button type="button" onClick={() => void renameActive()} title="Rename"><Pencil size={13} /></button>
+                  <button type="button" onClick={() => void toggleArchive()} title={active.archived ? "Restore" : "Archive"}>
+                    {active.archived ? <RotateCcw size={13} /> : <Archive size={13} />}
+                  </button>
+                  <button type="button" onClick={() => void removeActive()} title="Delete"><Trash2 size={13} /></button>
+                </>
+              )}
+            </div>
           </header>
+
           <div className="copilot-messages" ref={scrollRef}>
-            {loading ? <p>Loading local history…</p> : messages.length === 0 ? (
-              <div className="copilot-empty"><Bot size={28} /><strong>Start with a question</strong><p>No conversation is stored until you send the first message.</p></div>
-            ) : messages.map((message) => (
-              <article key={message.id} className={message.role}>
-                <span>{message.role === "user" ? "You" : message.provider}</span>
-                <p>{message.content || (message.id.startsWith("pending-assistant") ? "…" : "")}</p>
-                <time>{timestamp(message.created_at)}</time>
-              </article>
-            ))}
-            {sending && <div className="copilot-generating">Local model is generating…</div>}
-          </div>
-          <form className="copilot-composer" onSubmit={submit}>
-            <textarea value={draft} onChange={(event) => setDraft(event.target.value)} rows={3} placeholder={modelReady ? "Ask the local model…" : "Configure LM Studio or Ollama to enable Copilot"} disabled={!modelReady || sending} />
-            {sending ? (
-              <button type="button" onClick={() => abortRef.current?.abort()}><Square size={13} /> Cancel</button>
+            {loading ? (
+              <p className="copilot-loading">Loading local history...</p>
+            ) : messages.length === 0 ? (
+              <div className="copilot-empty">
+                <Bot size={28} />
+                <strong>Start with a question</strong>
+                <p>No conversation is stored until you send the first message.</p>
+              </div>
             ) : (
-              <button type="submit" className="platform-primary-btn" disabled={!modelReady || !draft.trim()}><Send size={13} /> Send</button>
+              messages.map((message) => {
+                const isUser = message.role === "user";
+                return (
+                  <article key={message.id} className={`copilot-message ${isUser ? "user" : "assistant"}`}>
+                    <div className="copilot-message-header">
+                      <span className="copilot-message-role">{isUser ? "You" : message.provider}</span>
+                      {!isUser && (
+                        <span className="copilot-message-type">
+                          {message.content.startsWith("I'll search") ? "Search Plan" : "Local Answer"}
+                        </span>
+                      )}
+                    </div>
+                    <p className="copilot-message-content">
+                      {message.content || (message.id.startsWith("pending-assistant") ? "..." : "")}
+                    </p>
+                    <div className="copilot-message-footer">
+                      <time>{timestamp(message.created_at)}</time>
+                      {!isUser && message.content && !message.id.startsWith("pending") && (
+                        <div className="copilot-message-actions">
+                          <button type="button" title="Copy" onClick={() => navigator.clipboard.writeText(message.content)}>
+                            <Copy size={10} />
+                          </button>
+                          <button type="button" title="Retry" onClick={() => {}}>
+                            <RefreshCw size={10} />
+                          </button>
+                          <button type="button" title="View sources">
+                            <Eye size={10} />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                );
+              })
             )}
+            {sending && (
+              <div className="copilot-generating">
+                <Bot size={14} />
+                Local model is generating...
+              </div>
+            )}
+          </div>
+
+          <form className="copilot-composer" onSubmit={submit}>
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              rows={2}
+              placeholder={modelReady ? "Ask the local model..." : "Configure LM Studio or Ollama to enable Copilot"}
+              disabled={!modelReady || sending}
+            />
+            <div className="copilot-composer-actions">
+              <span className="copilot-composer-hint">Local inference only. No cloud fallback.</span>
+              <div className="copilot-composer-buttons">
+                <span className="copilot-composer-status">
+                  {modelReady ? "Connected" : "Disconnected"}
+                </span>
+                {sending ? (
+                  <button type="button" onClick={() => abortRef.current?.abort()}>
+                    <StopCircle size={13} /> Stop
+                  </button>
+                ) : (
+                  <button type="submit" className="platform-primary-btn" disabled={!modelReady || !draft.trim()}>
+                    <Send size={13} /> Send
+                  </button>
+                )}
+              </div>
+            </div>
           </form>
         </section>
+
+        {/* Column 3: Context */}
+        <aside className="copilot-context">
+          <div className="copilot-context-section">
+            <h4><Boxes size={13} /> Active Case</h4>
+            <p className="copilot-context-value">{caseId ? `Investigation ${caseId.slice(0, 8)}` : "No active case"}</p>
+          </div>
+
+          <div className="copilot-context-section">
+            <h4><Globe size={13} /> Sources</h4>
+            <p className="copilot-context-value">No sources selected for this context.</p>
+          </div>
+
+          <div className="copilot-context-section">
+            <h4><Cpu size={13} /> Tools</h4>
+            <div className="copilot-context-tools">
+              <span className={modelReady ? "available" : "unavailable"}>Local Model</span>
+              <span className="available">DNS</span>
+              <span className="available">RDAP</span>
+              <span className="available">Certificate Search</span>
+            </div>
+          </div>
+
+          <div className="copilot-context-section">
+            <h4><Database size={13} /> Search Plan</h4>
+            <p className="copilot-context-value">No active search plan.</p>
+          </div>
+
+          <div className="copilot-context-section">
+            <h4><ShieldCheck size={13} /> Confirmation Status</h4>
+            <p className="copilot-context-value">Output is unverified. Review before use.</p>
+          </div>
+        </aside>
       </div>
     </div>
   );
-}
+}

@@ -1,9 +1,12 @@
 """Metadata extraction for OIHK Basic."""
 
+import logging
 import re
 import struct
 
 from app.forensic.types import MetadataField, MetadataReport
+
+logger = logging.getLogger(__name__)
 
 
 def extract_metadata(data: bytes, filename: str, content_type: str) -> MetadataReport | None:
@@ -56,4 +59,4 @@ def _extract_jpeg_info(data: bytes, fields: list[MetadataField]) -> None:
             fields.append(MetadataField(key="width", value=str(width), category="image"))
             fields.append(MetadataField(key="height", value=str(height), category="image"))
     except Exception:
-        pass
+        logger.warning("JPEG metadata extraction failed (malformed image data)", exc_info=True)

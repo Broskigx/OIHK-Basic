@@ -50,6 +50,7 @@ import type {
   SourceRead,
   StorageStatus,
   TransformCatalog,
+  TransformRun,
   TargetIntakeResult,
   TargetPhoto,
   TargetProfile,
@@ -647,6 +648,13 @@ export function runTransform(transformId: string, entityId: string): Promise<Gra
     method: "POST",
     body: JSON.stringify({ entity_id: entityId }),
   });
+}
+
+export function listTransformRuns(caseId?: string, limit = 20): Promise<TransformRun[]> {
+  const params = new URLSearchParams();
+  if (caseId) params.set("case_id", caseId);
+  params.set("limit", String(limit));
+  return request<TransformRun[]>(`/transforms/runs?${params.toString()}`);
 }
 
 // --- Machines (deterministic transform chains) ---

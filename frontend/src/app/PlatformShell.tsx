@@ -17,12 +17,14 @@ import {
   Settings,
   ShieldCheck,
   HardDrive,
+  AlertTriangle,
+  Cpu,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CaseRead, DesktopStatus, User } from "../types";
 import { PRODUCT_VERSION } from "../version";
-import { MAIN_NAVIGATION, type PlatformArea } from "./navigation";
+import { MAIN_NAVIGATION, SIDEBAR_GROUPS, type PlatformArea } from "./navigation";
 
 const NAV_ICONS: Record<PlatformArea, LucideIcon> = {
   dashboard: CircleGauge,
@@ -113,43 +115,72 @@ export function PlatformShell({
       .slice(0, 6);
   }, [cases, searchQuery]);
 
+  const navByGroup = useMemo(() => {
+    const groups = new Map<string, typeof MAIN_NAVIGATION>();
+    for (const item of MAIN_NAVIGATION) {
+      if (item.sidebar === false) continue;
+      const g = item.group || "workspace";
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(item);
+    }
+    return groups;
+  }, []);
+
+  // Calculate storage percentage
+  const storagePercent = useMemo(() => {
+    if (!desktopStatus) return 0;
+    return 34; // placeholder until storage data is available
+  }, [desktopStatus]);
+
   return (
     <main className="platform-shell">
       {/* ── Sidebar ── */}
       <aside className="platform-sidebar">
+        {/* Brand */}
         <div className="platform-brand">
           <span className="platform-brand-mark">O</span>
           <div className="platform-brand-info">
             <strong>OIHK Basic</strong>
-            <small>Local-First OSINT</small>
+            <small>Local Intelligence Workspace</small>
           </div>
         </div>
 
+        {/* Navigation groups */}
         <nav className="platform-nav" aria-label="Main navigation">
-          {MAIN_NAVIGATION.filter((item) => item.sidebar !== false).map((item) => {
-            const Icon = NAV_ICONS[item.id];
+          {SIDEBAR_GROUPS.map((group) => {
+            const items = navByGroup.get(group.id);
+            if (!items || items.length === 0) return null;
             return (
-              <button
-                type="button"
-                key={item.id}
-                className={area === item.id ? "platform-nav-item active" : "platform-nav-item"}
-                onClick={() => onNavigate(item.id)}
-                title={item.label}
-              >
-                <Icon size={16} aria-hidden="true" />
-                <span>{item.label}</span>
-              </button>
+              <div key={group.id} className="platform-nav-group">
+                <span className="platform-nav-group-label">{group.label}</span>
+                {items.map((item) => {
+                  const Icon = NAV_ICONS[item.id];
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      className={area === item.id ? "platform-nav-item active" : "platform-nav-item"}
+                      onClick={() => onNavigate(item.id)}
+                      title={item.label}
+                    >
+                      <Icon size={16} aria-hidden="true" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
 
+        {/* Sidebar footer */}
         <div className="platform-sidebar-footer">
           <div className="platform-storage-status">
             <HardDrive size={12} />
             <div className="platform-storage-info">
               <span className="platform-storage-label">Local Storage</span>
               <div className="platform-storage-bar">
-                <i style={{ width: "34%" }} />
+                <i style={{ width: `${storagePercent}%` }} />
               </div>
               <span className="platform-storage-text">Local data saved</span>
             </div>
@@ -165,12 +196,17 @@ export function PlatformShell({
               {desktopStatus ? "Desktop" : "Web"}
             </span>
           </div>
+          <div className="platform-sidebar-local-badge">
+            <ShieldCheck size={10} />
+            <span>Local-First</span>
+          </div>
         </div>
       </aside>
 
       {/* ── Topbar ── */}
       <header className="platform-topbar">
         <div className="platform-topbar-left">
+          {/* Case selector */}
           <div className="platform-case-context">
             <span className="platform-context-label">Case</span>
             <label className="platform-case-select">
@@ -190,14 +226,18 @@ export function PlatformShell({
               </select>
               <ChevronDown size={12} />
             </label>
+            {activeCase && (
+              <span className={`placo-badge ${activeCase.status}`}>{activeCase.status}</span>
+            )}
           </div>
 
+          {/* Global search */}
           <div className="platform-search">
             <Search size={14} color="var(--text-muted)" />
             <input
               ref={searchRef}
               type="text"
-              placeholder="Search investigations..."
+              placeholder="Search investigations, entities and evidence"
               value={searchQuery}
               onChange={handleSearchInput}
               onKeyDown={handleSearchKeyDown}
@@ -234,16 +274,22 @@ export function PlatformShell({
         </div>
 
         <div className="platform-topbar-right">
+          {/* Model status indicator */}
+          <div className="platform-model-status" title="Local model status">
+            <Cpu size={13} />
+            <span>Not configured</span>
+          </div>
+
+          {/* Local-First badge */}
           <span className="platform-topbar-badge">Local-First</span>
-          {activeCase && (
-            <span className="platform-topbar-badge" style={{ opacity: 0.7 }}>
-              {activeCase.status}
-            </span>
-          )}
+
+          {/* New Investigation button */}
           <button type="button" className="platform-ghost-btn" onClick={onNewCase} disabled={loading}>
             <Plus size={14} />
-            New Case
+            New Investigation
           </button>
+
+          {/* Settings button */}
           <button
             type="button"
             className="platform-icon-btn"
@@ -252,6 +298,8 @@ export function PlatformShell({
           >
             <Settings size={15} />
           </button>
+
+          {/* User chip */}
           <div className="platform-user-chip">
             <span className="platform-user-avatar">
               {currentUser.username.slice(0, 1).toUpperCase()}
@@ -269,6 +317,7 @@ export function PlatformShell({
         {error && (
           <div className="platform-error" role="alert">
             <div className="platform-error-content">
+              <AlertTriangle size={14} />
               <span className="platform-error-text">{error}</span>
               <button
                 type="button"
@@ -285,4 +334,4 @@ export function PlatformShell({
       </section>
     </main>
   );
-}
+}

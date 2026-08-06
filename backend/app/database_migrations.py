@@ -50,6 +50,11 @@ MIGRATIONS = (
             "ALTER TABLE assistant_conversations ADD COLUMN settings JSON NOT NULL DEFAULT '{}'",
         ),
     ),
+    Migration(
+        5,
+        "transform_run_history",
+        (),
+    ),
 )
 
 # Migration version → table whose ALTER ADD COLUMN statements must be guarded so

@@ -1,5 +1,6 @@
 """Versioned local application settings and safe storage diagnostics."""
 
+import asyncio
 import os
 import sqlite3
 import tempfile
@@ -106,30 +107,31 @@ async def storage_status(
 ) -> StorageStatusRead:
     database = _database_path()
     storage = Path(get_settings().effective_storage_dir).resolve()
-    database_bytes = database.stat().st_size if database.is_file() else 0
-    evidence_bytes = _directory_size(storage)
-    data_directory = database.parent
-    writable = (
-        os.access(data_directory, os.W_OK) if data_directory.exists() else os.access(data_directory.parent, os.W_OK)
-    )
-    return StorageStatusRead(
-        data_directory=str(data_directory),
-        database_path=str(database),
-        storage_path=str(storage),
-        database_bytes=database_bytes,
-        evidence_bytes=evidence_bytes,
-        total_bytes=database_bytes + evidence_bytes,
-        writable=writable,
-    )
+
+    def _snapshot() -> StorageStatusRead:
+        database_bytes = database.stat().st_size if database.is_file() else 0
+        evidence_bytes = _directory_size(storage)
+        data_directory = database.parent
+        writable = (
+            os.access(data_directory, os.W_OK) if data_directory.exists() else os.access(data_directory.parent, os.W_OK)
+        )
+        return StorageStatusRead(
+            data_directory=str(data_directory),
+            database_path=str(database),
+            storage_path=str(storage),
+            database_bytes=database_bytes,
+            evidence_bytes=evidence_bytes,
+            total_bytes=database_bytes + evidence_bytes,
+            writable=writable,
+        )
+
+    # The directory walk can be slow on large evidence trees — keep the
+    # event loop responsive by running it on a worker thread.
+    return await asyncio.to_thread(_snapshot)
 
 
-@router.get("/backup")
-async def download_sqlite_backup(
-    _current: CurrentUser = Depends(get_current_user),
-) -> Response:
-    source_path = _database_path()
-    if not source_path.is_file():
-        raise HTTPException(status_code=404, detail="No local database exists yet.")
+def _backup_sqlite(source_path: Path) -> bytes:
+    """Full SQLite backup + read; runs on a worker thread (blocking I/O)."""
     descriptor, temporary_name = tempfile.mkstemp(prefix="oihk-basic-backup-", suffix=".sqlite3")
     os.close(descriptor)
     temporary = Path(temporary_name)
@@ -141,9 +143,19 @@ async def download_sqlite_backup(
         finally:
             destination.close()
             source.close()
-        content = temporary.read_bytes()
+        return temporary.read_bytes()
     finally:
         temporary.unlink(missing_ok=True)
+
+
+@router.get("/backup")
+async def download_sqlite_backup(
+    _current: CurrentUser = Depends(get_current_user),
+) -> Response:
+    source_path = _database_path()
+    if not source_path.is_file():
+        raise HTTPException(status_code=404, detail="No local database exists yet.")
+    content = await asyncio.to_thread(_backup_sqlite, source_path)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     return Response(
         content=content,
