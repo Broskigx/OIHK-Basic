@@ -105,7 +105,7 @@ function csrfSafeMethod(method?: string): boolean {
   return !method || ["GET", "HEAD", "OPTIONS", "TRACE"].includes(method.toUpperCase());
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET";
   const csrfToken = csrfSafeMethod(method) ? "" : getCsrfToken();
   let response: Response;

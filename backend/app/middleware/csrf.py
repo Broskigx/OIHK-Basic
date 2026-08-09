@@ -18,10 +18,12 @@ _EXEMPT_PATHS = {
     "/auth/login",
     "/auth/register",
     "/updates/shutdown",
+    "/system-link/pair/complete",
 }
 _CSRF_COOKIE = "oihk_basic_csrf_token"
 _CSRF_HEADER = "x-csrf-token"
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+_EXEMPT_PREFIXES = ("/system-link/module-api/v1/",)
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -33,7 +35,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if path in _EXEMPT_PATHS:
+        if path in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES):
             response: Response = await call_next(request)
             _ensure_csrf_cookie(
                 response, current_token=request.cookies.get(_CSRF_COOKIE), secure=settings.is_production

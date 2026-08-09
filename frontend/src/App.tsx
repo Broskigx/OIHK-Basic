@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { createCase, deleteCase, downloadCaseExport, duplicateCase, getApplicationSettings, getStorageStatus, importCaseDocument, rerunTargetSearch, saveApplicationSettings, updateCase } from "./api";
-import { isCaseScopedArea, type PlatformArea } from "./app/navigation";
+import { isCaseScopedArea, isModuleRouteId, type PlatformArea } from "./app/navigation";
 import { PlatformShell } from "./app/PlatformShell";
 import { usePlatformRoute } from "./app/usePlatformRoute";
 import { DashboardView } from "./features/dashboard/DashboardView";
@@ -25,6 +25,9 @@ import { useCaseManager } from "./hooks/useCaseManager";
 import { useGraphInteraction } from "./hooks/useGraphInteraction";
 import { EmptyState } from "./shared/ui/EmptyState";
 import { WorkspaceHeader } from "./shared/ui/WorkspaceHeader";
+import { SystemLinkControlPlane } from "./system-link/components/SystemLinkControlPlane";
+import { SystemLinkModuleView } from "./system-link/components/SystemLinkModuleView";
+import { useSystemLinkRegistry } from "./system-link/registry";
 import type { ApplicationSettings, CaseRead, DesktopStatus, GraphNode, InvestigationDraft, StorageStatus, User } from "./types";
 
 export function App({ currentUser }: { currentUser: User }) {
@@ -37,7 +40,8 @@ export function App({ currentUser }: { currentUser: User }) {
   const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
   const [settingsError, setSettingsError] = useState("");
 
-  const { route, navigate, navigateCase } = usePlatformRoute();
+  const systemLink = useSystemLinkRegistry();
+  const { route, navigate, navigateCase } = usePlatformRoute(systemLink.moduleNavigation);
   const caseMgr = useCaseManager();
   const graph = useGraphInteraction();
   const catalogs = usePlatformCatalogs();
@@ -85,13 +89,13 @@ export function App({ currentUser }: { currentUser: User }) {
 
   const handleNavigate = useCallback(
     (area: PlatformArea) => {
-      if (isCaseScopedArea(area) && !activeCaseId) {
+      if (isCaseScopedArea(area, systemLink.moduleNavigation) && !activeCaseId) {
         navigate("investigations");
         return;
       }
       navigate(area, activeCaseId);
     },
-    [activeCaseId, navigate],
+    [activeCaseId, navigate, systemLink.moduleNavigation],
   );
 
   const openNewCaseDialog = useCallback(() => {
@@ -322,7 +326,7 @@ export function App({ currentUser }: { currentUser: User }) {
     }
   };
 
-  const caseRequired = isCaseScopedArea(route.area) && !activeCase;
+  const caseRequired = isCaseScopedArea(route.area, systemLink.moduleNavigation) && !activeCase;
   let content: React.ReactNode;
 
   if (caseRequired) {
@@ -524,12 +528,21 @@ export function App({ currentUser }: { currentUser: User }) {
             onSave={persistApplicationSettings}
             onRunOnboarding={() => setShowOnboarding(true)}
             onOpenModels={() => handleNavigate("models")}
+            onOpenSystemLink={() => handleNavigate("system-link")}
             updater={updater}
           />
         );
         break;
+      case "system-link":
+        content = <SystemLinkControlPlane registry={systemLink} onNavigate={handleNavigate} />;
+        break;
       case "about":
         content = <AboutView desktopStatus={desktopStatus} updater={updater} />;
+        break;
+      default:
+        content = isModuleRouteId(route.area)
+          ? <SystemLinkModuleView route={route.area} modules={systemLink.status?.modules ?? []} />
+          : null;
         break;
     }
   }
@@ -542,6 +555,7 @@ export function App({ currentUser }: { currentUser: User }) {
         activeCase={activeCase}
         currentUser={currentUser}
         desktopStatus={desktopStatus}
+        moduleNavigation={systemLink.moduleNavigation}
         loading={loading}
         error={error}
         onNavigate={handleNavigate}

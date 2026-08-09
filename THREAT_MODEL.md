@@ -35,6 +35,10 @@ deployers reason about the security posture of the application.
   credentials are rejected.
 - **Boundary D — OSINT adapters:** outbound requests only happen after an
   explicit user action, never in the background.
+- **Boundary E — OIHK System Link:** separately installed first-party modules
+  pair with Ed25519 installation identities. Lifecycle is restricted to a
+  signed, hashed installer record and module APIs require capabilities plus
+  signed timestamped nonces with replay rejection.
 
 ## 2. Assets
 
@@ -116,6 +120,18 @@ and size-limited before any parsing.
 > A crafted archive with a high compression ratio could inflate in memory
 > within the upload size limit. Recommended hardening for a future release:
 > cap decompressed bytes per member.
+
+### T4.10 Malicious or replaced System Link module
+Basic rejects unknown module ids, manifest/schema/protocol incompatibility,
+path traversal, symlinks, forbidden capabilities, package hash mismatch and a
+changed runtime executable hash. It starts no shell/interpreter/script and
+activates navigation only after signed handshake plus healthy READY. Module
+requests never receive raw database/filesystem handles and replayed nonces fail.
+
+The remaining supply-chain gap is a production Evidence Lab publisher trust
+anchor and rotation policy. Current pairing proves the approved local module
+identity and subsequent package continuity; it does not yet validate a vendor
+certificate chain.
 
 ## 5. Residual risks
 

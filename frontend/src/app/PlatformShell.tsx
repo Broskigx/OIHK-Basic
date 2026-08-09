@@ -19,14 +19,23 @@ import {
   HardDrive,
   AlertTriangle,
   Cpu,
+  Cable,
+  PackageCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CaseRead, DesktopStatus, User } from "../types";
 import { PRODUCT_VERSION } from "../version";
-import { MAIN_NAVIGATION, SIDEBAR_GROUPS, type PlatformArea } from "./navigation";
+import {
+  CORE_NAVIGATION,
+  SIDEBAR_GROUPS,
+  isModuleRouteId,
+  type CorePlatformArea,
+  type NavigationItem,
+  type PlatformArea,
+} from "./navigation";
 
-const NAV_ICONS: Record<PlatformArea, LucideIcon> = {
+const NAV_ICONS: Record<CorePlatformArea, LucideIcon> = {
   dashboard: CircleGauge,
   investigations: BriefcaseBusiness,
   entities: Boxes,
@@ -39,6 +48,7 @@ const NAV_ICONS: Record<PlatformArea, LucideIcon> = {
   copilot: Bot,
   models: HardDrive,
   sources: Database,
+  "system-link": Cable,
   settings: Settings,
   about: Info,
 };
@@ -49,6 +59,7 @@ export function PlatformShell({
   activeCase,
   currentUser,
   desktopStatus,
+  moduleNavigation,
   loading,
   error,
   onNavigate,
@@ -62,6 +73,7 @@ export function PlatformShell({
   activeCase?: CaseRead;
   currentUser: User;
   desktopStatus: DesktopStatus | null;
+  moduleNavigation: readonly NavigationItem[];
   loading: boolean;
   error: string;
   onNavigate: (area: PlatformArea) => void;
@@ -116,15 +128,15 @@ export function PlatformShell({
   }, [cases, searchQuery]);
 
   const navByGroup = useMemo(() => {
-    const groups = new Map<string, typeof MAIN_NAVIGATION>();
-    for (const item of MAIN_NAVIGATION) {
+    const groups = new Map<string, NavigationItem[]>();
+    for (const item of [...CORE_NAVIGATION, ...moduleNavigation]) {
       if (item.sidebar === false) continue;
       const g = item.group || "workspace";
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g)!.push(item);
     }
     return groups;
-  }, []);
+  }, [moduleNavigation]);
 
   // Calculate storage percentage
   const storagePercent = useMemo(() => {
@@ -154,7 +166,7 @@ export function PlatformShell({
               <div key={group.id} className="platform-nav-group">
                 <span className="platform-nav-group-label">{group.label}</span>
                 {items.map((item) => {
-                  const Icon = NAV_ICONS[item.id];
+                  const Icon = isModuleRouteId(item.id) ? PackageCheck : NAV_ICONS[item.id];
                   return (
                     <button
                       type="button"

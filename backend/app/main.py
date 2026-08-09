@@ -36,6 +36,8 @@ from app.routers import (
 from app.routers import (
     settings as settings_router,
 )
+from app.system_link import router as system_link_router
+from app.system_link.module_api import router as system_link_module_api_router
 from app.version import PRODUCT_VERSION
 
 logger = logging.getLogger(__name__)
@@ -192,6 +194,14 @@ async def lifespan(app: FastAPI):
     await _ensure_loopback_system_user()
     await _bootstrap_admin()
     try:
+        from app.system_link.service import SystemLinkService
+
+        async with SessionLocal() as session:
+            await SystemLinkService(session).reconcile_startup_states()
+    except Exception as exc:
+        # Optional modules must never prevent Basic from starting.
+        logger.warning("System Link startup reconciliation was isolated: %s", type(exc).__name__)
+    try:
         yield
     finally:
         await engine.dispose()
@@ -223,6 +233,8 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(updates.router)
+app.include_router(system_link_router.pairing_router)
+app.include_router(system_link_module_api_router)
 
 # Authenticated routers
 _auth = [Depends(get_current_user)]
@@ -242,3 +254,4 @@ app.include_router(operations.router, dependencies=_auth)
 app.include_router(local_models.router, dependencies=_auth)
 app.include_router(assistant.router, dependencies=_auth)
 app.include_router(settings_router.router, dependencies=_auth)
+app.include_router(system_link_router.host_router, dependencies=_auth)

@@ -2521,4 +2521,74 @@ label {
   padding: 10px;
 }
 
-.platform-entity-create label { color: var(--text-muted); display: grid; font-size: 10px; gap: 5px; }
+.platform-entity-create label { color: var(--text-muted); display: grid; font-size: 10px; gap: 5px; }
+
+/* OIHK System Link control plane */
+.system-link-view { gap: 14px; }
+.system-link-identity-strip {
+  align-items: center;
+  background: linear-gradient(90deg, rgba(71, 196, 143, .08), rgba(71, 196, 143, .02));
+  border: 1px solid rgba(71, 196, 143, .22);
+  border-radius: var(--radius-md);
+  display: flex;
+  gap: 12px;
+  margin: 0 22px;
+  padding: 12px 14px;
+}
+.system-link-identity-strip div { display: grid; gap: 3px; min-width: 0; }
+.system-link-identity-strip code { color: var(--text-muted); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+.system-link-identity-strip > span { color: var(--text-muted); font-size: 11px; margin-left: auto; }
+.system-link-module-grid { display: grid; gap: 14px; margin: 0 22px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+.system-link-power-card {
+  background: radial-gradient(circle at top right, rgba(75, 131, 255, .12), transparent 45%), var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.system-link-power-card.state-ready { border-color: rgba(71, 196, 143, .35); }
+.system-link-power-card.state-error, .system-link-power-card.state-quarantined { border-color: rgba(232, 85, 85, .35); }
+.system-link-power-card > header { align-items: center; display: flex; gap: 13px; padding: 18px; }
+.system-link-power-card > header > div:nth-child(2) { display: grid; gap: 3px; }
+.system-link-power-card h2 { font-size: 17px; margin: 0; }
+.system-link-power-card header small { color: var(--text-muted); }
+.evidence-lab-brand {
+  align-items: center;
+  background: linear-gradient(145deg, #173a5b, #0e1724);
+  border: 1px solid rgba(100, 180, 255, .35);
+  border-radius: 13px;
+  display: grid;
+  height: 54px;
+  justify-items: center;
+  line-height: 1;
+  width: 54px;
+}
+.evidence-lab-brand span { color: #83c7ff; font-size: 8px; letter-spacing: .14em; }
+.evidence-lab-brand strong { color: white; font-size: 20px; }
+.system-link-state { align-items: center; color: var(--text-muted); display: flex; font-size: 10px; gap: 6px; letter-spacing: .08em; margin-left: auto; }
+.system-link-state i { background: currentColor; border-radius: 999px; height: 7px; width: 7px; }
+.system-link-state.active { color: var(--success); }
+.system-link-card-body { border-block: 1px solid var(--border-subtle); display: grid; gap: 10px; padding: 15px 18px; }
+.system-link-card-body p { color: var(--text-secondary); margin: 0; }
+.system-link-card-body > code { color: var(--text-muted); font-size: 10px; }
+.system-link-capabilities { display: flex; flex-wrap: wrap; gap: 5px; }
+.system-link-capabilities span { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 999px; color: var(--text-muted); font: 10px var(--font-mono); padding: 3px 7px; }
+.system-link-power-card > footer { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding: 12px 18px; }
+.system-link-power-card button, .system-link-key-panel button, .system-link-approval button { align-items: center; display: inline-flex; gap: 6px; }
+.system-link-key-panel { align-items: center; display: grid; gap: 10px; grid-template-columns: 1fr auto auto; margin: 0 22px; }
+.system-link-key-panel > code { color: var(--accent); font-size: 16px; letter-spacing: .08em; }
+.system-link-key-panel p { align-items: center; color: var(--text-muted); display: flex; gap: 6px; grid-column: 1 / -1; margin: 0; }
+.system-link-approval { margin: 0 22px; }
+.system-link-grant-list { display: grid; gap: 7px; margin: 12px 0; }
+.system-link-grant-list label { align-items: center; flex-direction: row; }
+.system-link-module-surface .platform-section { margin-inline: 22px; }
+.spin { animation: system-link-spin 1s linear infinite; }
+@keyframes system-link-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 760px) {
+  .system-link-module-grid { grid-template-columns: 1fr; }
+  .system-link-key-panel { grid-template-columns: 1fr; }
+  .system-link-key-panel p { grid-column: auto; }
+  .system-link-identity-strip { align-items: flex-start; flex-direction: column; }
+  .system-link-identity-strip > span { margin-left: 0; }
+}
