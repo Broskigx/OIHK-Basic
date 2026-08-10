@@ -13,6 +13,9 @@ dist/
 build/
 *.egg
 .venv/
+
+# System Link E2E smoke artifacts
+.smoke/
 venv/
 env/
 
