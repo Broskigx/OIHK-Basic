@@ -1,12 +1,12 @@
-# OIHK Basic
-
-OIHK Basic es la edición comunitaria, **local-first** y monousuario de OIHK. Está orientada a organizar investigaciones autorizadas, fuentes, evidencia, relaciones y flujos asistidos por modelos locales sin depender obligatoriamente de una cuenta cloud, un servicio remoto o un modelo alojado por terceros.
-
 <div align="center">
   <a href="https://ko-fi.com/broskigx">
     <img src="https://img.shields.io/badge/☕_Apóyame_en_Ko--fi-BROSKIGX-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Apóyame en Ko-fi — BROSKIGX" />
   </a>
 </div>
+
+# OIHK Basic
+
+OIHK Basic es la edición comunitaria, **local-first** y monousuario de OIHK. Está orientada a organizar investigaciones autorizadas, fuentes, evidencia, relaciones y flujos asistidos por modelos locales sin depender obligatoriamente de una cuenta cloud, un servicio remoto o un modelo alojado por terceros.
 
 > [!WARNING]
 > **OIHK Basic sigue en fase alpha experimental.** La versión canónica actual es `0.1.1-alpha.2`. No existe una versión estable recomendada para producción y no debe utilizarse como única copia de evidencia, investigaciones o datos importantes.
