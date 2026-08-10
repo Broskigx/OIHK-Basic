@@ -525,6 +525,10 @@ export function listCases(): Promise<CaseRead[]> {
   return request<CaseRead[]>("/cases");
 }
 
+export function getCase(caseId: string): Promise<CaseRead> {
+  return request<CaseRead>(`/cases/${encodeURIComponent(caseId)}`);
+}
+
 export function createCase(payload: InvestigationDraft): Promise<CaseRead> {
   return request<CaseRead>("/cases", { method: "POST", body: JSON.stringify(payload) });
 }

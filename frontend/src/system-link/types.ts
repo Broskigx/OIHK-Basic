@@ -35,6 +35,11 @@ export type LinkedSystemModule = {
   enabled: boolean;
   module_fingerprint: string;
   package_sha256: string;
+  publisher: {
+    key_id: string;
+    channel: string;
+  };
+  frontend_entrypoint: string | null;
   granted_capabilities: string[];
   requested_capabilities: string[];
   categories: SystemLinkCategory[];

@@ -17,6 +17,8 @@ function moduleFixture(state: LinkedSystemModule["state"]): LinkedSystemModule {
     enabled: true,
     module_fingerprint: "a".repeat(64),
     package_sha256: "b".repeat(64),
+    publisher: { key_id: "development", channel: "development" },
+    frontend_entrypoint: "ui/index.js",
     granted_capabilities: ["ui.navigation.register"],
     requested_capabilities: ["ui.navigation.register"],
     categories: [{ id: "overview", route_id: "module:oihk.evidence-lab:overview", label: "Evidence Lab", icon: "microscope", case_scoped: true, order: 50, enabled: state === "READY" }],

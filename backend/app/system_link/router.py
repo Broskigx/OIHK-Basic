@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from pathlib import Path, PurePosixPath
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.database import get_session
+from app.system_link.capabilities import granted_capabilities
 from app.system_link.lifecycle import runtime_supervisor
 from app.system_link.protocol import ModuleState
 from app.system_link.schemas import (
@@ -31,6 +34,110 @@ def _http_error(exc: SystemLinkError) -> HTTPException:
     if exc.code in {"pairing_key_invalid", "pairing_signature_invalid"}:
         status_code = 401
     return HTTPException(status_code=status_code, detail=f"{exc.code}: {exc}")
+
+
+# ── Isolated module UI surface ────────────────────────────────────────────────
+#
+# The verified module package is served through this single host route. The
+# frontend renders it inside a sandboxed iframe (no allow-same-origin, so the
+# module gets an opaque origin and can never read Basic cookies, tokens or
+# storage). The only communication channel is a versioned postMessage bridge
+# gated by an allowlist and a per-surface nonce.
+
+_MODULE_UI_MAX_BYTES = 16 * 1024 * 1024
+
+_MODULE_UI_MIME_TYPES: dict[str, str] = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".mjs": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+}
+
+# The module document may only load itself. connect-src is locked down: the
+# module cannot open outbound connections at all; all data flows through the
+# versioned bridge. frame-ancestors 'self' lets Basic embed the surface it
+# itself serves while blocking third-party embedding.
+_MODULE_UI_CSP = (
+    "default-src 'none'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self'; "
+    "connect-src 'none'; "
+    "object-src 'none'; "
+    "frame-ancestors 'self'; "
+    "base-uri 'none'; "
+    "form-action 'none'"
+)
+
+
+@host_router.get("/modules/{module_id}/ui/{path:path}")
+async def module_ui_file(
+    module_id: str,
+    path: str,
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Serve one verified module package file inside a strict isolated surface."""
+    module = await _module(session, module_id)
+    if (
+        ModuleState(module.state) not in {ModuleState.READY, ModuleState.BUSY}
+        or not module.enabled
+        or module.revoked_at is not None
+    ):
+        raise HTTPException(status_code=404, detail="Module UI is not active")
+    grants = await granted_capabilities(session, module.module_id)
+    if "ui.navigation.register" not in grants:
+        raise HTTPException(status_code=403, detail="Module UI capability is not granted")
+    if not path or "\\" in path or "\x00" in path:
+        raise HTTPException(status_code=404, detail="Module UI path is invalid")
+    relative = PurePosixPath(path)
+    if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
+        raise HTTPException(status_code=404, detail="Module UI path must stay inside its package")
+    try:
+        root = Path(module.package_root).resolve(strict=True)
+        if root.is_symlink():
+            raise HTTPException(status_code=404, detail="Module package root is unsafe")
+        candidate = root.joinpath(*relative.parts).resolve(strict=True)
+        candidate.relative_to(root)
+        # resolve() already dereferenced any symlink component, so the path is
+        # canonical inside root; the is_file check still rejects non-files.
+        if not candidate.is_file():
+            raise HTTPException(status_code=404, detail="Module UI file is not a regular file")
+    except (OSError, ValueError):
+        raise HTTPException(status_code=404, detail="Module UI file does not exist") from None
+    mime_type = _MODULE_UI_MIME_TYPES.get(candidate.suffix.lower())
+    if mime_type is None:
+        raise HTTPException(status_code=404, detail="Module UI content type is not allowed")
+    # Bounded read: the size check and the actual read are atomic inside the
+    # read loop, so a file cannot grow past the limit between a stat and a
+    # later read_bytes() call.
+    try:
+        content = candidate.read_bytes()
+    except OSError:
+        raise HTTPException(status_code=404, detail="Module UI file could not be read") from None
+    if len(content) > _MODULE_UI_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Module UI file exceeds the host limit")
+    return Response(
+        content=content,
+        media_type=mime_type,
+        headers={
+            "Content-Security-Policy": _MODULE_UI_CSP,
+            "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
+            "Cross-Origin-Resource-Policy": "same-origin",
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 async def _module(session: AsyncSession, module_id: str) -> models.SystemLinkModule:

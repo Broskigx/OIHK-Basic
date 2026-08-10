@@ -2592,3 +2592,32 @@ label {
   .system-link-identity-strip { align-items: flex-start; flex-direction: column; }
   .system-link-identity-strip > span { margin-left: 0; }
 }
+
+/* ── Isolated System Link module UI surface ─────────────────────────────── */
+.system-link-module-view .platform-section {
+  padding: 0;
+  overflow: hidden;
+}
+
+.system-link-module-surface {
+  position: relative;
+  width: 100%;
+}
+
+.system-link-module-frame {
+  display: block;
+  width: 100%;
+  height: calc(100vh - 230px);
+  min-height: 420px;
+  border: 0;
+  border-top: 1px solid var(--divider);
+  background: var(--bg-root);
+}
+
+.system-link-module-case {
+  display: block;
+  padding: 10px 16px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  border-bottom: 1px solid var(--divider);
+}
