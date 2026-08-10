@@ -17,7 +17,6 @@ from app.forensic.types import (
     ForensicCoreReport,
     HashResult,
     IocReport,
-    YaraReport,
 )
 
 
@@ -25,7 +24,6 @@ def analyze_file(
     data: bytes,
     filename: str = "upload",
     content_type: str = "application/octet-stream",
-    run_yara: bool = False,
 ) -> ForensicCoreReport:
     """Run the full forensic analysis pipeline on a file."""
     errors: list[str] = []
@@ -69,9 +67,6 @@ def analyze_file(
     # Timeline
     timeline = build_timeline(data, filename, sha256)
 
-    # YARA (stub for now)
-    yara_report = YaraReport(matches=[], rules_loaded=0, available=False, error="YARA not available in OIHK Basic")
-
     elapsed = int((time.monotonic() - start) * 1000)
 
     hash_results = [
@@ -86,7 +81,6 @@ def analyze_file(
         metadata=metadata_report,
         text_extraction=text_report,
         iocs=ioc_report,
-        yara=yara_report,
         timeline_events=timeline,
         errors=errors,
     )

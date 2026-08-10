@@ -70,23 +70,6 @@ class IocReport:
 
 
 @dataclass
-class YaraMatch:
-    rule: str
-    namespace: str
-    tags: list[str]
-    strings: list[str]
-    meta: dict[str, str]
-
-
-@dataclass
-class YaraReport:
-    matches: list[YaraMatch]
-    rules_loaded: int
-    available: bool
-    error: str | None
-
-
-@dataclass
 class TimelineEvent:
     event_id: str
     source_id: str | None
@@ -105,6 +88,5 @@ class ForensicCoreReport:
     metadata: MetadataReport | None
     text_extraction: TextExtraction | None
     iocs: IocReport | None
-    yara: YaraReport | None
     timeline_events: list[TimelineEvent]
     errors: list[str]

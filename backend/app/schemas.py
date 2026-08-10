@@ -957,21 +957,6 @@ class IocReportRead(BaseModel):
     asn_lookups: list[dict[str, str]] = []
 
 
-class YaraMatchRead(BaseModel):
-    rule: str
-    namespace: str
-    tags: list[str]
-    strings: list[str]
-    meta: dict[str, str]
-
-
-class YaraScanRead(BaseModel):
-    matches: list[YaraMatchRead]
-    rules_loaded: int
-    available: bool
-    error: str | None
-
-
 class TimelineEventRead(BaseModel):
     event_id: str
     source_id: str | None
@@ -993,7 +978,6 @@ class ForensicCoreRead(BaseModel):
     metadata: MetadataReportRead | None = None
     text_extraction: TextExtractionRead | None = None
     iocs: IocReportRead | None = None
-    yara: YaraScanRead | None = None
     timeline_events: list[TimelineEventRead] = []
     errors: list[str] = []
 

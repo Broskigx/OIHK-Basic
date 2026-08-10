@@ -657,19 +657,6 @@ export type ForensicTimelineEvent = {
   metadata: Record<string, unknown>;
 };
 
-export type ForensicYaraReport = {
-  matches: Array<{
-    rule: string;
-    namespace: string;
-    tags: string[];
-    strings: string[];
-    meta: Record<string, string>;
-  }>;
-  rules_loaded: number;
-  available: boolean;
-  error: string | null;
-};
-
 export type ForensicCoreReport = {
   filename: string;
   source_id: string | null;
@@ -681,7 +668,6 @@ export type ForensicCoreReport = {
   metadata: ForensicMetadataReport | null;
   text_extraction: ForensicTextExtraction | null;
   iocs: { matches: ForensicIocMatch[]; asn_lookups: Array<Record<string, string>> } | null;
-  yara: ForensicYaraReport | null;
   timeline_events: ForensicTimelineEvent[];
   errors: string[];
 };
