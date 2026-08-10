@@ -194,10 +194,21 @@ async def lifespan(app: FastAPI):
     await _ensure_loopback_system_user()
     await _bootstrap_admin()
     try:
+        from app.system_link.lifecycle import runtime_supervisor
         from app.system_link.service import SystemLinkService
 
         async with SessionLocal() as session:
-            await SystemLinkService(session).reconcile_startup_states()
+            survivors = await SystemLinkService(session).reconcile_startup_states()
+            # Verified re-adoption: a runtime that survived the Basic restart is
+            # only re-attached after package/executable re-verification and a
+            # signed mutually-authenticated handshake against its pinned URL.
+            for module in survivors:
+                try:
+                    await runtime_supervisor.reconcile_existing_runtime(session, module)
+                except Exception as exc:
+                    logger.warning(
+                        "System Link runtime reconciliation failed for %s: %s", module.module_id, exc
+                    )
     except Exception as exc:
         # Optional modules must never prevent Basic from starting.
         logger.warning("System Link startup reconciliation was isolated: %s", type(exc).__name__)

@@ -10,10 +10,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from cryptography.exceptions import InvalidSignature
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
+from app.core.config import get_settings
 from app.system_link.capabilities import granted_capabilities
 from app.system_link.modules.evidence_lab import EVIDENCE_LAB_ADAPTER
 from app.system_link.package_verification import verify_package
@@ -27,7 +28,8 @@ from app.system_link.protocol import (
     require_transition,
     validate_capabilities,
 )
-from app.system_link.schemas import LinkedModuleRead, ModuleCategoryRead, PairingPendingRead
+from app.system_link.publisher_trust import PublisherTrustError, verify_publisher_trust
+from app.system_link.schemas import LinkedModuleRead, ModuleCategoryRead, PairingPendingRead, PublisherIdentityRead
 from app.system_link.security import (
     InstallationIdentity,
     InstallationIdentityStore,
@@ -195,21 +197,59 @@ class SystemLinkService:
                     raise ValueError("Module frontend entrypoint is not a regular package file")
         except (OSError, ValueError) as exc:
             raise SystemLinkError("package_verification_failed", str(exc)) from exc
-        row.used_at = now
-        row.pending_module = {
-            "module_public_key": module_public_key,
-            "module_fingerprint": fingerprint,
-            "manifest": manifest.model_dump(mode="json"),
-            "manifest_sha256": manifest_hash,
-            "manifest_signature": manifest_signature,
-            "package_root": verified_root,
-        }
-        await self._event(
-            manifest.module_id,
-            "module_pair_proof_verified",
-            {"pairing_id": row.id, "module_fingerprint": fingerprint, "manifest_sha256": manifest_hash},
-        )
-        await self.session.commit()
+        try:
+            publisher = verify_publisher_trust(
+                verified_root,
+                manifest,
+                allow_development=get_settings().system_link_allow_development_publishers,
+            )
+        except PublisherTrustError as exc:
+            raise SystemLinkError("publisher_untrusted", str(exc)) from exc
+        # Claim the Link Key atomically so two concurrent pairings with the same
+        # key can never both succeed. All cryptographic and package validation
+        # happens BEFORE the claim, so presenting a correct key together with an
+        # invalid signature can never burn the key (no trivially induced DoS).
+        try:
+            claimed = await self.session.execute(
+                update(models.SystemLinkPairingNonce)
+                .where(
+                    models.SystemLinkPairingNonce.id == pairing_id,
+                    models.SystemLinkPairingNonce.used_at.is_(None),
+                    models.SystemLinkPairingNonce.expires_at > now,
+                    models.SystemLinkPairingNonce.link_key_hash == row.link_key_hash,
+                )
+                .values(used_at=now)
+                .execution_options(synchronize_session=False)
+            )
+            if claimed.rowcount != 1:
+                # A concurrent pairing already claimed this single-use credential.
+                raise SystemLinkError(
+                    "pairing_replayed",
+                    "OIHK Link Key was already consumed or expired before the pairing proof could be claimed",
+                )
+            row.used_at = now
+            row.pending_module = {
+                "module_public_key": module_public_key,
+                "module_fingerprint": fingerprint,
+                "manifest": manifest.model_dump(mode="json"),
+                "manifest_sha256": manifest_hash,
+                "manifest_signature": manifest_signature,
+                "package_root": verified_root,
+                "publisher_key_id": publisher["key_id"],
+                "publisher_channel": publisher["channel"],
+            }
+            await self._event(
+                manifest.module_id,
+                "module_pair_proof_verified",
+                {"pairing_id": row.id, "module_fingerprint": fingerprint, "manifest_sha256": manifest_hash},
+            )
+            await self.session.commit()
+        except BaseException:
+            # Never persist a claimed-but-incomplete pairing: roll the whole
+            # transaction back so the single-use key is not burned and the
+            # legitimate module can retry after the failure is resolved.
+            await self.session.rollback()
+            raise
         return row
 
     async def approve_pairing(self, pairing_id: str, grants: list[str]) -> models.SystemLinkModule:
@@ -247,6 +287,8 @@ class SystemLinkService:
             module.manifest = manifest.model_dump(mode="json")
             module.manifest_sha256 = pending["manifest_sha256"]
             module.manifest_signature = pending["manifest_signature"]
+            module.publisher_key_id = pending.get("publisher_key_id", "")
+            module.publisher_channel = pending.get("publisher_channel", "")
             module.package_root = pending["package_root"]
             module.package_sha256 = manifest.package_sha256
             module.lifecycle = manifest.lifecycle.model_dump(mode="json")
@@ -361,6 +403,8 @@ class SystemLinkService:
             enabled=module.enabled,
             module_fingerprint=module.module_fingerprint,
             package_sha256=module.package_sha256,
+            publisher=PublisherIdentityRead(key_id=module.publisher_key_id, channel=module.publisher_channel),
+            frontend_entrypoint=manifest.frontend_entrypoint,
             granted_capabilities=sorted(grants),
             requested_capabilities=manifest.requested_capabilities,
             categories=categories,
@@ -387,6 +431,8 @@ class SystemLinkService:
                     enabled=False,
                     module_fingerprint="",
                     package_sha256="",
+                    publisher=PublisherIdentityRead(key_id="", channel=""),
+                    frontend_entrypoint=None,
                     granted_capabilities=[],
                     requested_capabilities=[],
                     categories=[],
@@ -433,28 +479,42 @@ class SystemLinkService:
             grant.revoked_at = now
         await self.session.commit()
 
-    async def reconcile_startup_states(self) -> None:
-        transient = [
+    async def reconcile_startup_states(self) -> list[models.SystemLinkModule]:
+        """Classify runtime states after a Basic restart.
+
+        In-flight transitions (STARTING/AUTHENTICATING/STOPPING) can never be
+        trusted again and are forced to ERROR. Modules that reached READY/BUSY
+        are returned so the supervisor can attempt a *verified* re-adoption
+        (pinned identity + signed challenge + expected executable hash); they
+        are never adopted merely because a process listens on the loopback port.
+        """
+        in_flight = [
             ModuleState.STARTING.value,
             ModuleState.AUTHENTICATING.value,
-            ModuleState.READY.value,
-            ModuleState.BUSY.value,
             ModuleState.STOPPING.value,
         ]
+        survivors = [ModuleState.READY.value, ModuleState.BUSY.value]
         rows = list(
             (
                 await self.session.execute(
-                    select(models.SystemLinkModule).where(models.SystemLinkModule.state.in_(transient))
+                    select(models.SystemLinkModule).where(
+                        models.SystemLinkModule.state.in_(in_flight + survivors)
+                    )
                 )
             ).scalars()
         )
+        needs_reconciliation: list[models.SystemLinkModule] = []
         for module in rows:
+            if ModuleState(module.state) in {ModuleState.READY, ModuleState.BUSY}:
+                needs_reconciliation.append(module)
+                continue
             module.state = ModuleState.ERROR.value
             module.last_error_code = "host_restart_requires_reauthentication"
             module.last_error_detail = "Runtime state must be authenticated again after Basic restarts."
             await self._event(module.module_id, "module_runtime_reconciliation_required", {})
         if rows:
             await self.session.commit()
+        return needs_reconciliation
 
     async def _event(self, module_id: str | None, action: str, payload: dict) -> None:
         self.session.add(models.SystemLinkEvent(module_id=module_id, action=action, payload=payload))

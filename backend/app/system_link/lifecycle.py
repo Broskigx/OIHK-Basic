@@ -172,6 +172,8 @@ class RuntimeSupervisor:
                         await client.health(remaining)
                         module.last_handshake_at = datetime.now(UTC)
                         module.last_health_at = datetime.now(UTC)
+                        # A fully healthy authenticated start clears the consecutive-failure counter.
+                        module.crash_count = 0
                         await service.transition(module, ModuleState.READY, event="module_runtime_ready")
                         return ModuleState(module.state)
                     except (httpx.HTTPError, RuntimeAuthenticationError, RuntimeHealthError) as exc:
@@ -267,6 +269,8 @@ class RuntimeSupervisor:
             identity = await service.installation_identity()
             status = await AuthenticatedRuntimeClient(module, identity).health(2.0)
             module.last_health_at = datetime.now(UTC)
+            # A verified healthy runtime breaks any consecutive-failure streak.
+            module.crash_count = 0
             target = ModuleState.READY if status == "READY" else ModuleState.BUSY
             if target != ModuleState(module.state):
                 await service.transition(module, target, event="module_runtime_status_changed")
@@ -289,6 +293,84 @@ class RuntimeSupervisor:
                     error_detail="Repeated runtime health failures require explicit user recovery.",
                     event="module_runtime_quarantined",
                 )
+
+    async def reconcile_existing_runtime(
+        self,
+        session: AsyncSession,
+        module: models.SystemLinkModule,
+    ) -> ModuleState:
+        """Safely re-adopt a runtime that survived a Basic restart.
+
+        A process is never adopted just because something listens on the pinned
+        loopback URL. Recovery requires every check below to pass:
+
+        * pinned module identity (manifest signature under the stored key);
+        * package integrity (signed package SHA-256);
+        * expected executable identity (signed lifecycle hash on disk);
+        * protocol compatibility; and
+        * a signed mutually-authenticated handshake + health against the exact
+          pinned base URL (never a port scan).
+
+        Any failure is fail-closed and leaves the module in ERROR.
+        """
+        service = self._service(session)
+        state = ModuleState(module.state)
+        if state not in {ModuleState.READY, ModuleState.BUSY}:
+            return state
+        try:
+            manifest = ModuleManifest.model_validate(module.manifest)
+            verify_signature(module.module_public_key, canonical_json(manifest), module.manifest_signature)
+            verify_package(module.package_root, module.package_sha256)
+            verify_executable(manifest.lifecycle)
+            if PRODUCT_VERSION not in manifest.compatible_basic_versions:
+                raise SystemLinkError(
+                    "basic_version_incompatible", "The linked module does not support this Basic version."
+                )
+        except (InvalidSignature, ValueError, OSError, SystemLinkError) as exc:
+            code = getattr(exc, "code", "runtime_reconciliation_failed")
+            await service.transition(
+                module,
+                ModuleState.ERROR,
+                error_code=code,
+                error_detail=f"Existing runtime failed re-verification: {exc}",
+                event="module_runtime_reconciliation_failed",
+            )
+            return ModuleState.ERROR
+        identity = await service.installation_identity()
+        try:
+            client = AuthenticatedRuntimeClient(module, identity)
+            await client.handshake(2.0)
+            status = await client.health(2.0)
+        except (httpx.HTTPError, RuntimeAuthenticationError, RuntimeHealthError) as exc:
+            # Do not adopt the endpoint: its process identity could not be
+            # proven cryptographically (or the pinned URL is not responding).
+            module.crash_count += 1
+            await service.transition(
+                module,
+                ModuleState.ERROR,
+                error_code="runtime_reconciliation_failed",
+                error_detail=f"Existing runtime failed signed authentication: {exc}",
+                event="module_runtime_reconciliation_failed",
+            )
+            if module.crash_count >= 3:
+                await service.transition(
+                    module,
+                    ModuleState.QUARANTINED,
+                    error_code="runtime_crash_loop",
+                    error_detail="Repeated reconciliation failures require explicit user recovery.",
+                    event="module_runtime_quarantined",
+                )
+            return ModuleState.ERROR
+        # Fully verified: the surviving runtime owns the pinned module identity.
+        module.crash_count = 0
+        module.last_handshake_at = datetime.now(UTC)
+        module.last_health_at = datetime.now(UTC)
+        target = ModuleState.READY if status == "READY" else ModuleState.BUSY
+        if target != state:
+            await service.transition(module, target, event="module_runtime_reconciled")
+        else:
+            await session.commit()
+        return ModuleState(module.state)
 
     async def _record_failure(
         self,

@@ -66,7 +66,7 @@ async def migrated_system_link_session(tmp_path: Path):
 
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-        assert await run_migrations(connection) == 7
+        assert await run_migrations(connection) == 8
         enabled = await connection.exec_driver_sql("PRAGMA foreign_keys")
         assert enabled.scalar_one() == 1
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -75,11 +75,48 @@ async def migrated_system_link_session(tmp_path: Path):
     await engine.dispose()
 
 
+def _write_publisher_metadata(
+    package_root: Path,
+    *,
+    module_id: str,
+    version: str,
+    channel: str = "development",
+    key: Ed25519PrivateKey | None = None,
+) -> Ed25519PrivateKey:
+    """Write a signed metadata/publisher.json mirroring the Evidence Lab v1 contract."""
+    from app.system_link.security import b64decode
+
+    key = key or Ed25519PrivateKey.generate()
+    metadata_dir = package_root / "metadata"
+    metadata_dir.mkdir(exist_ok=True)
+    content_hash = calculate_package_sha256(package_root, extra_ignored=frozenset({"metadata/publisher.json"}))
+    publisher_public_key = _public_key(key)
+    payload = {
+        "algorithm": "Ed25519",
+        "channel": channel,
+        "content_sha256": content_hash,
+        "module_id": module_id,
+        "publisher": "OIHK",
+        "publisher_fingerprint": hashlib.sha256(b64decode(publisher_public_key)).hexdigest(),
+        "publisher_public_key": publisher_public_key,
+        "version": version,
+    }
+    signature = b64encode(key.sign(canonical_json(payload)))
+    (metadata_dir / "publisher.json").write_text(
+        json.dumps({**payload, "signature": signature}, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return key
+
+
 def _module_fixture(tmp_path: Path) -> tuple[ModuleManifest, Ed25519PrivateKey, Path]:
     package_root = tmp_path / "module-package"
     package_root.mkdir()
     (package_root / "ui").mkdir()
     (package_root / "ui" / "index.js").write_text("export const module = 'evidence-lab';", encoding="utf-8")
+    # The publisher-signed metadata must exist before the manifest is computed
+    # so manifest.package_sha256 and the publisher content hash stay consistent
+    # with the Evidence Lab build pipeline.
+    _write_publisher_metadata(package_root, module_id="oihk.evidence-lab", version="0.1.0")
     install_root = tmp_path / "evidence-lab"
     install_root.mkdir()
     executable_name = "evidence-lab-runtime.exe" if os.name == "nt" else "evidence-lab-runtime"
@@ -488,7 +525,7 @@ async def test_system_link_migrations_upgrade_a_pre_feature_database(tmp_path: P
         preserved = await connection.exec_driver_sql("SELECT value FROM legacy_case_data WHERE id='preserved'")
         preserved_value = preserved.scalar_one()
     await engine.dispose()
-    assert version == 7
+    assert version == 8
     assert preserved_value == "yes"
     assert {
         "system_link_installations",
@@ -683,3 +720,464 @@ async def test_runtime_authentication_timeout_is_bounded(tmp_path: Path, system_
     assert result == ModuleState.ERROR
     assert module.last_error_code == "runtime_authentication_failed"
     assert 0.8 <= elapsed < 2.5
+
+
+@pytest_asyncio.fixture
+async def system_link_factory(tmp_path: Path):
+    """Session factory for genuine multi-connection concurrency tests."""
+    from sqlalchemy import event as sa_event
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{(tmp_path / 'system-link-race.db').as_posix()}")
+
+    @sa_event.listens_for(engine.sync_engine, "connect")
+    def _enable_wal(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.close()
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    yield factory
+    await engine.dispose()
+
+
+async def _submit_kwargs(
+    pairing: models.SystemLinkPairingNonce,
+    link_key: str,
+    module_key: Ed25519PrivateKey,
+    module_public_key: str,
+    manifest: ModuleManifest,
+    package_root: Path,
+) -> dict:
+    manifest_sha256 = hashlib.sha256(canonical_json(manifest)).hexdigest()
+    return {
+        "pairing_id": pairing.id,
+        "link_key": link_key,
+        "module_public_key": module_public_key,
+        "manifest": manifest,
+        "manifest_signature": b64encode(module_key.sign(canonical_json(manifest))),
+        "challenge_signature": b64encode(
+            module_key.sign(
+                pairing_proof_payload(
+                    pairing_id=pairing.id,
+                    challenge=pairing.challenge,
+                    module_id=manifest.module_id,
+                    module_public_key=module_public_key,
+                    manifest_sha256=manifest_sha256,
+                )
+            )
+        ),
+        "package_root": str(package_root),
+    }
+
+
+@pytest.mark.asyncio
+async def test_link_key_is_consumed_exactly_once_under_concurrent_pairing(
+    tmp_path: Path, system_link_factory
+) -> None:
+    identity_store = InstallationIdentityStore(tmp_path / "race-identity.key")
+    manifest, module_key, package_root = _module_fixture(tmp_path)
+    module_public_key = _public_key(module_key)
+
+    async with system_link_factory() as bootstrap:
+        service = SystemLinkService(bootstrap, identity_store)
+        pairing, link_key, _, _ = await service.begin_pairing(ttl_seconds=60)
+    kwargs = await _submit_kwargs(pairing, link_key, module_key, module_public_key, manifest, package_root)
+
+    async def attempt(session) -> str:
+        try:
+            await SystemLinkService(session, identity_store).submit_pairing(**kwargs)
+            return "ok"
+        except SystemLinkError as exc:
+            await session.rollback()
+            return exc.code
+
+    async with system_link_factory() as first, system_link_factory() as second:
+        outcomes = await asyncio.gather(attempt(first), attempt(second))
+
+    # Exactly one concurrent consumer may claim the single-use credential.
+    assert sorted(outcomes) == ["ok", "pairing_replayed"]
+    async with system_link_factory() as check:
+        row = await check.get(models.SystemLinkPairingNonce, pairing.id)
+        assert row is not None
+        assert row.used_at is not None
+        # The winner's payload is the only one persisted; pending_module is never overwritten.
+        assert row.pending_module.get("module_public_key") == module_public_key
+
+
+@pytest.mark.asyncio
+async def test_failure_after_atomic_claim_rolls_the_key_back_for_legitimate_retry(
+    tmp_path: Path, system_link_session, monkeypatch
+) -> None:
+    identity_store = InstallationIdentityStore(tmp_path / "rollback-identity.key")
+    service = SystemLinkService(system_link_session, identity_store)
+    manifest, module_key, package_root = _module_fixture(tmp_path)
+    pairing, link_key, _, _ = await service.begin_pairing(ttl_seconds=60)
+    pairing_id = pairing.id  # keep the key before the identity map is cleared
+    module_public_key = _public_key(module_key)
+    kwargs = await _submit_kwargs(pairing, link_key, module_key, module_public_key, manifest, package_root)
+
+    original_event = service._event
+
+    async def fail_after_claim(module_id: str | None, action: str, payload: dict) -> None:
+        if action == "module_pair_proof_verified":
+            raise RuntimeError("injected post-claim failure")
+        await original_event(module_id, action, payload)
+
+    monkeypatch.setattr(service, "_event", fail_after_claim)
+    with pytest.raises(RuntimeError, match="injected post-claim failure"):
+        await service.submit_pairing(**kwargs)
+
+    # The whole transaction rolled back, so the single-use key was NOT burned.
+    # The rollback expired the identity-map copy; read the row through a fresh
+    # query instead of touching the expired object.
+    system_link_session.expunge_all()
+    row = (
+        await system_link_session.execute(
+            select(models.SystemLinkPairingNonce).where(models.SystemLinkPairingNonce.id == pairing_id)
+        )
+    ).scalar_one()
+    assert row.used_at is None
+    assert row.pending_module == {}
+
+    monkeypatch.setattr(service, "_event", original_event)
+    pending = await service.submit_pairing(**kwargs)
+    assert pending.used_at is not None
+    assert pending.pending_module["publisher_channel"] == "development"
+    assert pending.pending_module["publisher_key_id"] == "development"
+
+
+@pytest.mark.asyncio
+async def test_pairing_rejects_untrusted_publisher_fail_closed(
+    tmp_path: Path, system_link_session, monkeypatch
+) -> None:
+    service = SystemLinkService(system_link_session, InstallationIdentityStore(tmp_path / "strict-identity.key"))
+    manifest, module_key, package_root = _module_fixture(tmp_path)
+    pairing, link_key, _, _ = await service.begin_pairing(ttl_seconds=60)
+    module_public_key = _public_key(module_key)
+    kwargs = await _submit_kwargs(pairing, link_key, module_key, module_public_key, manifest, package_root)
+
+    class _StrictSettings:
+        system_link_allow_development_publishers = False
+
+    monkeypatch.setattr("app.system_link.service.get_settings", lambda: _StrictSettings())
+    with pytest.raises(SystemLinkError) as failure:
+        await service.submit_pairing(**kwargs)
+    assert failure.value.code == "publisher_untrusted"
+    row = await system_link_session.get(models.SystemLinkPairingNonce, pairing.id)
+    assert row.used_at is None  # the key was never consumed
+
+
+async def _linked_off_module(
+    tmp_path: Path, *, startup_timeout_seconds: float | None = None
+) -> tuple[models.SystemLinkModule, ModuleManifest]:
+    manifest, module_key, package_root = _module_fixture(tmp_path)
+    if startup_timeout_seconds is not None:
+        # The lifecycle descriptor is part of the signed manifest: mutate it
+        # before signing so the signature stays valid.
+        manifest.lifecycle.startup_timeout_seconds = startup_timeout_seconds
+    module = models.SystemLinkModule(
+        module_id=manifest.module_id,
+        product_name=manifest.name,
+        module_version=manifest.version,
+        protocol_version=manifest.protocol_version,
+        manifest_schema_version=manifest.schema_version,
+        module_public_key=_public_key(module_key),
+        module_fingerprint="f" * 64,
+        manifest=manifest.model_dump(mode="json"),
+        manifest_sha256="a" * 64,
+        manifest_signature=b64encode(module_key.sign(canonical_json(manifest))),
+        package_root=str(package_root),
+        package_sha256=manifest.package_sha256,
+        lifecycle=manifest.lifecycle.model_dump(mode="json"),
+        state=ModuleState.LINKED_OFF.value,
+        enabled=True,
+    )
+    return module, manifest
+
+
+class _FakeRuntimeProcess:
+    """Stand-in subprocess that stays alive until explicitly terminated."""
+
+    def __init__(self) -> None:
+        self.returncode: int | None = None
+
+    async def wait(self) -> int:
+        return self.returncode or 0
+
+    def terminate(self) -> None:
+        self.returncode = 0
+
+    def kill(self) -> None:
+        self.returncode = 0
+
+
+@pytest.mark.asyncio
+async def test_crash_counter_tracks_consecutive_failures_only(
+    tmp_path: Path, system_link_session, monkeypatch
+) -> None:
+    module, manifest = await _linked_off_module(tmp_path, startup_timeout_seconds=1)
+    system_link_session.add(module)
+    await system_link_session.commit()
+
+    async def _noop_watch(self, module_id: str, process) -> None:
+        return None
+
+    monkeypatch.setattr(RuntimeSupervisor, "_watch_process", _noop_watch)
+
+    async def launch(*_args, **_kwargs):
+        return _FakeRuntimeProcess()
+
+    async def handshake(_client, _timeout) -> None:
+        if failure_mode["fail"]:
+            raise RuntimeAuthenticationError("injected startup failure")
+
+    async def health(_client, _timeout) -> str:
+        return "READY"
+
+    async def shutdown(_client, _timeout) -> None:
+        return None
+
+    failure_mode = {"fail": True}
+    monkeypatch.setattr(lifecycle_module.asyncio, "create_subprocess_exec", launch)
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "handshake", handshake)
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "health", health)
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "shutdown", shutdown)
+    supervisor = RuntimeSupervisor(InstallationIdentityStore(tmp_path / "reset-identity.key"))
+
+    # failure -> READY -> failure -> READY -> failure must NOT quarantine.
+    failure_mode["fail"] = True
+    assert await supervisor.start(system_link_session, module) == ModuleState.ERROR
+    assert module.crash_count == 1
+
+    failure_mode["fail"] = False
+    assert await supervisor.start(system_link_session, module) == ModuleState.READY
+    assert module.crash_count == 0
+    assert await supervisor.stop(system_link_session, module) == ModuleState.LINKED_OFF
+
+    failure_mode["fail"] = True
+    assert await supervisor.start(system_link_session, module) == ModuleState.ERROR
+    assert module.crash_count == 1
+
+    failure_mode["fail"] = False
+    assert await supervisor.start(system_link_session, module) == ModuleState.READY
+    assert module.crash_count == 0
+    assert await supervisor.stop(system_link_session, module) == ModuleState.LINKED_OFF
+
+    failure_mode["fail"] = True
+    assert await supervisor.start(system_link_session, module) == ModuleState.ERROR
+    assert module.crash_count == 1
+    assert ModuleState(module.state) != ModuleState.QUARANTINED
+
+    # Three consecutive failures still quarantine.
+    assert await supervisor.start(system_link_session, module) == ModuleState.ERROR
+    assert await supervisor.start(system_link_session, module) == ModuleState.QUARANTINED
+    assert module.crash_count == 3
+
+
+@pytest.mark.asyncio
+async def test_module_ui_surface_serves_only_verified_package_files(tmp_path: Path, system_link_session) -> None:
+    from fastapi import HTTPException as FastAPIHTTPException
+
+    from app.system_link.router import module_ui_file
+
+    manifest, module_key, package_root = _module_fixture(tmp_path)
+    module = models.SystemLinkModule(
+        module_id=manifest.module_id,
+        product_name=manifest.name,
+        module_version=manifest.version,
+        protocol_version=manifest.protocol_version,
+        manifest_schema_version=manifest.schema_version,
+        module_public_key=_public_key(module_key),
+        module_fingerprint="f" * 64,
+        manifest=manifest.model_dump(mode="json"),
+        manifest_sha256="a" * 64,
+        manifest_signature=b64encode(module_key.sign(canonical_json(manifest))),
+        package_root=str(package_root),
+        package_sha256=manifest.package_sha256,
+        lifecycle=manifest.lifecycle.model_dump(mode="json"),
+        state=ModuleState.READY.value,
+        enabled=True,
+    )
+    system_link_session.add(module)
+    system_link_session.add(
+        models.SystemLinkCapabilityGrant(
+            module_id=manifest.module_id,
+            capability="ui.navigation.register",
+            manifest_sha256="a" * 64,
+        )
+    )
+    await system_link_session.commit()
+
+    response = await module_ui_file(manifest.module_id, "ui/index.js", system_link_session)
+    assert response.status_code == 200
+    assert b"evidence-lab" in response.body
+    assert "Content-Security-Policy" in response.headers
+    assert "connect-src 'none'" in response.headers["Content-Security-Policy"]
+
+    with pytest.raises(FastAPIHTTPException) as traversal:
+        await module_ui_file(manifest.module_id, "../outside.js", system_link_session)
+    assert traversal.value.status_code == 404
+
+    (package_root / "ui" / "readme.txt").write_text("not served", encoding="utf-8")
+    with pytest.raises(FastAPIHTTPException) as content_type:
+        await module_ui_file(manifest.module_id, "ui/readme.txt", system_link_session)
+    assert content_type.value.status_code == 404
+
+    module.state = ModuleState.LINKED_OFF.value
+    await system_link_session.commit()
+    with pytest.raises(FastAPIHTTPException) as inactive:
+        await module_ui_file(manifest.module_id, "ui/index.js", system_link_session)
+    assert inactive.value.status_code == 404
+
+    module.state = ModuleState.READY.value
+    await system_link_session.commit()
+    with pytest.raises(FastAPIHTTPException) as ungranted:
+        await module_ui_file(manifest.module_id + "-other", "ui/index.js", system_link_session)
+    assert ungranted.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_reconcile_existing_runtime_requires_full_verification(
+    tmp_path: Path, system_link_session, monkeypatch
+) -> None:
+    """A surviving runtime is only adopted after package/executable/identity
+    re-verification AND a signed handshake against the pinned base URL."""
+    manifest, module_key, package_root = _module_fixture(tmp_path)
+    module = models.SystemLinkModule(
+        module_id=manifest.module_id,
+        product_name=manifest.name,
+        module_version=manifest.version,
+        protocol_version=manifest.protocol_version,
+        manifest_schema_version=manifest.schema_version,
+        module_public_key=_public_key(module_key),
+        module_fingerprint="f" * 64,
+        manifest=manifest.model_dump(mode="json"),
+        manifest_sha256="a" * 64,
+        manifest_signature=b64encode(module_key.sign(canonical_json(manifest))),
+        package_root=str(package_root),
+        package_sha256=manifest.package_sha256,
+        lifecycle=manifest.lifecycle.model_dump(mode="json"),
+        state=ModuleState.READY.value,
+        enabled=True,
+    )
+    system_link_session.add(module)
+    await system_link_session.commit()
+
+    async def healthy_handshake(_client, _timeout) -> None:
+        return None
+
+    async def healthy_health(_client, _timeout) -> str:
+        return "READY"
+
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "handshake", healthy_handshake)
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "health", healthy_health)
+    supervisor = RuntimeSupervisor(InstallationIdentityStore(tmp_path / "reconcile-identity.key"))
+    result = await supervisor.reconcile_existing_runtime(system_link_session, module)
+    assert result == ModuleState.READY
+    assert module.crash_count == 0
+
+    # Tampering with the package must fail-closed: no handshake is even attempted.
+    module.state = ModuleState.READY.value
+    module.crash_count = 2
+    await system_link_session.commit()
+    (package_root / "ui" / "index.js").write_text("tampered", encoding="utf-8")
+    result = await supervisor.reconcile_existing_runtime(system_link_session, module)
+    assert result == ModuleState.ERROR
+    assert module.last_error_code == "runtime_reconciliation_failed"
+    assert module.crash_count == 2  # package failures do not count as runtime crashes
+
+    # Restore the package before testing the authentication-failure path.
+    (package_root / "ui" / "index.js").write_text("export const module = 'evidence-lab';", encoding="utf-8")
+
+    # A signed-authentication failure (e.g. the endpoint does not own the
+    # pinned module identity) must never adopt the process.
+    module.state = ModuleState.READY.value
+    module.crash_count = 0
+    await system_link_session.commit()
+
+    async def rejecting_handshake(_client, _timeout) -> None:
+        raise RuntimeAuthenticationError("runtime does not own the pinned module identity")
+
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "handshake", rejecting_handshake)
+    result = await supervisor.reconcile_existing_runtime(system_link_session, module)
+    assert result == ModuleState.ERROR
+    assert module.crash_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_startup_marks_in_flight_error_and_returns_survivors(
+    tmp_path: Path, system_link_session
+) -> None:
+    service = SystemLinkService(system_link_session, InstallationIdentityStore(tmp_path / "startup-identity.key"))
+    manifest, module_key, package_root = _module_fixture(tmp_path)
+    module = models.SystemLinkModule(
+        module_id=manifest.module_id,
+        product_name=manifest.name,
+        module_version=manifest.version,
+        protocol_version=manifest.protocol_version,
+        manifest_schema_version=manifest.schema_version,
+        module_public_key=_public_key(module_key),
+        module_fingerprint="f" * 64,
+        manifest=manifest.model_dump(mode="json"),
+        manifest_sha256="a" * 64,
+        manifest_signature=b64encode(module_key.sign(canonical_json(manifest))),
+        package_root=str(package_root),
+        package_sha256=manifest.package_sha256,
+        lifecycle=manifest.lifecycle.model_dump(mode="json"),
+        state=ModuleState.STARTING.value,
+        enabled=True,
+    )
+    system_link_session.add(module)
+    await system_link_session.commit()
+    module.state = ModuleState.READY.value
+    await system_link_session.commit()
+    # Two modules: one READY (survivor), one STARTING (in-flight, untrustworthy).
+    in_flight = models.SystemLinkModule(
+        module_id="oihk.pentesting-fixture",
+        product_name="Fixture",
+        module_version="0.1.0",
+        protocol_version=manifest.protocol_version,
+        manifest_schema_version=manifest.schema_version,
+        module_public_key=_public_key(module_key),
+        module_fingerprint="f" * 64,
+        manifest=manifest.model_dump(mode="json"),
+        manifest_sha256="a" * 64,
+        manifest_signature=b64encode(module_key.sign(canonical_json(manifest))),
+        package_root=str(package_root),
+        package_sha256=manifest.package_sha256,
+        lifecycle=manifest.lifecycle.model_dump(mode="json"),
+        state=ModuleState.STARTING.value,
+        enabled=True,
+    )
+    system_link_session.add(in_flight)
+    await system_link_session.commit()
+
+    survivors = await service.reconcile_startup_states()
+    survivor_ids = {item.module_id for item in survivors}
+    assert survivor_ids == {manifest.module_id}
+    in_flight = await system_link_session.get(models.SystemLinkModule, "oihk.pentesting-fixture")
+    assert in_flight is not None
+    assert in_flight.state == ModuleState.ERROR.value
+    assert in_flight.last_error_code == "host_restart_requires_reauthentication"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_resets_crash_counter_on_healthy_runtime(
+    tmp_path: Path, system_link_session, monkeypatch
+) -> None:
+    module, _ = await _linked_off_module(tmp_path)
+    module.state = ModuleState.READY.value
+    module.crash_count = 5
+    system_link_session.add(module)
+    await system_link_session.commit()
+
+    async def health(_client, _timeout) -> str:
+        return "READY"
+
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "health", health)
+    supervisor = RuntimeSupervisor(InstallationIdentityStore(tmp_path / "reconcile-identity.key"))
+    await supervisor.reconcile(system_link_session, module)
+    assert module.state == ModuleState.READY.value
+    assert module.crash_count == 0
