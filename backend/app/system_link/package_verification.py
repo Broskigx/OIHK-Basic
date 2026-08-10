@@ -12,13 +12,16 @@ class PackageVerificationError(ValueError):
     pass
 
 
-def calculate_package_sha256(root_value: str | Path) -> str:
+def calculate_package_sha256(
+    root_value: str | Path, *, extra_ignored: frozenset[str] = frozenset()
+) -> str:
     declared_root = Path(root_value)
     if declared_root.is_symlink():
         raise PackageVerificationError("Module package root may not be a symlink")
     root = declared_root.resolve(strict=True)
     if not root.is_dir():
         raise PackageVerificationError("Module package root must be a regular directory")
+    ignored = _IGNORED_METADATA | extra_ignored
     files: list[tuple[str, Path]] = []
     total_bytes = 0
     for path in root.rglob("*"):
@@ -27,7 +30,7 @@ def calculate_package_sha256(root_value: str | Path) -> str:
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()
-        if relative in _IGNORED_METADATA:
+        if relative in ignored:
             continue
         if ".." in relative.split("/"):
             raise PackageVerificationError("Module package path traversal detected")

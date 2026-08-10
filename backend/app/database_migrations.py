@@ -143,6 +143,14 @@ MIGRATIONS = (
             "CREATE INDEX IF NOT EXISTS ix_system_link_replay_nonces_expires_at ON system_link_replay_nonces (expires_at)",
         ),
     ),
+    Migration(
+        8,
+        "system_link_publisher_trust",
+        (
+            "ALTER TABLE system_link_modules ADD COLUMN publisher_key_id VARCHAR(80) NOT NULL DEFAULT ''",
+            "ALTER TABLE system_link_modules ADD COLUMN publisher_channel VARCHAR(20) NOT NULL DEFAULT ''",
+        ),
+    ),
 )
 
 # Migration version → table whose ALTER ADD COLUMN statements must be guarded so
@@ -151,6 +159,7 @@ MIGRATIONS = (
 _ALTER_GUARD_TABLES: dict[int, str] = {
     2: "cases",
     4: "assistant_conversations",
+    8: "system_link_modules",
 }
 
 

@@ -116,6 +116,15 @@ class Settings(BaseSettings):
     public_registration: Annotated[bool | None, Field(alias="OIHK_PUBLIC_REGISTRATION")] = None
     temporary_basic_login: Annotated[bool, Field(alias="OIHK_TEMPORARY_BASIC_LOGIN")] = False
 
+    # --- System Link ---
+    # Release packages are always pinned to the embedded first-party trust
+    # anchors. Development publisher signatures are accepted ONLY when this
+    # flag is explicitly enabled (development/CI/E2E). Production installs
+    # must keep it off so unknown publisher keys are rejected fail-closed.
+    system_link_allow_development_publishers: Annotated[
+        bool, Field(alias="OIHK_SYSTEM_LINK_ALLOW_DEV_PUBLISHERS")
+    ] = False
+
     # --- Rate limiting ---
     rate_limit_enabled: Annotated[bool, Field(alias="OIHK_RATE_LIMIT_ENABLED")] = True
     rate_limit_per_minute: Annotated[int, Field(alias="OIHK_RATE_LIMIT_PER_MINUTE")] = 120

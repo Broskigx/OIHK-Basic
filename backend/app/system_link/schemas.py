@@ -30,6 +30,11 @@ class PairingCompleteWrite(BaseModel):
     package_root: str = Field(min_length=1, max_length=2048)
 
 
+class PublisherIdentityRead(BaseModel):
+    key_id: str
+    channel: str
+
+
 class PairingPendingRead(BaseModel):
     pairing_id: str
     module_id: str
@@ -66,6 +71,8 @@ class LinkedModuleRead(BaseModel):
     enabled: bool
     module_fingerprint: str
     package_sha256: str
+    publisher: PublisherIdentityRead
+    frontend_entrypoint: str | None = None
     granted_capabilities: list[str]
     requested_capabilities: list[str]
     categories: list[ModuleCategoryRead]

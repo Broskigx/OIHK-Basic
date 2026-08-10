@@ -226,6 +226,8 @@ class SystemLinkModule(Base):
     manifest: Mapped[dict] = mapped_column(JSON, nullable=False)
     manifest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     manifest_signature: Mapped[str] = mapped_column(String(160), nullable=False)
+    publisher_key_id: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    publisher_channel: Mapped[str] = mapped_column(String(20), nullable=False, default="")
     package_root: Mapped[str] = mapped_column(Text, nullable=False)
     package_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     lifecycle: Mapped[dict] = mapped_column(JSON, nullable=False)
