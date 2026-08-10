@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
-from app.core.deps import CurrentUser, get_current_user, require_case_access
+from app.core.deps import CurrentUser, accessible_cases_statement, get_current_user, require_case_access
 from app.database import get_session
 from app.schemas import (
     GraphEdge,
@@ -105,8 +105,16 @@ async def list_transform_runs(
 ) -> list[models.TransformRun]:
     statement = select(models.TransformRun).order_by(models.TransformRun.created_at.desc()).limit(limit)
     if case_id:
+        # Explicit case filter still enforces full case-level authorization.
         await require_case_access(session, case_id, current)
         statement = statement.where(models.TransformRun.case_id == case_id)
+    else:
+        # Unfiltered history must never leak runs from cases the caller cannot
+        # access. The subquery reuses the exact case access rules (organization,
+        # owner, membership) so single-user/system mode is unaffected.
+        statement = statement.where(
+            models.TransformRun.case_id.in_(accessible_cases_statement(current))
+        )
     return list((await session.execute(statement)).scalars().all())
 
 

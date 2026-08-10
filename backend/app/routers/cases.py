@@ -3,11 +3,11 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Response, status
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
-from app.core.deps import CurrentUser, get_current_user, require_case_access
+from app.core.deps import CurrentUser, accessible_cases_statement, get_current_user, require_case_access
 from app.database import get_session
 from app.schemas import CaseCreate, CaseImportDocument, CaseRead, CaseUpdate
 from app.services.repository import audit, create_case
@@ -52,10 +52,7 @@ async def list_cases(
 ) -> list[CaseRead]:
     statement = select(models.Case).order_by(models.Case.updated_at.desc())
     if not current.is_system:
-        statement = statement.where(models.Case.organization_id == current.organization_id)
-        if not current.is_admin:
-            member_case_ids = select(models.CaseMembership.case_id).where(models.CaseMembership.user_id == current.id)
-            statement = statement.where(or_(models.Case.owner_id == current.id, models.Case.id.in_(member_case_ids)))
+        statement = statement.where(models.Case.id.in_(accessible_cases_statement(current)))
     cases = list((await session.execute(statement)).scalars().all())
     return await _case_reads(session, cases)
 
