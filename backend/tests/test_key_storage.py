@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 
 import pytest
-
 from app.system_link import security
 from app.system_link.security import (
     EncryptedFileProvider,
@@ -47,6 +46,28 @@ class _NoBackendKeyring:
 
         raise NoKeyringError("no backend configured")
 
+
+class _FailBackendKeyring:
+    """Keyring module that installs a no-op *fail* backend, exactly like a
+    headless CI host: ``get_keyring()`` succeeds but every real read/write
+    raises :class:`NoKeyringError`."""
+
+    def get_keyring(self) -> object:
+        return _FailBackend()
+
+    def get_password(self, service: str, username: str) -> str | None:
+        from keyring.errors import NoKeyringError
+
+        raise NoKeyringError("no recommended backend was available")
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        from keyring.errors import NoKeyringError
+
+        raise NoKeyringError("no recommended backend was available")
+
+
+class _FailBackend:
+    pass
 
 def _install_fake_keyring(monkeypatch: pytest.MonkeyPatch, module: object) -> None:
     monkeypatch.setitem(__import__("sys").modules, "keyring", module)
@@ -121,6 +142,13 @@ def test_default_provider_prefers_keyring_and_falls_back_when_no_backend(
     _install_fake_keyring(monkeypatch, _NoBackendKeyring())
     fallback = security._default_provider()
     assert isinstance(fallback, EncryptedFileProvider)
+
+    # Regression: a host where get_keyring() succeeds but the backend is a
+    # no-op *fail* (headless Linux CI, no Secret Service daemon). The read
+    # probe must detect it and degrade to the file fallback.
+    _install_fake_keyring(monkeypatch, _FailBackendKeyring())
+    degraded = security._default_provider()
+    assert isinstance(degraded, EncryptedFileProvider)
 
 
 def test_identity_store_reports_selected_provider_kind(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:

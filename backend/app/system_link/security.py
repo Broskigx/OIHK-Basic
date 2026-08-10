@@ -143,12 +143,20 @@ class OsKeyringProvider:
         self.username = username
 
     def probe(self) -> None:
-        """Verify a real OS keyring backend is available without touching stored secrets."""
+        """Verify a real OS keyring backend is available without touching stored secrets.
+
+        ``keyring.get_keyring()`` alone is not enough: on headless hosts the
+        library installs a no-op *fail* backend instead of raising, and that
+        backend only raises on the first real call. Probe with a read that can
+        never create an entry so an unusable keyring degrades to the explicit
+        AES-GCM file fallback instead of failing the identity later.
+        """
         import keyring
         from keyring.errors import KeyringError
 
         try:
             keyring.get_keyring()
+            keyring.get_password(self.service, f"{self.username}.probe")
         except KeyringError as exc:
             raise OSError("The operating-system keyring has no usable backend on this host") from exc
 
