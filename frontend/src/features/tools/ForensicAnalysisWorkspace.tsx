@@ -362,10 +362,10 @@ export function ForensicAnalysisWorkspace({ caseId, onCompleted }: { caseId: str
             {resultTab === "timeline" && <TimelineResult report={report} />}
           </div>
 
-          {(report.errors.length > 0 || report.yara?.error) && (
+          {report.errors.length > 0 && (
             <footer className="forensic-result-errors">
               <AlertTriangle size={15} />
-              <div><strong>Pipeline notices</strong>{[...report.errors, ...(report.yara?.error ? [report.yara.error] : [])].map((item) => <p key={item}>{item}</p>)}</div>
+              <div><strong>Pipeline notices</strong>{report.errors.map((item) => <p key={item}>{item}</p>)}</div>
             </footer>
           )}
         </section>

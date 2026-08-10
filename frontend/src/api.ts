@@ -50,6 +50,7 @@ import type {
   SourceRead,
   StorageStatus,
   TransformCatalog,
+  TransformRun,
   TargetIntakeResult,
   TargetPhoto,
   TargetProfile,
@@ -104,7 +105,7 @@ function csrfSafeMethod(method?: string): boolean {
   return !method || ["GET", "HEAD", "OPTIONS", "TRACE"].includes(method.toUpperCase());
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET";
   const csrfToken = csrfSafeMethod(method) ? "" : getCsrfToken();
   let response: Response;
@@ -524,6 +525,10 @@ export function listCases(): Promise<CaseRead[]> {
   return request<CaseRead[]>("/cases");
 }
 
+export function getCase(caseId: string): Promise<CaseRead> {
+  return request<CaseRead>(`/cases/${encodeURIComponent(caseId)}`);
+}
+
 export function createCase(payload: InvestigationDraft): Promise<CaseRead> {
   return request<CaseRead>("/cases", { method: "POST", body: JSON.stringify(payload) });
 }
@@ -647,6 +652,13 @@ export function runTransform(transformId: string, entityId: string): Promise<Gra
     method: "POST",
     body: JSON.stringify({ entity_id: entityId }),
   });
+}
+
+export function listTransformRuns(caseId?: string, limit = 20): Promise<TransformRun[]> {
+  const params = new URLSearchParams();
+  if (caseId) params.set("case_id", caseId);
+  params.set("limit", String(limit));
+  return request<TransformRun[]>(`/transforms/runs?${params.toString()}`);
 }
 
 // --- Machines (deterministic transform chains) ---

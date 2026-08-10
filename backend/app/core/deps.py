@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from sqlalchemy import Select
 
 from app import models
 from app.core.config import get_settings
@@ -90,6 +94,27 @@ def require_admin(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
     if not user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator role required")
     return user
+
+
+def accessible_cases_statement(user: CurrentUser) -> Select[tuple[str]]:
+    """Single source of truth for the set of cases a user may access.
+
+    Mirrors the exact organization/owner/membership rules applied when listing
+    cases so that cross-resource queries (e.g. transform history) never diverge
+    from the case access model. The system loopback user bypasses the filter.
+    """
+    statement = select(models.Case.id)
+    if user.is_system:
+        return statement
+    statement = statement.where(models.Case.organization_id == user.organization_id)
+    if not user.is_admin:
+        member_case_ids = select(models.CaseMembership.case_id).where(
+            models.CaseMembership.user_id == user.id
+        )
+        statement = statement.where(
+            or_(models.Case.owner_id == user.id, models.Case.id.in_(member_case_ids))
+        )
+    return statement
 
 
 async def user_can_access_case(session: AsyncSession, case_id: str, user: CurrentUser) -> bool:

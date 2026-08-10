@@ -35,6 +35,10 @@ deployers reason about the security posture of the application.
   credentials are rejected.
 - **Boundary D — OSINT adapters:** outbound requests only happen after an
   explicit user action, never in the background.
+- **Boundary E — OIHK System Link:** separately installed first-party modules
+  pair with Ed25519 installation identities. Lifecycle is restricted to a
+  signed, hashed installer record and module APIs require capabilities plus
+  signed timestamped nonces with replay rejection.
 
 ## 2. Assets
 
@@ -116,6 +120,36 @@ and size-limited before any parsing.
 > A crafted archive with a high compression ratio could inflate in memory
 > within the upload size limit. Recommended hardening for a future release:
 > cap decompressed bytes per member.
+
+### T4.10 Malicious or replaced System Link module
+Basic rejects unknown module ids, manifest/schema/protocol incompatibility,
+path traversal, symlinks, forbidden capabilities, package hash mismatch, a
+changed runtime executable hash, and untrusted publisher identity. It starts
+no shell/interpreter/script and activates navigation only after signed
+handshake plus healthy READY. Module requests never receive raw
+database/filesystem handles and replayed nonces fail. The single-use Link Key
+is claimed with an atomic conditional update, so concurrent replays cannot
+both succeed and a failed post-claim step rolls back without burning the key.
+
+Publisher trust is implemented as an embedded first-party trust anchor set
+(Ed25519). Release packages must verify under an anchor in
+`RELEASE_TRUST_ANCHORS`; development packages are accepted only when the host
+explicitly enables them and are tagged with the `development` channel. Invalid
+signatures, unknown publishers, and altered packages or manifests fail closed
+before the Link Key is consumed. Key rotation is supported by adding the
+successor anchor before switching, keeping both during a transition window,
+then retiring the old one.
+
+After a Basic restart, in-flight lifecycle states are forced to ERROR. A
+runtime that had reached READY/BUSY is re-adopted only after re-verifying the
+pinned module identity, package hash, expected executable hash, protocol
+compatibility, and a signed mutually-authenticated handshake against the
+pinned loopback URL — never merely because a process listens on the port.
+
+Non-Windows installation identities are protected by the OS keyring (macOS
+Keychain / Linux Secret Service via the `keyring` package) with an explicit
+AES-GCM mode-`0600` fallback only when no keyring backend exists; the active
+provider is reported per installation through `key_storage`.
 
 ## 5. Residual risks
 

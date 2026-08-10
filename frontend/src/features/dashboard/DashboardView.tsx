@@ -1,23 +1,33 @@
 import {
   ArrowRight,
-  BriefcaseBusiness,
+  Bot,
   Boxes,
-  FileArchive,
+  BriefcaseBusiness,
   CircleDot,
-  Clock3,
-  Cpu,
-  Database,
+  FileArchive,
   Network,
   Plus,
+  Search,
   ShieldCheck,
   Target,
-  Upload,
-  UserPlus,
-  Maximize2,
+  Activity,
+  AlertTriangle,
+  MessageSquare,
+  Lightbulb,
 } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { getLocalModelConfiguration } from "../../api";
-import type { AuditEvent, CaseMonitor, CaseRead, GraphAnalytics, GraphNode, GraphRead, SourceRead, StorageStatus } from "../../types";
+import { getLocalModelConfiguration, listTransformRuns } from "../../api";
+import type {
+  AuditEvent,
+  CaseMonitor,
+  CaseRead,
+  GraphAnalytics,
+  GraphNode,
+  GraphRead,
+  SourceRead,
+  StorageStatus,
+  TransformRun,
+} from "../../types";
 import type { PlatformArea } from "../../app/navigation";
 import { buildDashboardMetrics, dashboardActionLabel } from "./dashboardModel";
 import { shortHash } from "../../utils";
@@ -52,37 +62,16 @@ function relativeTime(value: string): string {
   }
 }
 
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let amount = value / 1024;
-  let index = 0;
-  while (amount >= 1024 && index < units.length - 1) {
-    amount /= 1024;
-    index += 1;
-  }
-  return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${units[index]}`;
-}
 
-// ── Skeleton component ──
-
-function SkeletonRow({ count = 3 }: { count?: number }) {
-  return (
-    <>
-      {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="platform-skeleton platform-skeleton-row" />
-      ))}
-    </>
-  );
-}
 
 // ── KPI icon map ──
 const KPI_ICONS: Record<string, React.ReactNode> = {
-  Investigations: <BriefcaseBusiness size={18} />,
-  Entities: <Boxes size={18} />,
-  Relationships: <Network size={18} />,
-  "Evidence sources": <FileArchive size={18} />,
-  "Sealed items": <ShieldCheck size={18} />,
+  Investigations: <BriefcaseBusiness size={15} />,
+  Entities: <Boxes size={15} />,
+  Relationships: <Network size={15} />,
+  "Evidence sources": <FileArchive size={15} />,
+  "Sealed items": <ShieldCheck size={15} />,
+  "Custody Status": <ShieldCheck size={15} />,
 };
 
 // ── Panel wrapper ──
@@ -112,7 +101,11 @@ function Panel({
       </div>
       <div className="platform-panel-body">
         {loading ? (
-          <SkeletonRow count={4} />
+          <div className="platform-skeleton-strip">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="platform-skeleton platform-skeleton-row" />
+            ))}
+          </div>
         ) : empty ? (
           <div className="platform-empty-state">
             <strong>{emptyTitle || "No data"}</strong>
@@ -157,34 +150,87 @@ export function DashboardView({
   onNavigate: (area: PlatformArea) => void;
   onNewCase: () => void;
 }) {
-  const metrics = useMemo(() => buildDashboardMetrics(cases.length, monitor), [cases.length, monitor]);
-  const isLoading = false; // Simplified: data is available via props
+  const metrics = useMemo(
+    () => buildDashboardMetrics({ investigations: cases.length, graph, sources, monitor }),
+    [cases.length, graph, sources, monitor],
+  );
   const [modelConfigured, setModelConfigured] = useState<boolean | null>(null);
+  const [transformRuns, setTransformRuns] = useState<TransformRun[]>([]);
+  const [transformRunsLoading, setTransformRunsLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     getLocalModelConfiguration()
       .then((configuration) => active && setModelConfigured(Boolean(configuration?.model)))
       .catch(() => active && setModelConfigured(false));
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    setTransformRunsLoading(true);
+    listTransformRuns(activeCase?.id, 15)
+      .then((runs) => active && setTransformRuns(runs))
+      .catch(() => active && setTransformRuns([]))
+      .finally(() => active && setTransformRunsLoading(false));
+    return () => { active = false; };
+  }, [activeCase?.id]);
+
   const reviewTasks = useMemo(() => {
-    const tasks: Array<{ label: string; area: PlatformArea }> = [];
-    if (!monitor?.custody_intact) tasks.push({ label: "Review chain of custody", area: "evidence" });
-    if (graph.nodes.length === 0) tasks.push({ label: "Add the first verified entity", area: "entities" });
-    if (sources.length === 0) tasks.push({ label: "Import source material", area: "evidence" });
-    if (!modelConfigured) tasks.push({ label: "Configure an optional local model", area: "models" });
-    if (!activeCase?.notes) tasks.push({ label: "Record investigation notes", area: "investigations" });
-    return tasks.slice(0, 5);
-  }, [activeCase?.notes, graph.nodes.length, modelConfigured, monitor?.custody_intact, sources.length]);
+    const tasks: Array<{ label: string; area: PlatformArea; priority: "high" | "medium" | "low" }> = [];
+    if (monitor && !monitor.custody_intact) tasks.push({ label: "Custody verification required", area: "evidence", priority: "high" });
+    if (!activeCase?.scope_statement) tasks.push({ label: "Missing case scope", area: "investigations", priority: "medium" });
+    if (!modelConfigured) tasks.push({ label: "Local model not configured", area: "models", priority: "low" });
+    if (graph.nodes.length > 0 && graph.nodes.some((n) => n.source_ids.length === 0)) tasks.push({ label: "Entities without sources", area: "graph", priority: "medium" });
+    if (sources.length > 0 && !monitor) tasks.push({ label: "Evidence awaiting review", area: "evidence", priority: "medium" });
+    return tasks.slice(0, 6);
+  }, [activeCase?.scope_statement, graph.nodes, modelConfigured, monitor, sources]);
+
+  // Recent activity data
+  const recentActivities = useMemo(() => {
+    const items: Array<{ icon: React.ReactNode; action: string; time: string; actor: string }> = [];
+    if (auditEvents) {
+      for (const evt of auditEvents.slice(0, 8)) {
+        items.push({
+          icon: <Activity size={12} />,
+          action: dashboardActionLabel(evt.action),
+          time: relativeTime(evt.created_at),
+          actor: evt.actor,
+        });
+      }
+    }
+    if (items.length === 0 && activeCase) {
+      items.push({
+        icon: <BriefcaseBusiness size={12} />,
+        action: "Case created",
+        time: relativeTime(activeCase.created_at),
+        actor: "System",
+      });
+    }
+    return items;
+  }, [auditEvents, activeCase]);
+
+  const evidenceItems = useMemo(() => sources.slice(0, 5), [sources]);
+
+  // Evidence integrity status using monitor data
+  const getEvidenceIntegrity = (): string => {
+    if (monitor?.custody_intact === false) return "Pending review";
+    return "Verified";
+  };
+
+  const getEvidenceStatus = (source: SourceRead): string => {
+    if (!source.url) return "Missing source";
+    return "Present";
+  };
+
+  // Tools & Sources status
+  const recentRuns = useMemo(() => transformRuns.slice(0, 12), [transformRuns]);
 
   // ── Empty state ──
   if (cases.length === 0) {
     return (
       <div className="platform-dashboard">
+        {/* Level 1: Header */}
         <div className="platform-dash-header">
           <div>
             <h1>Dashboard</h1>
@@ -206,314 +252,343 @@ export function DashboardView({
 
   return (
     <div className="platform-dashboard">
-      {/* ── Header ── */}
+      {/* ════════════════════════════════════════════ */}
+      {/* LEVEL 1: Case Header                        */}
+      {/* ════════════════════════════════════════════ */}
       <div className="platform-dash-header">
-        <div>
-          <h1>
-            {activeCase?.title || "Dashboard"}
-          </h1>
-          <p>
-            {activeCase
-              ? `Operational overview · ${activeCase.status} · Last updated ${formatTS(activeCase.updated_at)}`
-              : "Select an investigation to view its intelligence overview."}
-          </p>
+        <div className="platform-dash-header-left">
+          <h1>{activeCase?.title || "Dashboard"}</h1>
+          <div className="platform-dash-header-meta">
+            {activeCase && (
+              <>
+                <span className={`placo-badge ${activeCase.status}`}>{activeCase.status}</span>
+                <span className="platform-dash-header-date">Last updated {formatTS(activeCase.updated_at)}</span>
+              </>
+            )}
+            {activeCase?.summary && <p className="platform-dash-header-desc">{activeCase.summary}</p>}
+          </div>
         </div>
         <div className="platform-dash-header-actions">
           <button className="platform-ghost-btn" onClick={() => onNavigate("graph")}>
             <Network size={14} /> Open Graph
           </button>
           <button className="platform-primary-btn" onClick={onNewCase}>
-            <Plus size={16} /> New Case
+            <Plus size={16} /> New Investigation
           </button>
         </div>
       </div>
 
-      {/* ── KPI Strip ── */}
+      {/* ════════════════════════════════════════════ */}
+      {/* LEVEL 2: Compact Metrics Strip              */}
+      {/* ════════════════════════════════════════════ */}
       <div className="platform-kpi-strip">
         {metrics.map((m) => (
           <div key={m.label} className="platform-kpi-card">
             <div className="platform-kpi-top">
               <span className="platform-kpi-label">{m.label}</span>
-              <span className="platform-kpi-icon">{KPI_ICONS[m.label] || <CircleDot size={16} />}</span>
+              <span className="platform-kpi-icon">{KPI_ICONS[m.label] || <CircleDot size={14} />}</span>
             </div>
             <span className="platform-kpi-value">{m.value}</span>
-            {m.change && <span className="platform-kpi-change">{m.change}</span>}
           </div>
         ))}
+        <div className="platform-kpi-card">
+          <div className="platform-kpi-top">
+            <span className="platform-kpi-label">Custody Status</span>
+            <span className="platform-kpi-icon"><ShieldCheck size={14} /></span>
+          </div>
+          <span className="platform-kpi-value" style={{ fontSize: 14, fontWeight: 600 }}>
+            {monitor ? (monitor.custody_intact ? "Verified" : "Review") : "—"}
+          </span>
+        </div>
       </div>
 
-      <div className="dashboard-quick-actions" aria-label="Quick actions">
-        <button type="button" onClick={onNewCase}><Plus size={15} /><span><strong>New investigation</strong><small>Create an authorized local case</small></span></button>
-        <button type="button" onClick={() => onNavigate("investigations")}><Upload size={15} /><span><strong>Import investigation</strong><small>Open versioned JSON import</small></span></button>
-        <button type="button" onClick={() => onNavigate("graph")}><UserPlus size={15} /><span><strong>Add entity</strong><small>Record a verified graph node</small></span></button>
-        <button type="button" onClick={() => onNavigate("evidence")}><FileArchive size={15} /><span><strong>Import evidence</strong><small>Hash into managed storage</small></span></button>
-        <button type="button" onClick={() => onNavigate("models")}><Cpu size={15} /><span><strong>Local model</strong><small>Configure LM Studio or Ollama</small></span></button>
-        <button type="button" onClick={() => onNavigate("graph")}><Network size={15} /><span><strong>Open graph</strong><small>Continue visual analysis</small></span></button>
-      </div>
-
-      {/* ── Main Layout (65/35) ── */}
-      <div className="platform-dash-columns">
-        {/* ── Left Column ── */}
-        <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
-          {/* ── Intelligence Graph ── */}
+      {/* ════════════════════════════════════════════ */}
+      {/* LEVEL 3: Main Area (68% / 32%)              */}
+      {/* ════════════════════════════════════════════ */}
+      <div className="platform-dash-main">
+        {/* ── Left: Intelligence Graph ── */}
+        <div className="platform-dash-graph-col">
           <div className="platform-graph-card">
             <div className="platform-graph-card-header">
               <div className="platform-graph-card-header-left">
                 <i className="live-dot" />
                 <h2>INTELLIGENCE GRAPH</h2>
-                <span className="platform-graph-live-badge">
-                  <i className="live-dot" /> Live
-                </span>
               </div>
               <div className="platform-graph-card-header-actions">
                 <button className="platform-icon-btn" title="Fullscreen" onClick={() => onNavigate("graph")}>
-                  <Maximize2 size={14} />
+                  <ArrowRight size={14} />
                 </button>
               </div>
             </div>
             <div className="platform-graph-card-body">
-              <Suspense fallback={<div className="platform-empty-state"><strong>Loading graph...</strong></div>}>
-                <GraphView
-                  graph={graph}
-                  viewMode="network"
-                  selectedNodeId={selectedNode?.id}
-                  compact
-                  onSelectNode={onSelectNode}
-                  onNodeClick={(node) => onSelectNode(node)}
-                  onNodeContextMenu={(node) => onSelectNode(node)}
-                />
-              </Suspense>
+              {graph.nodes.length === 0 ? (
+                <div className="platform-empty-state" style={{ minHeight: 400 }}>
+                  <Network size={28} color="var(--text-muted)" />
+                  <strong>Graph is empty</strong>
+                  <p>Add an entity to start building intelligence relationships.</p>
+                  <button className="platform-ghost-btn" onClick={() => onNavigate("entities")}>
+                    <Plus size={14} /> Add entity
+                  </button>
+                </div>
+              ) : (
+                <Suspense fallback={<div className="platform-empty-state"><strong>Loading graph...</strong></div>}>
+                  <GraphView
+                    graph={graph}
+                    viewMode="network"
+                    selectedNodeId={selectedNode?.id}
+                    compact
+                    onSelectNode={onSelectNode}
+                    onNodeClick={(node) => onSelectNode(node)}
+                    onNodeContextMenu={(node) => onSelectNode(node)}
+                  />
+                </Suspense>
+              )}
             </div>
             <div className="platform-graph-status">
-              <CircleDot size={12} />
+              <CircleDot size={10} />
               <span>
-                <strong>{graph.nodes.length}</strong> entities ·{" "}
+                <strong>{graph.nodes.length}</strong> entities ·
                 <strong>{graph.edges.length}</strong> relationships
                 {graphAnalytics && (
                   <> · <strong>{graphAnalytics.component_count}</strong> components</>
                 )}
               </span>
+              {graph.nodes.length > 0 && (
+                <span className="loaded">Ready</span>
+              )}
             </div>
           </div>
-
-          {/* ── Evidence Table ── */}
-          <Panel
-            title="Evidence"
-            actions={
-              <button className="platform-text-btn" onClick={() => onNavigate("evidence")}>
-                View All <ArrowRight size={12} />
-              </button>
-            }
-            loading={isLoading}
-            empty={!sources || sources.length === 0}
-            emptyTitle="No evidence added"
-            emptyDesc="Upload files or add sources to begin building evidence."
-          >
-            <table className="platform-evidence-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Source ID</th>
-                  <th>Added</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(sources || []).slice(0, 5).map((s) => (
-                  <tr key={s.id}>
-                    <td style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}>{s.title}</td>
-                    <td>{s.kind}</td>
-                    <td className="hash-cell" title={s.id}>{shortHash(s.id)}</td>
-                    <td style={{ whiteSpace: "nowrap" }}>{relativeTime(s.collected_at)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {monitor && (
-              <div className="platform-verify-row">
-                <span className={monitor.custody_intact ? "good" : "bad"}>
-                  <ShieldCheck size={13} />
-                  {monitor.custody_intact ? "Chain of Custody intact" : "Custody review required"}
-                </span>
-                <span>{monitor.sealed_count} sealed items</span>
-              </div>
-            )}
-          </Panel>
-
-          {/* ── Sources & Transforms ── */}
-          <Panel
-            title="Sources & Transforms"
-            actions={
-              <button className="platform-text-btn" onClick={() => onNavigate("tools")}>
-                Configure <ArrowRight size={12} />
-              </button>
-            }
-            loading={isLoading}
-            empty={false}
-            emptyTitle="No sources configured"
-            emptyDesc="Add sources to enrich entities with external intelligence."
-          >
-            <div className="platform-source-row">
-              <span className="platform-source-name">DNS Resolution</span>
-              <span className="platform-source-status completed">Local</span>
-              <span className="platform-source-time">—</span>
-            </div>
-            <div className="platform-source-row">
-              <span className="platform-source-name">RDAP / WHOIS</span>
-              <span className="platform-source-status completed">Local</span>
-              <span className="platform-source-time">—</span>
-            </div>
-            <div className="platform-source-row">
-              <span className="platform-source-name">Certificate Search</span>
-              <span className="platform-source-status completed">Local</span>
-              <span className="platform-source-time">—</span>
-            </div>
-            <div className="platform-source-row">
-              <span className="platform-source-name">Hash Analysis</span>
-              <span className="platform-source-status completed">Local</span>
-              <span className="platform-source-time">—</span>
-            </div>
-          </Panel>
         </div>
 
         {/* ── Right Column ── */}
-        <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
-          {/* ── Case Overview ── */}
+        <div className="platform-dash-side-col">
+          {/* Case Intelligence Brief */}
           <Panel
-            title="Case Overview"
+            title="Case Intelligence Brief"
             actions={
               <button className="platform-text-btn" onClick={() => onNavigate("investigations")}>
-                Open <ArrowRight size={12} />
+                Open <ArrowRight size={10} />
               </button>
             }
-            loading={isLoading}
             empty={!activeCase}
-            emptyTitle="No active case"
-            emptyDesc="Select or create an investigation to see its overview."
+            emptyTitle="Not enough verified information"
+            emptyDesc="Not enough verified information to generate a case brief."
           >
             {activeCase && (
-              <div className="platform-case-overview">
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <h4 className="placo-title">{activeCase.title}</h4>
-                  <span className={`placo-badge ${activeCase.status}`}>{activeCase.status}</span>
+              <div className="platform-case-brief">
+                <div className="platform-brief-row">
+                  <span>Status</span>
+                  <span className={`placo-brief-badge ${activeCase.status}`}>{activeCase.status}</span>
                 </div>
-                {activeCase.summary && (
-                  <p className="placo-description">{activeCase.summary}</p>
+                {activeCase.scope_statement && (
+                  <div className="platform-brief-row">
+                    <span>Objective</span>
+                    <span className="platform-brief-value" title={activeCase.scope_statement}>
+                      {activeCase.scope_statement}
+                    </span>
+                  </div>
                 )}
-                <div className="placo-meta">
-                  <div className="placo-meta-row">
-                    <span>Last Updated</span>
-                    <span>{formatTS(activeCase.updated_at)}</span>
-                  </div>
-                  <div className="placo-meta-row">
-                    <span>Evidence Items</span>
-                    <span>{monitor?.source_count ?? sources.length}</span>
-                  </div>
-                  <div className="placo-meta-row">
-                    <span>Entities</span>
-                    <span>{monitor?.entity_count ?? graph.nodes.length}</span>
-                  </div>
-                  <div className="placo-meta-row">
-                    <span>Sources</span>
-                    <span>{sources.length}</span>
-                  </div>
+                <div className="platform-brief-row">
+                  <span>Findings</span>
+                  <span className="platform-brief-value">{graph.nodes.length} entities, {graph.edges.length} relationships</span>
                 </div>
-                {activeCase.legal_basis && (
-                  <div className="placo-tags">
-                    <span className="placo-tag">{activeCase.legal_basis}</span>
-                    {activeCase.scope_statement && (
-                      <span className="placo-tag">{activeCase.scope_statement.slice(0, 40)}</span>
-                    )}
+                <div className="platform-brief-row">
+                  <span>Last activity</span>
+                  <span className="platform-brief-value">{formatTS(activeCase.updated_at)}</span>
+                </div>
+                {storageStatus && (
+                  <div className="platform-brief-row">
+                    <span>Local storage</span>
+                    <span className="platform-brief-value" title={storageStatus.data_directory}>
+                      {storageStatus.writable
+                        ? `${(storageStatus.database_bytes / 1024 / 1024).toFixed(1)} MB database`
+                        : "Not writable"}
+                    </span>
+                  </div>
+                )}
+                {reviewTasks.length > 0 && (
+                  <div className="platform-brief-row">
+                    <span>Next action</span>
+                    <span className="platform-brief-value">{reviewTasks[0].label}</span>
                   </div>
                 )}
               </div>
             )}
           </Panel>
 
-          <Panel title="Recent Investigations" empty={cases.length === 0}>
-            <div className="dashboard-recent-cases">
-              {[...cases]
-                .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
-                .slice(0, 5)
-                .map((item) => (
-                  <button type="button" key={item.id} onClick={() => onNavigate("investigations")}>
-                    <span><strong>{item.title}</strong><small>{item.status} · {item.priority} priority</small></span>
-                    <time>{relativeTime(item.updated_at)}</time>
-                  </button>
-                ))}
-            </div>
-          </Panel>
-
-          <Panel title="Readiness & Resources">
-            <div className="dashboard-resources">
-              <button type="button" onClick={() => onNavigate("models")}>
-                <Cpu size={16} />
-                <span><strong>Local model</strong><small>{modelConfigured === null ? "Checking local configuration…" : modelConfigured ? "Configured for local inference" : "Optional · not configured"}</small></span>
-                <i className={modelConfigured ? "ready" : "optional"} />
-              </button>
-              <button type="button" onClick={() => onNavigate("settings")}>
-                <Database size={16} />
-                <span><strong>Local storage</strong><small>{storageStatus ? `${formatBytes(storageStatus.total_bytes)} · ${storageStatus.writable ? "writable" : "read-only"}` : "Checking application storage…"}</small></span>
-                <i className={storageStatus?.writable ? "ready" : "review"} />
-              </button>
-            </div>
-            <div className="dashboard-task-list">
-              <div><strong>Review queue</strong><span>{reviewTasks.length}</span></div>
-              {reviewTasks.length === 0 && <p>Core investigation records are ready for review.</p>}
-              {reviewTasks.map((task) => <button type="button" key={task.label} onClick={() => onNavigate(task.area)}><CircleDot size={11} /> {task.label}<ArrowRight size={11} /></button>)}
-            </div>
-          </Panel>
-
-          {/* ── Timeline ── */}
+          {/* Review Queue */}
           <Panel
-            title={`Timeline${activeCase ? ` · ${activeCase.title.slice(0, 24)}` : ""}`}
-            actions={
-              <button className="platform-text-btn" onClick={() => onNavigate("timeline")}>
-                View All <ArrowRight size={12} />
-              </button>
-            }
-            loading={isLoading}
-            empty={!auditEvents || auditEvents.length === 0}
-            emptyTitle="No recent activity"
-            emptyDesc="Timeline events will appear as you work on the case."
+            title="Review Queue"
+            empty={reviewTasks.length === 0}
+            emptyTitle="All clear"
+            emptyDesc="No items require review at this time."
           >
-            <div className="platform-timeline">
-              {(auditEvents || []).slice(0, 6).map((evt) => (
-                <div key={evt.id} className="platform-timeline-item">
-                  <div className="platform-timeline-dot system" />
-                  <div className="platform-timeline-content">
-                    <strong>{dashboardActionLabel(evt.action)}</strong>
-                    <span>{evt.actor}</span>
-                    <time>{formatTS(evt.created_at)}</time>
-                  </div>
-                </div>
+            <div className="dashboard-task-list">
+              {reviewTasks.map((task) => (
+                <button type="button" key={task.label} onClick={() => onNavigate(task.area)}>
+                  {task.priority === "high" ? (
+                    <AlertTriangle size={11} color="var(--danger)" />
+                  ) : task.priority === "medium" ? (
+                    <AlertTriangle size={11} color="var(--warning)" />
+                  ) : (
+                    <CircleDot size={11} />
+                  )}
+                  <span>{task.label}</span>
+                  <ArrowRight size={10} />
+                </button>
               ))}
             </div>
           </Panel>
 
-          {/* ── Recent Activity ── */}
+          {/* Local Copilot */}
           <Panel
-            title="Recent Activity"
-            loading={isLoading}
-            empty={!auditEvents || auditEvents.length === 0}
-            emptyTitle="No recent activity"
-            emptyDesc="Actions performed in this case will appear here."
+            title="Local Copilot"
+            actions={
+              <button className="platform-text-btn" onClick={() => onNavigate("copilot")}>
+                Open <ArrowRight size={10} />
+              </button>
+            }
           >
-            {(auditEvents || []).slice(0, 4).map((evt) => (
-              <div key={evt.id} className="platform-activity-item">
-                <div className="platform-activity-icon system">
-                  <Clock3 size={13} />
-                </div>
-                <div className="platform-activity-info">
-                  <strong>{dashboardActionLabel(evt.action)}</strong>
-                  <span>{evt.actor}</span>
-                </div>
-                <span className="platform-activity-time">{relativeTime(evt.created_at)}</span>
+            <div className="dashboard-copilot">
+              <div className="dashboard-copilot-header">
+                <Bot size={14} color={modelConfigured ? "var(--accent)" : "var(--text-muted)"} />
+                <span>
+                  <strong>{modelConfigured ? "Connected" : "Not configured"}</strong>
+                  <small>{modelConfigured ? "Model ready" : "Optional — LM Studio or Ollama"}</small>
+                </span>
+                <span className={`dashboard-copilot-status ${modelConfigured ? "connected" : "disconnected"}`} />
               </div>
-            ))}
+              <div className="dashboard-copilot-quick">
+                <button type="button" onClick={() => onNavigate("copilot")}>
+                  <MessageSquare size={11} /> Summarize case
+                </button>
+                <button type="button" onClick={() => onNavigate("copilot")}>
+                  <Search size={11} /> Find contradictions
+                </button>
+                <button type="button" onClick={() => onNavigate("copilot")}>
+                  <Lightbulb size={11} /> Suggest next steps
+                </button>
+              </div>
+            </div>
           </Panel>
         </div>
       </div>
+
+      {/* ════════════════════════════════════════════ */}
+      {/* LEVEL 4: Evidence & Activity (two columns)  */}
+      {/* ════════════════════════════════════════════ */}
+      <div className="platform-dash-bottom">
+        {/* Recent Evidence */}
+        <Panel
+          title="Recent Evidence"
+          actions={
+            <button className="platform-text-btn" onClick={() => onNavigate("evidence")}>
+              View All <ArrowRight size={10} />
+            </button>
+          }
+          empty={evidenceItems.length === 0}
+          emptyTitle="No evidence added"
+          emptyDesc="Upload files or add sources to begin building evidence."
+        >
+          <table className="platform-evidence-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Integrity</th>
+                <th>Source</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {evidenceItems.map((s) => (
+                <tr key={s.id}>
+                  <td style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis" }}>{s.title}</td>
+                  <td>{s.kind}</td>
+                <td>
+                  <span className="integrity-badge verified">
+                    {getEvidenceIntegrity()}
+                  </span>
+                </td>
+                <td className="hash-cell" title={s.id}>{shortHash(s.id)}</td>
+                <td>
+                  <span className="integrity-badge verified">{getEvidenceStatus(s)}</span>
+                </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Panel>
+
+        {/* Recent Activity */}
+        <Panel
+          title="Recent Activity"
+          empty={recentActivities.length === 0}
+          emptyTitle="No recent activity"
+          emptyDesc="Timeline events will appear as you work on the case."
+        >
+          <div className="platform-dash-activity">
+            {recentActivities.map((act, i) => (
+              <div key={i} className="platform-dash-activity-item">
+                <div className="platform-dash-activity-icon">{act.icon}</div>
+                <div className="platform-dash-activity-info">
+                  <strong>{act.action}</strong>
+                  <span>{act.actor}</span>
+                </div>
+                <span className="platform-dash-activity-time">{act.time}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      {/* ════════════════════════════════════════════ */}
+      {/* LEVEL 5: Transform Run History                  */}
+      {/* ════════════════════════════════════════════ */}
+      <Panel
+        title="Transform Run History"
+        actions={
+          <button className="platform-text-btn" onClick={() => onNavigate("graph")}>
+            Run more <ArrowRight size={10} />
+          </button>
+        }
+        loading={transformRunsLoading}
+        empty={recentRuns.length === 0}
+        emptyTitle="No transforms executed yet"
+        emptyDesc="Run an enrichment transform on a graph node and its result will appear here."
+      >
+        <div className="platform-dash-tools">
+          {recentRuns.map((run) => (
+            <div key={run.id} className="platform-dash-tool-item">
+              <div
+                className={`platform-dash-run-icon ${run.status}`}
+                aria-hidden="true"
+              >
+                {run.status === "completed" ? (
+                  <Boxes size={13} />
+                ) : (
+                  <AlertTriangle size={13} />
+                )}
+              </div>
+              <div className="platform-dash-tool-info">
+                <strong>{run.transform_title}</strong>
+                <span className="platform-dash-run-target">
+                  {run.entity_label} · {run.entity_type}
+                  {run.status === "completed" && (run.new_nodes > 0 || run.new_edges > 0)
+                    ? ` · +${run.new_nodes} nodes · +${run.new_edges} edges`
+                    : ""}
+                </span>
+              </div>
+              <div className="platform-dash-tool-meta">
+                <span className={`platform-dash-tool-badge ${run.status}`}>
+                  {run.status === "completed" ? "Completed" : "Failed"}
+                </span>
+                <span className="platform-dash-tool-last">{relativeTime(run.created_at)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
     </div>
   );
-}
+}

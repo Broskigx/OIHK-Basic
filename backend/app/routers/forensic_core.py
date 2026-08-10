@@ -35,8 +35,6 @@ from app.schemas import (
     MetadataReportRead,
     TextExtractionRead,
     TimelineEventRead,
-    YaraMatchRead,
-    YaraScanRead,
 )
 from app.services import correlation, hash_intel, interesting_files
 from app.services.custody import seal_source
@@ -119,17 +117,6 @@ def _report_to_schema(core_report, *, source_id=None, stored_sha256=None, custod
         )
         if core_report.iocs
         else None,
-        yara=YaraScanRead(
-            matches=[
-                YaraMatchRead(rule=m.rule, namespace=m.namespace, tags=m.tags, strings=m.strings, meta=m.meta)
-                for m in core_report.yara.matches
-            ],
-            rules_loaded=core_report.yara.rules_loaded,
-            available=core_report.yara.available,
-            error=core_report.yara.error,
-        )
-        if core_report.yara
-        else None,
         timeline_events=[
             TimelineEventRead(
                 event_id=e.event_id,
@@ -163,7 +150,7 @@ async def core_analyze(
         raise HTTPException(status_code=413, detail=f"File exceeds {MAX_UPLOAD_BYTES} bytes")
 
     report = analyze_file(
-        data, filename=file.filename or "upload", content_type=file.content_type or "", run_yara=False
+        data, filename=file.filename or "upload", content_type=file.content_type or ""
     )
 
     stored = store_evidence_bytes(

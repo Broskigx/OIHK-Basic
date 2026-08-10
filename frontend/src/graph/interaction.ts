@@ -32,6 +32,9 @@ export class GraphInteractionController {
   private cameraStart = { x: 0, y: 0 };
   private wasDragged = false;
   private wheelCommitTimer: number | null = null;
+  /** Cached canvas rect captured at gesture start; avoids forcing a sync
+   *  layout reflow via getBoundingClientRect() on every mousemove. */
+  private rectCache: DOMRect | null = null;
 
   private boundHandlers: {
     onDown: (e: MouseEvent) => void;
@@ -86,6 +89,7 @@ export class GraphInteractionController {
     this.boundHandlers = null;
     if (this.wheelCommitTimer !== null) window.clearTimeout(this.wheelCommitTimer);
     this.wheelCommitTimer = null;
+    this.rectCache = null;
     this.canvas = null;
   }
 
@@ -96,13 +100,20 @@ export class GraphInteractionController {
     return { w: this.canvas.width / (window.devicePixelRatio || 1), h: this.canvas.height / (window.devicePixelRatio || 1) };
   }
 
+  /** Canvas rect relative to the viewport. Uses the gesture-cached rect when
+   *  available and only falls back to getBoundingClientRect() outside a gesture. */
+  private _canvasRect(): DOMRect {
+    if (this.rectCache) return this.rectCache;
+    return this.canvas!.getBoundingClientRect();
+  }
+
   private _camera(): CameraState {
     return this.store.state.camera;
   }
 
   private _hitTest(screenX: number, screenY: number) {
     if (!this.canvas) return null;
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this._canvasRect();
     const { w, h } = this._canvasWH();
     const world = screenToWorld(screenX - rect.left, screenY - rect.top, this._camera(), w, h);
     const hit = this.spatial.hitTest(world.x, world.y, 12);
@@ -113,7 +124,9 @@ export class GraphInteractionController {
     const canvas = this.canvas;
     if (!canvas) return;
     canvas.focus({ preventScroll: true });
-    const rect = canvas.getBoundingClientRect();
+    // Cache the canvas rect once per gesture; reused for every move/up event
+    this.rectCache = canvas.getBoundingClientRect();
+    const rect = this.rectCache;
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
@@ -169,6 +182,9 @@ export class GraphInteractionController {
         this.store.markDirty("layout");
         this.wasDragged = true;
       }
+      // While dragging we already know what is under the cursor — skip the
+      // redundant hit-test and hover updates until the gesture ends.
+      return;
     }
 
     // Hover
@@ -180,6 +196,7 @@ export class GraphInteractionController {
 
   private _onPointerUp(e: MouseEvent): void {
     const canvas = this.canvas;
+    this.rectCache = null; // gesture over — drop the cached rect
     if (e.button === 1 || this.panning) {
       this.panning = false;
       if (canvas) canvas.style.cursor = "default";
@@ -209,7 +226,7 @@ export class GraphInteractionController {
   private _onWheel(e: WheelEvent): void {
     e.preventDefault();
     if (!this.canvas) return;
-    const rect = this.canvas.getBoundingClientRect();
+    const rect = this._canvasRect();
     const factor = e.deltaY > 0 ? 0.88 : 1.12;
     const { w, h } = this._canvasWH();
     const newCamera = zoomCamera(
@@ -239,6 +256,7 @@ export class GraphInteractionController {
   }
 
   private _onPointerLeave(): void {
+    this.rectCache = null;
     if (this.dragNodeId) {
       this.dragNodeId = null;
     }

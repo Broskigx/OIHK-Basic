@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from app.core.config import get_settings
 from app.version import PRODUCT_VERSION
+
+logger = logging.getLogger(__name__)
 
 
 async def search_public(query: str, max_results: int = 5) -> list[dict]:
@@ -19,13 +23,13 @@ async def search_public(query: str, max_results: int = 5) -> list[dict]:
         try:
             return await _search_searxng(query, max_results)
         except Exception:
-            pass
+            logger.warning("SearXNG search failed for query %r; falling back", query, exc_info=True)
 
     if settings.brave_api_key:
         try:
             return await _search_brave(query, max_results)
         except Exception:
-            pass
+            logger.warning("Brave search failed for query %r; returning empty results", query, exc_info=True)
 
     return results
 

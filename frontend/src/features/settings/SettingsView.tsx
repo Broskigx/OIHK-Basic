@@ -8,6 +8,7 @@ import {
   Gauge,
   Info,
   LockKeyhole,
+  Link2,
   Palette,
   PlayCircle,
   RefreshCw,
@@ -26,13 +27,14 @@ import { PRODUCT_VERSION, UPDATE_CHANNEL } from "../../version";
 import { UpdatePanel } from "../updates/UpdatePanel";
 import type { UpdateController } from "../updates/useUpdater";
 
-type SettingsSection = "general" | "appearance" | "storage" | "models" | "tools" | "privacy" | "performance" | "transfer" | "diagnostics" | "about";
+type SettingsSection = "general" | "appearance" | "storage" | "models" | "system-link" | "tools" | "privacy" | "performance" | "transfer" | "diagnostics" | "about";
 
 const SECTIONS: Array<{ id: SettingsSection; label: string; icon: typeof Settings2 }> = [
   { id: "general", label: "General", icon: Settings2 },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "storage", label: "Storage", icon: Database },
   { id: "models", label: "Local Models", icon: Bot },
+  { id: "system-link", label: "OIHK System Link", icon: Link2 },
   { id: "tools", label: "Tools", icon: Wrench },
   { id: "privacy", label: "Privacy", icon: LockKeyhole },
   { id: "performance", label: "Performance", icon: Gauge },
@@ -61,6 +63,7 @@ export function SettingsView({
   onSave,
   onRunOnboarding,
   onOpenModels,
+  onOpenSystemLink,
   updater,
 }: {
   user: User;
@@ -74,6 +77,7 @@ export function SettingsView({
   onSave: (settings: ApplicationSettings) => Promise<void>;
   onRunOnboarding: () => void;
   onOpenModels: () => void;
+  onOpenSystemLink: () => void;
   updater: UpdateController;
 }) {
   const [section, setSection] = useState<SettingsSection>("general");
@@ -182,6 +186,11 @@ export function SettingsView({
           {section === "models" && <>
             <div className="platform-section-heading"><div><span className="platform-eyebrow">Local Models</span><h2>LM Studio, Ollama, and private endpoints</h2></div><Bot size={18} /></div>
             <div className="settings-callout"><p>Model endpoints, task routing, context limits, and inference tests are managed in the dedicated Local Models workspace.</p><button type="button" onClick={onOpenModels}>Open Local Models</button></div>
+          </>}
+
+          {section === "system-link" && <>
+            <div className="platform-section-heading"><div><span className="platform-eyebrow">OIHK System Link</span><h2>Linked local products</h2></div><Link2 size={18} /></div>
+            <div className="settings-callout"><p>Pair separately installed first-party OIHK products, review bounded capability grants, and control verified runtimes without exposing shell or raw database access.</p><button type="button" onClick={onOpenSystemLink}>Open System Link control plane</button></div>
           </>}
 
           {section === "tools" && <>

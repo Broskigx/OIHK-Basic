@@ -36,6 +36,7 @@ export class GraphEngine {
   private eventHandlers: Set<GraphEventHandler> = new Set();
   private history: EngineWorkspaceState[] = [];
   private historyIndex = -1;
+  private spatialRebuildCounter = 0;
 
   private _findGraphNode(id: string): GraphNode | undefined {
     return this.rawNodes.find((n) => n.id === id);
@@ -293,8 +294,20 @@ export class GraphEngine {
 
     // Run layout step if active
     const layoutActive = this.layout.tick({ nodes: this.rawNodes, edges: this.rawEdges });
-    if (layoutActive || this.layout.nodes.length !== this.rawNodes.length) {
-      this.spatial.rebuild(this.layout.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y, radius: n.radius })));
+    const nodeCountChanged = this.layout.nodes.length !== this.rawNodes.length;
+    if (layoutActive || nodeCountChanged) {
+      // Rebuild the spatial index immediately when the node set changed;
+      // otherwise throttle to every 3 frames while physics is running.
+      if (nodeCountChanged) {
+        this.spatialRebuildCounter = 0;
+        this.spatial.rebuild(this.layout.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y, radius: n.radius })));
+      } else {
+        this.spatialRebuildCounter += 1;
+        if (this.spatialRebuildCounter >= 3) {
+          this.spatialRebuildCounter = 0;
+          this.spatial.rebuild(this.layout.nodes.map((n) => ({ id: n.id, x: n.x, y: n.y, radius: n.radius })));
+        }
+      }
       this.store.markDirty("layout");
     }
     if (!layoutActive && this.layout.converged && !this.store.isDirty) {
@@ -323,6 +336,7 @@ export class GraphEngine {
       hoveredId: this.store.hoveredNodeId,
       compact: this.compact,
       cameraZoom: this.store.camera.zoom,
+      spatial: this.spatial,
     };
 
     this.renderer.render(ctx, scene, w, h, dirty);

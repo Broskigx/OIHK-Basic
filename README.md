@@ -55,6 +55,12 @@ Varias de estas funciones pueden estar incompletas, desactivadas, sujetas a redi
 - La evidencia no debe ejecutarse; se copia a almacenamiento administrado, se limita por tamaño y se verifica por hash.
 - El sistema no debe fabricar resultados, fuentes ni métricas.
 
+## OIHK System Link (fundación v1)
+
+OIHK Basic incluye el host/control plane inicial de OIHK System Link para enlazar productos OIHK instalados por separado, comenzando por OIHK Evidence Lab. El enlace usa identidades Ed25519, pairing local con Link Key temporal y single-use, grants de capacidades, manifests/paquetes hasheados, estados de lifecycle explícitos y navegación `module:*` activada únicamente tras autenticación y health `READY`.
+
+El lifecycle no acepta comandos shell ni scripts arbitrarios: solo puede ejecutar el binario relativo registrado bajo un root de instalación, después de verificar su SHA-256. Basic continúa funcionando sin Evidence Lab. El contrato, las garantías y las limitaciones actuales se documentan en [docs/SYSTEM_LINK_V1.md](docs/SYSTEM_LINK_V1.md).
+
 ## Compilar y ejecutar — solo desarrollo
 
 No existe un instalador estable recomendado. La candidata alpha (prerelease) y la compilación manual están destinadas únicamente a testers y revisión técnica bajo su propia responsabilidad.

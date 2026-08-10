@@ -1,4 +1,4 @@
-export type PlatformArea =
+export type CorePlatformArea =
   | "dashboard"
   | "investigations"
   | "entities"
@@ -11,8 +11,12 @@ export type PlatformArea =
   | "copilot"
   | "models"
   | "sources"
+  | "system-link"
   | "settings"
   | "about";
+
+export type ModuleRouteId = `module:${string}:${string}`;
+export type PlatformArea = CorePlatformArea | ModuleRouteId;
 
 export type PlatformRoute = {
   area: PlatformArea;
@@ -24,52 +28,122 @@ export type NavigationItem = {
   label: string;
   caseScoped: boolean;
   sidebar?: boolean;
+  group?: string;
+  icon?: string;
+  moduleId?: string;
+  order?: number;
 };
 
-export const MAIN_NAVIGATION: NavigationItem[] = [
-  { id: "dashboard", label: "Dashboard", caseScoped: false },
-  { id: "investigations", label: "Investigations", caseScoped: false },
-  { id: "graph", label: "Intelligence Graph", caseScoped: true },
-  { id: "osint", label: "OSINT Workspace", caseScoped: true },
-  { id: "evidence", label: "Evidence Lab", caseScoped: true },
-  { id: "reports", label: "Reports", caseScoped: true },
-  { id: "copilot", label: "Copilot", caseScoped: true },
-  { id: "models", label: "Local Models", caseScoped: false },
-  { id: "sources", label: "Data Sources", caseScoped: true },
-  { id: "settings", label: "Settings", caseScoped: false },
-  { id: "about", label: "About", caseScoped: false },
-  { id: "entities", label: "Entities", caseScoped: true, sidebar: false },
-  { id: "timeline", label: "Timeline", caseScoped: true, sidebar: false },
-  { id: "tools", label: "Forensics", caseScoped: true, sidebar: false },
+export const SIDEBAR_GROUPS: { id: string; label: string }[] = [
+  { id: "workspace", label: "Workspace" },
+  { id: "analysis", label: "Analysis" },
+  { id: "evidence", label: "Evidence" },
+  { id: "ai", label: "AI" },
+  { id: "linked-modules", label: "Linked modules" },
+  { id: "system", label: "System" },
 ];
 
-const GLOBAL_AREAS = new Set<PlatformArea>(["dashboard", "investigations", "models", "settings", "about"]);
+export const CORE_NAVIGATION: NavigationItem[] = [
+  { id: "dashboard", label: "Dashboard", caseScoped: false, group: "workspace" },
+  { id: "investigations", label: "Investigations", caseScoped: false, group: "workspace" },
+  { id: "entities", label: "Entities", caseScoped: true, group: "analysis" },
+  { id: "graph", label: "Intelligence Graph", caseScoped: true, group: "analysis" },
+  { id: "timeline", label: "Timeline", caseScoped: true, group: "analysis" },
+  { id: "osint", label: "OSINT Workspace", caseScoped: true, group: "analysis" },
+  { id: "tools", label: "Tools", caseScoped: true, group: "analysis" },
+  { id: "evidence", label: "Evidence Lab", caseScoped: true, group: "evidence" },
+  { id: "sources", label: "Data Sources", caseScoped: true, group: "evidence" },
+  { id: "reports", label: "Reports", caseScoped: true, group: "evidence" },
+  { id: "copilot", label: "Copilot", caseScoped: true, group: "ai" },
+  { id: "models", label: "Local Models", caseScoped: false, group: "ai" },
+  { id: "system-link", label: "OIHK System Link", caseScoped: false, group: "system" },
+  { id: "settings", label: "Settings", caseScoped: false, group: "system" },
+  { id: "about", label: "About", caseScoped: false, group: "system" },
+];
 
-const CASE_AREAS = new Set<PlatformArea>(
-  MAIN_NAVIGATION.filter((item) => item.caseScoped).map((item) => item.id),
-);
+// Compatibility export for callers/tests that still use the original catalog name.
+export const MAIN_NAVIGATION = CORE_NAVIGATION;
 
-export function isCaseScopedArea(area: PlatformArea): boolean {
-  return CASE_AREAS.has(area);
+const CORE_IDS = new Set(CORE_NAVIGATION.map((item) => item.id));
+const GLOBAL_AREAS = new Set<CorePlatformArea>([
+  "dashboard",
+  "investigations",
+  "models",
+  "system-link",
+  "settings",
+  "about",
+]);
+const MODULE_ROUTE_RE = /^module:([a-z0-9](?:[a-z0-9.-]{1,78}[a-z0-9])?):([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)$/;
+
+export function isModuleRouteId(value: string): value is ModuleRouteId {
+  return MODULE_ROUTE_RE.test(value);
 }
 
-export function parsePlatformHash(hash: string): PlatformRoute {
+export function createModuleRouteId(moduleId: string, categoryId: string): ModuleRouteId {
+  const value = `module:${moduleId}:${categoryId}`;
+  if (!isModuleRouteId(value)) throw new Error("Invalid namespaced System Link module route");
+  return value;
+}
+
+export function isCaseScopedArea(area: PlatformArea, moduleNavigation: readonly NavigationItem[] = []): boolean {
+  if (isModuleRouteId(area)) return moduleNavigation.some((item) => item.id === area && item.caseScoped);
+  return CORE_NAVIGATION.some((item) => item.id === area && item.caseScoped);
+}
+
+function registeredModuleRoute(
+  moduleId: string,
+  categoryId: string,
+  moduleNavigation: readonly NavigationItem[],
+): ModuleRouteId | null {
+  try {
+    const route = createModuleRouteId(moduleId, categoryId);
+    return moduleNavigation.some((item) => item.id === route) ? route : null;
+  } catch {
+    return null;
+  }
+}
+
+export function parsePlatformHash(
+  hash: string,
+  moduleNavigation: readonly NavigationItem[] = [],
+): PlatformRoute {
   const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+  if (parts[0] === "modules") {
+    const route = registeredModuleRoute(decodeURIComponent(parts[1] ?? ""), decodeURIComponent(parts[2] ?? ""), moduleNavigation);
+    return route ? { area: route, caseId: "" } : { area: "dashboard", caseId: "" };
+  }
   if (parts[0] !== "investigations") {
-    if (GLOBAL_AREAS.has(parts[0] as PlatformArea)) return { area: parts[0] as PlatformArea, caseId: "" };
+    if (GLOBAL_AREAS.has(parts[0] as CorePlatformArea)) return { area: parts[0] as CorePlatformArea, caseId: "" };
     return { area: "dashboard", caseId: "" };
   }
   if (parts.length === 1) return { area: "investigations", caseId: "" };
 
   const caseId = decodeURIComponent(parts[1] ?? "");
+  if (parts[2] === "modules") {
+    const route = registeredModuleRoute(
+      decodeURIComponent(parts[3] ?? ""),
+      decodeURIComponent(parts[4] ?? ""),
+      moduleNavigation,
+    );
+    return route && isCaseScopedArea(route, moduleNavigation)
+      ? { area: route, caseId }
+      : { area: "investigations", caseId };
+  }
   const requested = parts[2] === "overview" ? "investigations" : parts[2];
-  const area = MAIN_NAVIGATION.some((item) => item.id === requested)
-    ? (requested as PlatformArea)
+  const area = CORE_IDS.has(requested as CorePlatformArea)
+    ? (requested as CorePlatformArea)
     : "investigations";
   return { area, caseId };
 }
 
 export function platformHash(area: PlatformArea, caseId = ""): string {
+  if (isModuleRouteId(area)) {
+    const [, moduleId, categoryId] = area.split(":");
+    if (caseId) {
+      return `#/investigations/${encodeURIComponent(caseId)}/modules/${encodeURIComponent(moduleId)}/${encodeURIComponent(categoryId)}`;
+    }
+    return `#/modules/${encodeURIComponent(moduleId)}/${encodeURIComponent(categoryId)}`;
+  }
   if (GLOBAL_AREAS.has(area) && area !== "investigations") return `#/${area}`;
   if (area === "investigations" && !caseId) return "#/investigations";
   if (!caseId) return "#/investigations";

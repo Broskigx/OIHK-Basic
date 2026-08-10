@@ -25,3 +25,12 @@ export function shortHash(id: string): string {
   if (id.length <= 12) return id;
   return `${id.slice(0, 8)}...${id.slice(-4)}`;
 }
+
+/** Format a byte count for display (e.g. 1536 → "1.5 KB") */
+export function formatByteSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exponent;
+  return `${value >= 10 || exponent === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exponent]}`;
+}

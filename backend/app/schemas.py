@@ -803,6 +803,24 @@ class MachineAdhocRun(BaseModel):
     transform_ids: list[str] = Field(min_length=1)
 
 
+class TransformRunRead(BaseModel):
+    id: str
+    case_id: str
+    entity_id: str
+    entity_label: str
+    entity_type: str
+    transform_id: str
+    transform_title: str
+    status: Literal["completed", "failed"] = "completed"
+    new_nodes: int
+    new_edges: int
+    detail: str
+    actor: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # --- CSV Import ---
 class CsvImportRequest(BaseModel):
     csv: str
@@ -939,21 +957,6 @@ class IocReportRead(BaseModel):
     asn_lookups: list[dict[str, str]] = []
 
 
-class YaraMatchRead(BaseModel):
-    rule: str
-    namespace: str
-    tags: list[str]
-    strings: list[str]
-    meta: dict[str, str]
-
-
-class YaraScanRead(BaseModel):
-    matches: list[YaraMatchRead]
-    rules_loaded: int
-    available: bool
-    error: str | None
-
-
 class TimelineEventRead(BaseModel):
     event_id: str
     source_id: str | None
@@ -975,7 +978,6 @@ class ForensicCoreRead(BaseModel):
     metadata: MetadataReportRead | None = None
     text_extraction: TextExtractionRead | None = None
     iocs: IocReportRead | None = None
-    yara: YaraScanRead | None = None
     timeline_events: list[TimelineEventRead] = []
     errors: list[str] = []
 

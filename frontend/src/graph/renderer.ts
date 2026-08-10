@@ -5,6 +5,8 @@
  */
 
 import type { CameraState, LayoutNode, DirtyFlags } from "./types";
+import { getViewportBounds } from "./camera";
+import type { GraphSpatialIndex } from "./spatial";
 import { getNodeConfig, CATEGORY_ORDER, CATEGORY_COLORS, CATEGORY_LABELS } from "../components/graphTypes";
 
 // ── Shape drawing ──
@@ -167,6 +169,7 @@ export interface RenderScene {
   compact: boolean;
   cameraZoom: number;
   dimThreshold?: number; // LOD: hide labels below this zoom
+  spatial?: GraphSpatialIndex; // optional spatial index used for viewport culling
 }
 
 /**
@@ -188,6 +191,32 @@ export function renderGraph(
   // main thread stays responsive while panning and zooming.
   const hideLabels = !compact && nodes.length > LOD_LABEL_THRESHOLD && cameraZoom < LOD_MIN_LABEL_ZOOM;
   const skipShadows = nodes.length > LOD_NO_SHADOW_THRESHOLD;
+
+  // Viewport culling: only draw nodes/edges inside the visible world bounds
+  // plus a ~60px screen margin (scaled to world units) so nothing pops in/out
+  // at the edge while panning. Edges render when at least one endpoint is visible.
+  const margin = 60 / cameraZoom;
+  const viewportBounds = getViewportBounds(camera, width, height);
+  const expandedBounds = {
+    x1: viewportBounds.x1 - margin,
+    y1: viewportBounds.y1 - margin,
+    x2: viewportBounds.x2 + margin,
+    y2: viewportBounds.y2 + margin,
+  };
+  let visibleNodes: LayoutNode[];
+  if (scene.spatial) {
+    const visibleIds = new Set(scene.spatial.queryViewport(expandedBounds).map((item) => item.id));
+    visibleNodes = nodes.filter((n) => visibleIds.has(n.id));
+  } else {
+    visibleNodes = nodes.filter(
+      (n) =>
+        n.x + n.radius >= expandedBounds.x1 &&
+        n.x - n.radius <= expandedBounds.x2 &&
+        n.y + n.radius >= expandedBounds.y1 &&
+        n.y - n.radius <= expandedBounds.y2,
+    );
+  }
+  const visibleNodeIds = new Set(visibleNodes.map((n) => n.id));
 
   // 1. Background
   ctx.fillStyle = compact ? "transparent" : "#041012";
@@ -242,6 +271,8 @@ export function renderGraph(
     const from = nodeMap.get(edge.source);
     const to = nodeMap.get(edge.target);
     if (!from || !to) continue;
+    // Cull: draw an edge only when at least one endpoint is inside the viewport
+    if (!visibleNodeIds.has(edge.source) && !visibleNodeIds.has(edge.target)) continue;
 
     const activeId = selectedIds.size ? null : hoveredId;
     const highlighted = selectedIds.size
@@ -256,8 +287,8 @@ export function renderGraph(
     drawEdge(ctx, from, to, compact ? "" : edge.label, highlighted, dimmed);
   }
 
-  // 5. Draw nodes
-  for (const node of nodes) {
+  // 5. Draw nodes (viewport-culled)
+  for (const node of visibleNodes) {
     const config = getNodeConfig(node.type);
     const isSelected = selectedIds.has(node.id);
     const isHovered = node.id === hoveredId;
@@ -279,20 +310,15 @@ export function renderGraph(
       ctx.restore();
     }
 
-    // Node fill
+    // Node fill (no per-node shadowBlur — that was the layout freeze culprit;
+    // only the selected-node glow above uses shadow/glow on purpose)
     ctx.save();
     ctx.globalAlpha = alpha;
-    if (!skipShadows) {
-      ctx.shadowColor = "rgba(0,0,0,0.4)";
-      ctx.shadowBlur = 6;
-      ctx.shadowOffsetY = 2;
-    }
     drawShape(ctx, config.shape, node.x, node.y, radius);
     ctx.fillStyle = dimmed ? "#1e293b" : config.color;
     ctx.fill();
 
     // Border
-    if (!skipShadows) ctx.shadowBlur = 0;
     ctx.lineWidth = isSelected ? 2.5 : 1.5;
     ctx.strokeStyle = isSelected
       ? "#ffffff"

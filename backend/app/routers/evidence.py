@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 
@@ -145,7 +146,7 @@ async def verify_evidence(
     session: AsyncSession = Depends(get_session),
 ) -> EvidenceVerifyRead:
     item = await _item(session, item_id, current)
-    actual = hash_managed_file(item.storage_path)
+    actual = await asyncio.to_thread(hash_managed_file, item.storage_path)
     item.verified_at = datetime.now(UTC)
     await audit(
         session,

@@ -181,8 +181,9 @@ class TestSecretGeneration:
             "change-me-in-production-oihk-basic-custody-secret",
         ]
         search_dirs = [
-            _BASIC_ROOT / "backend" / "app" / "core",
-            _BASIC_ROOT,
+            _BASIC_ROOT / "backend",
+            _BASIC_ROOT / "scripts",
+            _BASIC_ROOT / "tests",
         ]
         for search_dir in search_dirs:
             if not search_dir.is_dir():

@@ -6,7 +6,6 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 
 - DNS, RDAP/WHOIS and certificate transparency are the built-in network lookups.
 - Username, phone, generic text, crypto address and remote hash intelligence require a legitimate user-configured adapter; Basic reports the adapter gap instead of inventing results.
-- YARA scanning is not bundled. Hash matching, MIME detection, metadata, IOC extraction and carving remain available.
 - Cross-case correlation uses deterministic attribute overlap; it is not an identity-resolution engine.
 
 ## Models

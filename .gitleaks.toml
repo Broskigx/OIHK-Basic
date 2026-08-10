@@ -12,4 +12,6 @@ regexes = [
   '''your-api-key''',
   '''your-ai-api-key''',
   '''your-secure-password''',
+  # cryptography type annotation, not a credential: `key: Ed25519PrivateKey | None`
+  '''Ed25519PrivateKey''',
 ]

@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     cors_origins: Annotated[str, Field(alias="OIHK_CORS_ORIGINS")] = "http://127.0.0.1:5173,http://localhost:5173"
     api_log_level: str = "INFO"
     storage_dir: Annotated[str, Field(alias="OIHK_STORAGE_DIR")] = ""
+    server_bind_host: Annotated[str, Field(alias="OIHK_SERVER_BIND_HOST")] = "127.0.0.1"
 
     @property
     def effective_database_url(self) -> str:
@@ -115,10 +116,20 @@ class Settings(BaseSettings):
     public_registration: Annotated[bool | None, Field(alias="OIHK_PUBLIC_REGISTRATION")] = None
     temporary_basic_login: Annotated[bool, Field(alias="OIHK_TEMPORARY_BASIC_LOGIN")] = False
 
+    # --- System Link ---
+    # Release packages are always pinned to the embedded first-party trust
+    # anchors. Development publisher signatures are accepted ONLY when this
+    # flag is explicitly enabled (development/CI/E2E). Production installs
+    # must keep it off so unknown publisher keys are rejected fail-closed.
+    system_link_allow_development_publishers: Annotated[
+        bool, Field(alias="OIHK_SYSTEM_LINK_ALLOW_DEV_PUBLISHERS")
+    ] = False
+
     # --- Rate limiting ---
     rate_limit_enabled: Annotated[bool, Field(alias="OIHK_RATE_LIMIT_ENABLED")] = True
     rate_limit_per_minute: Annotated[int, Field(alias="OIHK_RATE_LIMIT_PER_MINUTE")] = 120
     rate_limit_trust_forwarded: Annotated[bool, Field(alias="OIHK_RATE_LIMIT_TRUST_FORWARDED")] = False
+    trusted_proxy_ips: Annotated[str, Field(alias="OIHK_TRUSTED_PROXY_IPS")] = ""
 
     @model_validator(mode="after")
     def normalize_local_paths(self) -> "Settings":
@@ -132,6 +143,14 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def binds_to_loopback(self) -> bool:
+        return self.server_bind_host.strip().lower() in {"127.0.0.1", "::1", "localhost"}
+
+    @property
+    def trusted_proxy_ip_list(self) -> list[str]:
+        return [ip.strip() for ip in self.trusted_proxy_ips.split(",") if ip.strip()]
 
     @property
     def is_production(self) -> bool:
@@ -187,6 +206,7 @@ def get_settings() -> Settings:
             "environment": "desktop",
             "auth_enabled": False,
             "cors_origins": "http://tauri.localhost,tauri://localhost",
+            "server_bind_host": "127.0.0.1",
         }
         if data_dir_value:
             data_dir = Path(data_dir_value).resolve()

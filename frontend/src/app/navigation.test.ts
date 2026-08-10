@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { MAIN_NAVIGATION, parsePlatformHash, platformHash } from "./navigation";
+import {
+  MAIN_NAVIGATION,
+  createModuleRouteId,
+  parsePlatformHash,
+  platformHash,
+  type NavigationItem,
+} from "./navigation";
 
 describe("platform navigation", () => {
   it("round-trips a case-scoped workspace", () => {
@@ -19,8 +25,22 @@ describe("platform navigation", () => {
     expect(parsePlatformHash("#/not-real")).toEqual({ area: "dashboard", caseId: "" });
   });
 
-  it("presents the compatible tools route as the Forensics workspace", () => {
-    expect(MAIN_NAVIGATION.find((item) => item.id === "tools")?.label).toBe("Forensics");
+  it("presents the compatible tools route", () => {
+    expect(MAIN_NAVIGATION.find((item) => item.id === "tools")?.label).toBe("Tools");
     expect(parsePlatformHash("#/investigations/case-123/tools")).toEqual({ area: "tools", caseId: "case-123" });
+  });
+
+  it("round-trips only a registered namespaced module route", () => {
+    const route = createModuleRouteId("oihk.evidence-lab", "overview");
+    const navigation: NavigationItem[] = [{ id: route, label: "Evidence Lab", caseScoped: true }];
+    const hash = platformHash(route, "case-123");
+    expect(hash).toBe("#/investigations/case-123/modules/oihk.evidence-lab/overview");
+    expect(parsePlatformHash(hash, navigation)).toEqual({ area: route, caseId: "case-123" });
+    expect(parsePlatformHash(hash)).toEqual({ area: "investigations", caseId: "case-123" });
+  });
+
+  it("rejects malformed module ids and cannot override a core route", () => {
+    expect(() => createModuleRouteId("dashboard", "../settings")).toThrow("Invalid namespaced");
+    expect(parsePlatformHash("#/modules/dashboard/settings", [])).toEqual({ area: "dashboard", caseId: "" });
   });
 });

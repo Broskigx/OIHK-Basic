@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
-from app.core.deps import CurrentUser, get_current_user, require_case_access
+from app.core.deps import CurrentUser, accessible_cases_statement, get_current_user, require_case_access
 from app.database import get_session
 from app.schemas import (
     GraphEdge,
@@ -19,10 +19,11 @@ from app.schemas import (
     MachineRunResult,
     MachineSkip,
     MachineStep,
+    TransformRunRead,
     TransformRunRequest,
 )
 from app.services.transform_runner import TransformError, run_transform_on_entity
-from app.transforms import registry
+from app.transforms.registry import registry
 
 router = APIRouter(prefix="/transforms", tags=["transforms"])
 
@@ -50,6 +51,36 @@ def _edge(relationship: models.Relationship) -> GraphEdge:
     )
 
 
+def _run_record(
+    session: AsyncSession,
+    *,
+    entity: models.Entity,
+    transform_id: str,
+    status: str,
+    detail: str,
+    new_nodes: int = 0,
+    new_edges: int = 0,
+    actor: str,
+) -> None:
+    """Persist an immutable execution record for one transform run."""
+    spec = registry.get(transform_id)
+    session.add(
+        models.TransformRun(
+            case_id=entity.case_id,
+            entity_id=entity.id,
+            entity_label=entity.display,
+            entity_type=entity.type,
+            transform_id=transform_id,
+            transform_title=spec.title if spec is not None else transform_id,
+            status=status,
+            new_nodes=new_nodes,
+            new_edges=new_edges,
+            detail=detail[:600],
+            actor=actor,
+        )
+    )
+
+
 @router.get("")
 async def list_transforms(
     input: str | None = Query(default=None, description="Filter by input entity type, e.g. 'domain'."),
@@ -63,6 +94,28 @@ async def list_transforms(
         "categories": registry.categories(),
         "transforms": [spec.as_dict() for spec in specs],
     }
+
+
+@router.get("/runs", response_model=list[TransformRunRead])
+async def list_transform_runs(
+    case_id: str | None = Query(default=None, description="Filter history to one case."),
+    limit: int = Query(default=20, ge=1, le=200),
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[models.TransformRun]:
+    statement = select(models.TransformRun).order_by(models.TransformRun.created_at.desc()).limit(limit)
+    if case_id:
+        # Explicit case filter still enforces full case-level authorization.
+        await require_case_access(session, case_id, current)
+        statement = statement.where(models.TransformRun.case_id == case_id)
+    else:
+        # Unfiltered history must never leak runs from cases the caller cannot
+        # access. The subquery reuses the exact case access rules (organization,
+        # owner, membership) so single-user/system mode is unaffected.
+        statement = statement.where(
+            models.TransformRun.case_id.in_(accessible_cases_statement(current))
+        )
+    return list((await session.execute(statement)).scalars().all())
 
 
 @router.post("/{transform_id}/run", response_model=GraphExpandResult, status_code=201)
@@ -82,8 +135,30 @@ async def run_transform(
             session, transform_id=transform_id, entity=entity, actor=current.username
         )
     except TransformError as exc:
+        if exc.handler_failure:
+            await session.rollback()
+            entity = await session.get(models.Entity, payload.entity_id)
+            _run_record(
+                session,
+                entity=entity,
+                transform_id=transform_id,
+                status="failed",
+                detail=str(exc),
+                actor=current.username,
+            )
+            await session.commit()
         raise HTTPException(status_code=404 if exc.not_found else 400, detail=str(exc)) from exc
 
+    _run_record(
+        session,
+        entity=entity,
+        transform_id=transform_id,
+        status="completed",
+        detail=result.summary,
+        new_nodes=len(result.new_entities),
+        new_edges=len(result.new_relationships),
+        actor=current.username,
+    )
     await session.commit()
     spec = registry.get(transform_id)
     return GraphExpandResult(
@@ -147,6 +222,14 @@ async def _run_chain(
                 session, transform_id=transform_id, entity=entity, actor=actor, case=case
             )
         except TransformError as exc:
+            _run_record(
+                session,
+                entity=entity,
+                transform_id=transform_id,
+                status="failed",
+                detail=str(exc),
+                actor=actor,
+            )
             skipped.append(MachineSkip(transform=transform_id, reason=str(exc)))
             continue
         for item in result.new_entities:
@@ -154,6 +237,16 @@ async def _run_chain(
         for rel in result.new_relationships:
             edges[rel.id] = rel
         ran.append(MachineStep(transform=transform_id, strategy=result.strategy, new_nodes=len(result.new_entities)))
+        _run_record(
+            session,
+            entity=entity,
+            transform_id=transform_id,
+            status="completed",
+            detail=result.summary,
+            new_nodes=len(result.new_entities),
+            new_edges=len(result.new_relationships),
+            actor=actor,
+        )
     summary = f"{len(ran)} transform(s) · +{len(nodes)} nodes · +{len(edges)} edges" + (
         f" · {len(skipped)} skipped" if skipped else ""
     )

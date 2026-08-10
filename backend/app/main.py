@@ -36,6 +36,8 @@ from app.routers import (
 from app.routers import (
     settings as settings_router,
 )
+from app.system_link import router as system_link_router
+from app.system_link.module_api import router as system_link_module_api_router
 from app.version import PRODUCT_VERSION
 
 logger = logging.getLogger(__name__)
@@ -65,6 +67,16 @@ def _enforce_hardening() -> None:
         if settings.auth_enabled and settings.jwt_secret_is_default:
             logger.warning("OIHK_JWT_SECRET is the built-in dev default — set a strong secret before production.")
         if not settings.auth_enabled:
+            # With auth disabled the CSRF middleware is bypassed entirely, so the
+            # API must never be reachable from the network — refuse to boot on a
+            # non-loopback bind instead of exposing it silently.
+            if not settings.binds_to_loopback:
+                raise RuntimeError(
+                    "Refusing to start with OIHK_AUTH_ENABLED=false: the server must bind only to a "
+                    f"loopback address (127.0.0.1/::1), but OIHK_SERVER_BIND_HOST='{settings.server_bind_host}'. "
+                    "Set OIHK_SERVER_BIND_HOST to a loopback address or enable authentication "
+                    "(OIHK_AUTH_ENABLED=true) for non-loopback deployments."
+                )
             logger.warning("OIHK_AUTH_ENABLED=false — the single-user API must remain bound to a loopback address.")
         return
     if not settings.auth_enabled:
@@ -182,6 +194,25 @@ async def lifespan(app: FastAPI):
     await _ensure_loopback_system_user()
     await _bootstrap_admin()
     try:
+        from app.system_link.lifecycle import runtime_supervisor
+        from app.system_link.service import SystemLinkService
+
+        async with SessionLocal() as session:
+            survivors = await SystemLinkService(session).reconcile_startup_states()
+            # Verified re-adoption: a runtime that survived the Basic restart is
+            # only re-attached after package/executable re-verification and a
+            # signed mutually-authenticated handshake against its pinned URL.
+            for module in survivors:
+                try:
+                    await runtime_supervisor.reconcile_existing_runtime(session, module)
+                except Exception as exc:
+                    logger.warning(
+                        "System Link runtime reconciliation failed for %s: %s", module.module_id, exc
+                    )
+    except Exception as exc:
+        # Optional modules must never prevent Basic from starting.
+        logger.warning("System Link startup reconciliation was isolated: %s", type(exc).__name__)
+    try:
         yield
     finally:
         await engine.dispose()
@@ -213,6 +244,8 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(updates.router)
+app.include_router(system_link_router.pairing_router)
+app.include_router(system_link_module_api_router)
 
 # Authenticated routers
 _auth = [Depends(get_current_user)]
@@ -232,3 +265,4 @@ app.include_router(operations.router, dependencies=_auth)
 app.include_router(local_models.router, dependencies=_auth)
 app.include_router(assistant.router, dependencies=_auth)
 app.include_router(settings_router.router, dependencies=_auth)
+app.include_router(system_link_router.host_router, dependencies=_auth)

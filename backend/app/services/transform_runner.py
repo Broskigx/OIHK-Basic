@@ -9,13 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.services.analyzer import ExtractedEntity
 from app.services.repository import upsert_entity
-from app.transforms import registry
+from app.transforms.registry import registry
 
 
 class TransformError(Exception):
-    def __init__(self, message: str, not_found: bool = False) -> None:
+    def __init__(self, message: str, not_found: bool = False, handler_failure: bool = False) -> None:
         super().__init__(message)
         self.not_found = not_found
+        self.handler_failure = handler_failure
 
 
 @dataclass
@@ -50,7 +51,7 @@ async def run_transform_on_entity(
     try:
         result = await spec.handler(session, entity=entity)
     except Exception as exc:
-        raise TransformError(f"Transform '{spec.title}' failed: {exc}") from exc
+        raise TransformError(f"Transform '{spec.title}' failed: {exc}", handler_failure=True) from exc
 
     if result:
         for item in result:

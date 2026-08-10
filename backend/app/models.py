@@ -197,6 +197,103 @@ class AuditEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SystemLinkInstallation(Base):
+    """Public half of Basic's installation identity; private material never enters SQLite."""
+
+    __tablename__ = "system_link_installations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default="basic")
+    protocol_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    public_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    key_storage: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class SystemLinkModule(Base):
+    """Durable trust and runtime record for one separately installed module."""
+
+    __tablename__ = "system_link_modules"
+
+    module_id: Mapped[str] = mapped_column(String(120), primary_key=True)
+    product_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    module_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    protocol_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    manifest_schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    module_public_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    module_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest: Mapped[dict] = mapped_column(JSON, nullable=False)
+    manifest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest_signature: Mapped[str] = mapped_column(String(160), nullable=False)
+    publisher_key_id: Mapped[str] = mapped_column(String(80), nullable=False, default="")
+    publisher_channel: Mapped[str] = mapped_column(String(20), nullable=False, default="")
+    package_root: Mapped[str] = mapped_column(Text, nullable=False)
+    package_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    lifecycle: Mapped[dict] = mapped_column(JSON, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="LINKED_OFF", index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    startup_policy: Mapped[str] = mapped_column(String(32), nullable=False, default="manual")
+    last_error_code: Mapped[str] = mapped_column(String(80), default="")
+    last_error_detail: Mapped[str] = mapped_column(String(500), default="")
+    paired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_handshake_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_health_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    crash_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class SystemLinkCapabilityGrant(Base):
+    __tablename__ = "system_link_capability_grants"
+    __table_args__ = (UniqueConstraint("module_id", "capability", name="uq_system_link_module_capability"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    module_id: Mapped[str] = mapped_column(
+        ForeignKey("system_link_modules.module_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    capability: Mapped[str] = mapped_column(String(100), nullable=False)
+    manifest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SystemLinkPairingNonce(Base):
+    __tablename__ = "system_link_pairing_nonces"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    link_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    challenge: Mapped[str] = mapped_column(String(160), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pending_module: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class SystemLinkEvent(Base):
+    __tablename__ = "system_link_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    module_id: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    action: Mapped[str] = mapped_column(String(120), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class SystemLinkReplayNonce(Base):
+    __tablename__ = "system_link_replay_nonces"
+    __table_args__ = (UniqueConstraint("module_id", "nonce", name="uq_system_link_module_nonce"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    module_id: Mapped[str] = mapped_column(
+        ForeignKey("system_link_modules.module_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    nonce: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -479,6 +576,27 @@ class Machine(Base):
     transform_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
     input_type: Mapped[str] = mapped_column(String(40), default="")
     created_by: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TransformRun(Base):
+    """Immutable record of one transform execution against an entity."""
+
+    __tablename__ = "transform_runs"
+    __table_args__ = (Index("ix_transform_run_case_created", "case_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    case_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    entity_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    entity_label: Mapped[str] = mapped_column(String(500), default="")
+    entity_type: Mapped[str] = mapped_column(String(40), default="")
+    transform_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    transform_title: Mapped[str] = mapped_column(String(200), default="")
+    status: Mapped[str] = mapped_column(String(20), default="completed")
+    new_nodes: Mapped[int] = mapped_column(Integer, default=0)
+    new_edges: Mapped[int] = mapped_column(Integer, default=0)
+    detail: Mapped[str] = mapped_column(String(600), default="")
+    actor: Mapped[str] = mapped_column(String(120), default="analyst")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

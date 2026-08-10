@@ -23,6 +23,8 @@ Tauri selects an unused loopback port, starts the PyInstaller sidecar, exposes t
 
 The frontend asks Tauri for the live port before rendering, updates its REST/WebSocket base URL and waits for backend health. Closing the window terminates and reaps the managed child.
 
+System Link module lifecycle remains behind the FastAPI control plane. It can launch only a first-party catalog entry whose installer root, relative executable identity, package hash and executable hash match its signed manifest. It never passes a manifest string to a shell.
+
 ## Frontend
 
 - `frontend/src/App.tsx`: application composition and workspace orchestration.
@@ -33,6 +35,8 @@ The frontend asks Tauri for the live port before rendering, updates its REST/Web
 
 Hash routes preserve direct access to case workspaces. Operational controls call real APIs or navigate to a complete workflow; unavailable adapters are shown explicitly rather than simulated.
 
+Core routes remain a closed union. Verified module categories use `module:<module-id>:<category-id>` ids and are merged into navigation only while their runtime is authenticated `READY`/`BUSY` and `ui.navigation.register` is granted.
+
 ## Backend
 
 - `app/models.py` and `app/schemas.py`: explicit persistence and API contracts.
@@ -40,11 +44,14 @@ Hash routes preserve direct access to case workspaces. Operational controls call
 - `app/services/managed_evidence.py`: streaming, size limits, safe paths, atomic writes and SHA-256.
 - `app/services/local_models.py`: LM Studio, Ollama and OpenAI-compatible private endpoints.
 - `app/database.py`: SQLite initialization, FK enforcement, additive migration and backup.
+- `app/system_link/`: System Link v1 protocol, installation identity, pairing, registry, grants, package/runtime verification, lifecycle and module APIs.
 - `app/core/first_run.py`: atomic OS-managed secret generation.
 
 ## Persistence
 
 SQLite is the source of truth for cases, sources, entities, relationships, activity, evidence metadata, report documents/templates, OSINT queries, graph workspaces/snapshots, application settings, model configuration and Copilot conversations/messages.
+
+System Link stores public installation identity, paired module identities/manifests, grants, lifecycle state, pairing/replay nonces and redacted events in dedicated tables. Private installation keys never enter SQLite.
 
 Managed binary data is stored below the OS application-data directory. Evidence paths are resolved against that root before read, hash, preview or deletion. Graph camera and node positions are persisted per case.
 
