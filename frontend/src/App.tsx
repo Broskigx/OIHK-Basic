@@ -541,7 +541,7 @@ export function App({ currentUser }: { currentUser: User }) {
         break;
       default:
         content = isModuleRouteId(route.area)
-          ? <SystemLinkModuleView route={route.area} modules={systemLink.status?.modules ?? []} />
+          ? <SystemLinkModuleView route={route.area} modules={systemLink.status?.modules ?? []} activeCaseId={caseMgr.activeCaseId ?? undefined} />
           : null;
         break;
     }
@@ -555,6 +555,7 @@ export function App({ currentUser }: { currentUser: User }) {
         activeCase={activeCase}
         currentUser={currentUser}
         desktopStatus={desktopStatus}
+        storageStatus={storageStatus}
         moduleNavigation={systemLink.moduleNavigation}
         loading={loading}
         error={error}

@@ -24,7 +24,9 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CaseRead, DesktopStatus, User } from "../types";
+import { getLocalModelConfiguration } from "../api";
+import type { CaseRead, DesktopStatus, StorageStatus, User } from "../types";
+import { formatByteSize } from "../utils";
 import { PRODUCT_VERSION } from "../version";
 import {
   CORE_NAVIGATION,
@@ -59,6 +61,7 @@ export function PlatformShell({
   activeCase,
   currentUser,
   desktopStatus,
+  storageStatus,
   moduleNavigation,
   loading,
   error,
@@ -73,6 +76,7 @@ export function PlatformShell({
   activeCase?: CaseRead;
   currentUser: User;
   desktopStatus: DesktopStatus | null;
+  storageStatus: StorageStatus | null;
   moduleNavigation: readonly NavigationItem[];
   loading: boolean;
   error: string;
@@ -138,11 +142,23 @@ export function PlatformShell({
     return groups;
   }, [moduleNavigation]);
 
-  // Calculate storage percentage
-  const storagePercent = useMemo(() => {
-    if (!desktopStatus) return 0;
-    return 34; // placeholder until storage data is available
-  }, [desktopStatus]);
+  const storageLabel = storageStatus
+    ? `${formatByteSize(storageStatus.database_bytes + storageStatus.evidence_bytes)} · ${storageStatus.writable ? "Writable" : "Read-only"}`
+    : "Checking local storage…";
+
+  // Real local-model configuration status (falls back to "not configured").
+  const [modelStatus, setModelStatus] = useState("Checking…");
+  useEffect(() => {
+    let active = true;
+    getLocalModelConfiguration()
+      .then((configuration) => {
+        if (active) setModelStatus(configuration?.model ? configuration.model : "Not configured");
+      })
+      .catch(() => active && setModelStatus("Not configured"));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <main className="platform-shell">
@@ -191,10 +207,7 @@ export function PlatformShell({
             <HardDrive size={12} />
             <div className="platform-storage-info">
               <span className="platform-storage-label">Local Storage</span>
-              <div className="platform-storage-bar">
-                <i style={{ width: `${storagePercent}%` }} />
-              </div>
-              <span className="platform-storage-text">Local data saved</span>
+              <span className="platform-storage-text">{storageLabel}</span>
             </div>
           </div>
           <div className="platform-sidebar-bottom">
@@ -287,9 +300,9 @@ export function PlatformShell({
 
         <div className="platform-topbar-right">
           {/* Model status indicator */}
-          <div className="platform-model-status" title="Local model status">
+          <div className="platform-model-status" title={modelStatus}>
             <Cpu size={13} />
-            <span>Not configured</span>
+            <span>{modelStatus}</span>
           </div>
 
           {/* Local-First badge */}
@@ -346,4 +359,4 @@ export function PlatformShell({
       </section>
     </main>
   );
-}
+}
