@@ -1,102 +1,142 @@
 # OIHK Basic
 
-# ⚠️ SOLO PARA REVISAR EL CÓDIGO — APLICACIÓN NO ESTABLE ⚠️
+OIHK Basic es la edición comunitaria, **local-first** y monousuario de OIHK. Está orientada a organizar investigaciones autorizadas, fuentes, evidencia, relaciones y flujos asistidos por modelos locales sin depender obligatoriamente de una cuenta cloud, un servicio remoto o un modelo alojado por terceros.
 
-> **Este repositorio se publica únicamente para que otras personas puedan ver, estudiar y revisar el código fuente de OIHK Basic. La aplicación todavía no está lista para uso normal ni para producción. Puede contener muchos fallos, funciones incompletas, cambios incompatibles y problemas que causen pérdida o corrupción de datos.**
->
-> **Actualmente no existe una versión estable ni un instalador oficial recomendado para producción. La única distribución prevista es una candidata alpha experimental (0.1.1-alpha.2), publicada como prerelease de prueba para testers. Los artefactos de GitHub Actions y los binarios alpha no deben considerarse una distribución oficial ni una descarga recomendada para uso real.**
->
-> **No uses esta versión como única copia de evidencia, datos importantes o investigaciones reales.**
+> [!WARNING]
+> **OIHK Basic sigue en fase alpha experimental.** La versión canónica actual es `0.1.1-alpha.2`. No existe una versión estable recomendada para producción y no debe utilizarse como única copia de evidencia, investigaciones o datos importantes.
 
 ## Estado del proyecto
 
-OIHK Basic se encuentra en desarrollo activo. Se publica una **candidata alpha experimental (0.1.1-alpha.2)** como prerelease dirigida a testers, además de la vista previa del código fuente.
+- Versión actual: `0.1.1-alpha.2` (`alpha`).
+- No hay una release estable disponible.
+- Los prereleases alpha están dirigidos a testers y revisión técnica.
+- El empaquetado Windows x64/NSIS existe, pero todavía requiere validación de instalación, actualización y desinstalación en entornos limpios antes de considerarse release-ready.
+- Linux y macOS tienen soporte de build en desarrollo, pero no se declaran release-ready en esta etapa.
+- La compatibilidad entre commits, la integridad de datos y el funcionamiento completo todavía pueden cambiar.
 
-- No hay una versión estable disponible.
-- La única distribución prevista es la candidata alpha experimental; no hay instaladores oficiales.
-- GitHub Actions no es un canal público de distribución para usuarios finales.
-- La compilación manual está destinada únicamente a desarrollo, revisión técnica y pruebas controladas.
-- No se garantiza compatibilidad entre commits, integridad de datos, soporte ni funcionamiento completo.
-- Cualquier prueba debe realizarse con datos desechables y backups externos verificados.
+Para cualquier prueba utiliza datos desechables y conserva backups externos verificados.
 
-Publicar una candidata alpha experimental **no significa que la aplicación esté lanzada ni sea estable**. La alpha está identificada expresamente como tal y se espera que los testers informen de fallos.
+## Qué es OIHK Basic
 
-## Descripción
+OIHK Basic mantiene su propio backend, frontend, base SQLite, almacenamiento y configuración. El objetivo es ofrecer un entorno de investigación local con una superficie de ataque reducida y límites explícitos entre datos, modelos, fuentes externas y módulos especializados.
 
-OIHK Basic es la edición comunitaria, local-first y monousuario de OIHK. Su objetivo es organizar investigaciones autorizadas, fuentes, evidencia y relaciones utilizando los recursos del computador del usuario, sin requerir obligatoriamente una cuenta, una nube ni un modelo de IA remoto.
+El proyecto vive en `Broskigx/OIHK-Basic`. No importa código de otros productos OIHK durante la ejecución.
 
-Este proyecto vive en su repositorio propio: `Broskigx/OIHK-Basic`. No importa código ni datos de OIHK durante la ejecución y utiliza su propia base SQLite, almacenamiento y configuración.
+## Capacidades actuales
 
-## Funciones en desarrollo
+El código actual incluye, entre otras, estas áreas:
 
-El código incluye o contempla once áreas principales:
+- **Dashboard** con investigaciones recientes, recursos, estado local y accesos rápidos.
+- **Investigations / Cases** para crear, editar, archivar, restaurar, importar y exportar casos.
+- **Intelligence Graph** con canvas 2D, selección múltiple, layouts, filtros, pinning, undo/redo y snapshots persistentes.
+- **OSINT Workspace** con consultas explícitas, historial, cancelación y promoción controlada de resultados al grafo.
+- **Evidence management** con almacenamiento administrado, hashing, asociaciones, verificación y una base forense local acotada.
+- **Reports** con secciones, plantillas, historial y exportación Markdown, HTML seguro y JSON estructurado.
+- **Copilot** con conversaciones persistentes y uso opcional de modelos locales o privados configurados por el usuario.
+- **Local Models** con LM Studio como backend actualmente validado.
+- **Data Sources** para procedencia, citas y confiabilidad.
+- **Settings** para apariencia, almacenamiento, privacidad, rendimiento, backups y diagnósticos sanitizados.
+- **OIHK System Link v1** como host/control plane para productos OIHK instalados por separado.
 
-1. Dashboard operativo con investigaciones recientes, cola de revisión, recursos y accesos rápidos.
-2. Investigations para crear, editar, duplicar, archivar, restaurar, eliminar, importar y exportar casos.
-3. Intelligence Graph con Canvas 2D, selección múltiple, cámara, minimapa, layouts, filtros, pinning, undo/redo y snapshots persistentes.
-4. OSINT Workspace con consultas explícitas, historial SQLite, cancelación y promoción controlada al grafo.
-5. Evidence Lab con carga por streaming, almacenamiento administrado, SHA-256, verificación, asociaciones, manifiesto y análisis forense.
-6. Reports con constructor por secciones, plantillas, historial, Markdown, HTML seguro, JSON y aprobación de borradores.
-7. Copilot con conversaciones persistentes y uso de un modelo local configurado por el usuario.
-8. Local Models con compatibilidad actual para LM Studio mediante su endpoint local OpenAI-compatible. Otros backends continúan en desarrollo o validación.
-9. Data Sources para revisar procedencia, citas y confiabilidad.
-10. Settings con apariencia, almacenamiento, privacidad, rendimiento, backups y diagnósticos sanitizados.
-11. About con límites, privacidad, versión y alcance de la edición.
+Algunas capacidades continúan en desarrollo o validación. Consulta [Known Limitations](docs/KNOWN_LIMITATIONS.md) para los límites declarados actualmente.
 
-Varias de estas funciones pueden estar incompletas, desactivadas, sujetas a rediseño o contener fallos importantes.
+## Evidence Lab no está embebido en Basic
 
-## Principios del proyecto
+**OIHK Evidence Lab es un producto separado.** Mantiene su propia instalación, proceso, repositorio, UI, dominio y datos especializados.
 
-- SQLite y los archivos locales son la fuente de verdad.
-- La API debe escuchar únicamente en loopback cuando la autenticación está desactivada.
-- No hay telemetría obligatoria, sincronización cloud, licencias, Redis, GraphQL ni infraestructura enterprise.
-- Copilot e informes asistidos son opcionales y están diseñados para modelos locales o autoalojados.
-- Una consulta OSINT no debe modificar el grafo hasta que el usuario promueva explícitamente el resultado.
-- La evidencia no debe ejecutarse; se copia a almacenamiento administrado, se limita por tamaño y se verifica por hash.
-- El sistema no debe fabricar resultados, fuentes ni métricas.
+OIHK Basic actúa como **host/control plane** mediante OIHK System Link v1. No copia el código de Evidence Lab dentro de Basic ni ejecuta código forense recibido arbitrariamente desde un módulo.
 
-## OIHK System Link (fundación v1)
+La primera integración first-party aprobada es `oihk.evidence-lab`.
 
-OIHK Basic incluye el host/control plane inicial de OIHK System Link para enlazar productos OIHK instalados por separado, comenzando por OIHK Evidence Lab. El enlace usa identidades Ed25519, pairing local con Link Key temporal y single-use, grants de capacidades, manifests/paquetes hasheados, estados de lifecycle explícitos y navegación `module:*` activada únicamente tras autenticación y health `READY`.
+### Flujo de System Link v1
 
-El lifecycle no acepta comandos shell ni scripts arbitrarios: solo puede ejecutar el binario relativo registrado bajo un root de instalación, después de verificar su SHA-256. Basic continúa funcionando sin Evidence Lab. El contrato, las garantías y las limitaciones actuales se documentan en [docs/SYSTEM_LINK_V1.md](docs/SYSTEM_LINK_V1.md).
+1. Basic crea una identidad local Ed25519 y un Link Key temporal de un solo uso.
+2. El módulo presenta su identidad, manifest, prueba criptográfica y paquete.
+3. Basic verifica compatibilidad, firmas, publisher trust, hashes y límites del paquete.
+4. El usuario aprueba únicamente las capacidades solicitadas que desea conceder.
+5. Power On verifica nuevamente paquete y ejecutable antes de iniciar el binario registrado.
+6. El módulo solo alcanza `READY` después de autenticación mutua firmada y un health check válido.
+7. Las rutas y operaciones del módulo quedan limitadas por capabilities y por el estado actual del lifecycle.
 
-## Compilar y ejecutar — solo desarrollo
+### Límites de seguridad de System Link
 
-No existe un instalador estable recomendado. La candidata alpha (prerelease) y la compilación manual están destinadas únicamente a testers y revisión técnica bajo su propia responsabilidad.
+- Identidades Ed25519 para host, módulo y publisher.
+- Link Keys de 128 bits, cinco minutos de vigencia y consumo atómico single-use.
+- Publisher trust first-party con trust anchors de release embebidos.
+- Publishers de desarrollo desactivados por defecto.
+- Verificación SHA-256 del paquete y del ejecutable antes de iniciar el runtime.
+- Lifecycle `managed-process` sin shell, scripts ni comandos arbitrarios definidos por el manifest.
+- Comunicación posterior mediante requests firmadas con nonce y timestamp.
+- Capability gating para APIs del módulo.
+- UI del módulo servida desde un paquete verificado dentro de un iframe sandboxed con origen opaco y bridge `postMessage` limitado.
+- Reconciliación después de reiniciar Basic mediante identidad, hashes, protocolo, handshake y health firmados; un puerto abierto o PID por sí solo no es suficiente.
+- Tres fallos consecutivos del runtime provocan cuarentena; un `READY` sano reinicia el contador de fallos.
 
-Requisitos de desarrollo:
+El contrato completo está documentado en [docs/SYSTEM_LINK_V1.md](docs/SYSTEM_LINK_V1.md).
 
-- Python 3.11
-- Node.js 22
-- Rust estable y Tauri 2 para la aplicación de escritorio
+## Arquitectura local-first
+
+Principios actuales del proyecto:
+
+- SQLite y los archivos locales son la fuente de verdad de Basic.
+- Cuando la autenticación está desactivada, la API debe permanecer en loopback.
+- No hay telemetría obligatoria, sincronización cloud, billing, licencias, Redis, GraphQL ni infraestructura distribuida dentro de Basic.
+- Copilot y los borradores asistidos son opcionales y dependen de un endpoint configurado por el usuario.
+- Las consultas OSINT no deben modificar automáticamente el grafo: los resultados se promueven de forma explícita.
+- La evidencia administrada no se ejecuta como parte de la ingestión normal.
+- El sistema no debe fabricar fuentes, hallazgos ni métricas cuando una integración no existe o falla.
+
+Algunas fuentes externas requieren red y, según el proveedor, una clave o endpoint aportado por el usuario. DNS, RDAP/WHOIS y certificate transparency son los lookups de red integrados actualmente; otras categorías de inteligencia pueden requerir adaptadores configurados por el usuario.
+
+## Desarrollo local
+
+> Estas instrucciones son para desarrollo, revisión técnica y pruebas controladas. No convierten el build resultante en una versión estable.
+
+### Requisitos
+
+- Python 3.11 o superior.
+- Node.js 22 (`>=22 <23`).
+- Rust estable y Cargo.
+- Tauri 2 y las dependencias nativas de la plataforma.
+
+Consulta [docs/BUILDING.md](docs/BUILDING.md) para los requisitos completos de Windows, Linux y macOS.
+
+### Backend y frontend
 
 ```powershell
 # Backend
 cd backend
 python -m pip install -e ".[dev]"
 python run.py
+```
 
-# Frontend, en otra terminal
+En otra terminal:
+
+```powershell
 cd frontend
 npm ci
 npm run dev
 ```
 
-La interfaz de desarrollo queda normalmente en `http://127.0.0.1:5173` y la API en `http://127.0.0.1:8000`.
+Por defecto, en desarrollo:
 
-La compilación completa por plataforma se documenta en [docs/BUILDING.md](docs/BUILDING.md). Estas instrucciones no convierten el resultado en una versión estable ni oficialmente soportada.
+- Frontend: `http://127.0.0.1:5173`
+- API: `http://127.0.0.1:8000`
 
 ## Calidad y pruebas
+
+La CI cubre backend en Windows y Linux, frontend, Rust/Tauri y Gitleaks. Para una revisión local típica:
 
 ```powershell
 python -m ruff check backend/app backend/run.py scripts tests
 python -m pytest -q
 
 cd frontend
+npm ci
 npm run lint
 npm run test -- --run
 npm run build
+npm audit --audit-level=high
 
 cd ../src-tauri
 cargo fmt -- --check
@@ -104,66 +144,91 @@ cargo check --locked
 cargo test --locked --all-targets
 ```
 
-Que las pruebas automáticas terminen correctamente no garantiza que la aplicación esté lista para producción, que todas las rutas hayan sido verificadas ni que no existan fallos de seguridad o pérdida de datos.
+System Link incluye además un smoke E2E real entre Basic y un clon local de OIHK Evidence Lab:
 
-## Privacidad y modelos locales
+```powershell
+python scripts/smoke_system_link_e2e.py --evidence-lab C:\path\to\OiHK-evidence-lab
+```
 
-Casos, grafo, evidencia administrada, reportes, conversaciones, configuración y backups están diseñados para almacenarse localmente. OIHK Basic no pretende depender obligatoriamente de servicios cloud.
+El smoke construye el runtime y la UI de Evidence Lab, genera un paquete development firmado y valida el flujo de pairing, aprobación, Power On, autenticación mutua, health `READY`, acceso capability-gated, Power Off, restart, rechazo de replay y rechazo de tampering de paquete/ejecutable.
 
-### Compatibilidad actual del Copilot
+Que los tests terminen en verde reduce regresiones conocidas, pero no implica que la aplicación sea production-ready ni que todas las rutas posibles hayan sido verificadas.
 
-Por ahora, el backend local compatible y recomendado es **LM Studio**, utilizando su servidor OpenAI-compatible en:
+## Modelos locales y Copilot
+
+OIHK Basic no incluye pesos de modelos ni descarga modelos automáticamente.
+
+El backend actualmente validado para uso local es **LM Studio** mediante su servidor OpenAI-compatible, normalmente en:
 
 ```text
 http://127.0.0.1:1234
 ```
 
-El usuario debe cargar y mantener el modelo dentro de LM Studio. OIHK Basic no incluye pesos de modelos ni descarga modelos automáticamente. La compatibilidad con Ollama y otros endpoints locales o privados puede existir parcialmente en el código, pero continúa en desarrollo y no se garantiza en esta vista previa.
+El usuario debe cargar y administrar el modelo dentro de LM Studio. Existen rutas de compatibilidad para Ollama y otros endpoints OpenAI-compatible/locales o privados, pero no se garantizan en esta alpha.
 
-Para obtener mejores resultados en tareas de investigación, planificación y uso de herramientas, se recomienda utilizar, cuando el hardware lo permita:
+Las respuestas de modelos son contenido no verificado. Un modelo no debe aprobar, modificar ni convertir automáticamente información en evidencia confiable sin revisión humana.
 
-- modelos locales de tipo **orchestrator**, preparados para coordinar instrucciones, herramientas y flujos de trabajo complejos;
-- variantes **abliterated**, cuando el usuario necesite reducir rechazos injustificados en tareas legítimas y autorizadas;
-- modelos con buen seguimiento de instrucciones, contexto amplio y capacidad de razonamiento.
+## Evidencia, reportes y backups
 
-Los modelos abliterated no vuelven correctas, legales ni seguras todas sus respuestas. Pueden producir contenido erróneo, inseguro o excesivamente permisivo. Toda salida del Copilot debe ser revisada por una persona antes de utilizarse, incorporarse a un informe o aplicarse sobre una investigación real.
+- La vista previa inline de evidencia se restringe a tipos raster considerados seguros; otros archivos se manejan como attachments.
+- Los reportes exportan Markdown, HTML seguro y JSON estructurado. PDF y DOCX no están incluidos actualmente.
+- El cambio de directorio de almacenamiento requiere backup y restart; la relocalización en vivo de la base está bloqueada deliberadamente.
+- Backups, migraciones y recuperación siguen siendo mecanismos en evolución y no constituyen una garantía absoluta de integridad.
 
-Algunas fuentes externas, como DNS, RDAP/WHOIS, transparencia de certificados, Brave o SearXNG, pueden requerir conexión de red, una clave o un endpoint aportado por el usuario. El repositorio no debe contener credenciales privadas ni claves de proveedores.
-
-## Backups y datos
-
-Las migraciones, backups automáticos y mecanismos de recuperación continúan en desarrollo. No deben considerarse una garantía de integridad.
-
-Para cualquier prueba:
-
-- utiliza datos desechables;
-- conserva backups externos;
-- verifica que los backups puedan restaurarse;
-- no uses OIHK Basic como única copia de evidencia o información importante.
+Para pruebas importantes conserva siempre una copia externa y verifica que pueda restaurarse.
 
 ## Distribución y actualizaciones
 
-Los candidatos alpha (0.1.1-alpha.x) se publican como prereleases dentro de **GitHub Releases** con notas de versión y firma del updater, pero **ese canal no está habilitado para usuarios finales** y puede cambiar o retirarse.
+Los builds `0.1.1-alpha.x` son **prereleases experimentales**.
 
-No descargues ni redistribuyas binarios como si fueran una versión estable u oficial.
+El empaquetado Windows NSIS x64 y el updater firmado existen en el código, pero todavía hay requisitos operacionales antes de una distribución estable: validación en una VM limpia, firma/reputación del ejecutable cuando corresponda y un canal HTTPS apropiado para el updater.
 
-La arquitectura prevista se describe en [docs/UPDATES.md](docs/UPDATES.md) y el proceso futuro de publicación en [docs/RELEASING.md](docs/RELEASING.md).
+GitHub Actions no debe interpretarse como un canal estable para usuarios finales y los artefactos de CI no deben redistribuirse como releases de producción.
+
+Consulta:
+
+- [docs/BUILDING.md](docs/BUILDING.md)
+- [docs/UPDATES.md](docs/UPDATES.md)
+- [docs/RELEASING.md](docs/RELEASING.md)
 
 ## Autenticación opcional
 
-Basic está diseñado por defecto como una aplicación monousuario sin login, manteniendo el backend en loopback. Para despliegues personalizados se contempla `OIHK_AUTH_ENABLED=true` junto con protecciones JWT y CSRF. Este modo también debe considerarse experimental mientras no exista una versión estable.
+Basic está pensado por defecto como aplicación monousuario local. Con `OIHK_AUTH_ENABLED=false`, el backend se niega a arrancar en un bind no-loopback.
+
+Para despliegues personalizados existe `OIHK_AUTH_ENABLED=true` con autenticación y protecciones asociadas. Este modo también debe considerarse experimental mientras no exista una versión estable.
 
 ## Diferencia frente a OIHK normal
 
-OIHK Basic busca conservar un flujo profesional local de investigación y un canvas avanzado, pero no incluye colaboración multiusuario, administración de organizaciones, conectores privados, sincronización cloud, facturación, licencias ni infraestructura distribuida.
+OIHK Basic conserva un flujo local de investigación, evidencia, grafo, modelos y módulos first-party, pero deliberadamente no incluye la infraestructura de una edición multiusuario/enterprise.
 
-OIHK normal y OIHK Basic se desarrollan y publican en repositorios separados.
+Entre los límites de edición actuales están:
+
+- teams y organizations;
+- enterprise SSO;
+- cloud synchronization;
+- private connector administration;
+- billing y licensing;
+- Redis y queues;
+- GraphQL;
+- infraestructura distribuida.
+
+OIHK normal y OIHK Basic se desarrollan y publican como productos separados.
 
 ## Uso autorizado
 
-OIHK Basic está destinado al trabajo con fuentes públicas o datos incorporados legalmente por el usuario. No autoriza acceso a sistemas, cuentas o datos privados de terceros.
+OIHK Basic está destinado al trabajo con fuentes públicas, sistemas propios o datos obtenidos e incorporados legalmente por el usuario.
 
-No incluye como objetivo bypass de CAPTCHA, evasión, acceso autenticado ajeno, enumeración masiva, identificación facial ni recolección de redes no públicas. Las capacidades incompletas y límites conocidos se documentan en [docs/KNOWN_LIMITATIONS.md](docs/KNOWN_LIMITATIONS.md).
+El software no concede autorización para acceder a sistemas, cuentas, redes o información privada de terceros. Las pruebas deben respetar el alcance y permiso aplicable a cada investigación.
+
+## Documentación relevante
+
+- [System Link v1](docs/SYSTEM_LINK_V1.md)
+- [Known Limitations](docs/KNOWN_LIMITATIONS.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Building](docs/BUILDING.md)
+- [Updates](docs/UPDATES.md)
+- [Releasing](docs/RELEASING.md)
+- [Threat Model](THREAT_MODEL.md)
 
 ## Licencia
 
