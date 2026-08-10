@@ -311,7 +311,8 @@ class RuntimeSupervisor:
         * a signed mutually-authenticated handshake + health against the exact
           pinned base URL (never a port scan).
 
-        Any failure is fail-closed and leaves the module in ERROR.
+        Any failure is fail-closed: the module is left in ERROR (or
+        QUARANTINED once the consecutive-failure limit is reached).
         """
         service = self._service(session)
         state = ModuleState(module.state)
@@ -360,7 +361,9 @@ class RuntimeSupervisor:
                     error_detail="Repeated reconciliation failures require explicit user recovery.",
                     event="module_runtime_quarantined",
                 )
-            return ModuleState.ERROR
+            # The returned value must always represent the final persisted state
+            # (ERROR, or QUARANTINED once the consecutive-failure limit is hit).
+            return ModuleState(module.state)
         # Fully verified: the surviving runtime owns the pinned module identity.
         module.crash_count = 0
         module.last_handshake_at = datetime.now(UTC)

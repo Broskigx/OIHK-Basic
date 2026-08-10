@@ -10,12 +10,6 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_asyncio
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-from pydantic import ValidationError
-from sqlalchemy import event, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from app import models
 from app.database import Base
 from app.database_migrations import run_migrations
@@ -39,6 +33,11 @@ from app.system_link.protocol import (
 from app.system_link.security import InstallationIdentityStore, b64encode
 from app.system_link.service import SystemLinkError, SystemLinkService, pairing_proof_payload
 from app.version import PRODUCT_VERSION
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from pydantic import ValidationError
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 @pytest_asyncio.fixture
@@ -978,9 +977,8 @@ async def test_crash_counter_tracks_consecutive_failures_only(
 
 @pytest.mark.asyncio
 async def test_module_ui_surface_serves_only_verified_package_files(tmp_path: Path, system_link_session) -> None:
-    from fastapi import HTTPException as FastAPIHTTPException
-
     from app.system_link.router import module_ui_file
+    from fastapi import HTTPException as FastAPIHTTPException
 
     manifest, module_key, package_root = _module_fixture(tmp_path)
     module = models.SystemLinkModule(
@@ -1104,6 +1102,109 @@ async def test_reconcile_existing_runtime_requires_full_verification(
     result = await supervisor.reconcile_existing_runtime(system_link_session, module)
     assert result == ModuleState.ERROR
     assert module.crash_count == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_existing_runtime_returns_the_final_persisted_state(
+    tmp_path: Path, system_link_session, monkeypatch
+) -> None:
+    """Repeated reconciliation failures must report the state that was actually
+    persisted: ERROR per failure and QUARANTINED on the third consecutive one.
+    A healthy recovery afterwards clears the consecutive-failure streak."""
+    module, _ = await _linked_off_module(tmp_path)
+    module.state = ModuleState.READY.value
+    system_link_session.add(module)
+    await system_link_session.commit()
+
+    async def rejecting_handshake(_client, _timeout) -> None:
+        raise RuntimeAuthenticationError("runtime does not own the pinned module identity")
+
+    async def healthy_handshake(_client, _timeout) -> None:
+        return None
+
+    async def healthy_health(_client, _timeout) -> str:
+        return "READY"
+
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "handshake", rejecting_handshake)
+    supervisor = RuntimeSupervisor(InstallationIdentityStore(tmp_path / "final-state-identity.key"))
+
+    # First reconciliation failure -> ERROR, returned and persisted consistently.
+    result = await supervisor.reconcile_existing_runtime(system_link_session, module)
+    assert result == ModuleState.ERROR
+    assert ModuleState(module.state) == ModuleState.ERROR
+    assert module.crash_count == 1
+
+    # Basic re-attempts reconciliation only against survivors (READY/BUSY), so
+    # each restart puts the module back in that state before the next attempt.
+    module.state = ModuleState.READY.value
+    await system_link_session.commit()
+
+    # Second failure -> still ERROR, never quarantined.
+    result = await supervisor.reconcile_existing_runtime(system_link_session, module)
+    assert result == ModuleState.ERROR
+    assert ModuleState(module.state) == ModuleState.ERROR
+    assert module.crash_count == 2
+
+    module.state = ModuleState.READY.value
+    await system_link_session.commit()
+
+    # Third consecutive failure -> QUARANTINED; the returned value must match
+    # the persisted state (regression for the ERROR-vs-QUARANTINED gap).
+    result = await supervisor.reconcile_existing_runtime(system_link_session, module)
+    assert result == ModuleState.QUARANTINED
+    assert ModuleState(module.state) == ModuleState.QUARANTINED
+    assert module.crash_count == 3
+    assert module.last_error_code == "runtime_crash_loop"
+
+    # A later healthy reconciliation clears the consecutive-failure streak.
+    module.state = ModuleState.READY.value
+    await system_link_session.commit()
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "handshake", healthy_handshake)
+    monkeypatch.setattr(AuthenticatedRuntimeClient, "health", healthy_health)
+    result = await supervisor.reconcile_existing_runtime(system_link_session, module)
+    assert result == ModuleState.READY
+    assert ModuleState(module.state) == ModuleState.READY
+    assert module.crash_count == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_existing_runtime_non_consecutive_failures_do_not_quarantine(
+    tmp_path: Path, system_link_session, monkeypatch
+) -> None:
+    """failure -> READY -> failure -> READY -> failure must NOT quarantine:
+    only consecutive failures accumulate toward the crash-loop limit."""
+    module, _ = await _linked_off_module(tmp_path)
+    module.state = ModuleState.READY.value
+    system_link_session.add(module)
+    await system_link_session.commit()
+
+    async def rejecting_handshake(_client, _timeout) -> None:
+        raise RuntimeAuthenticationError("runtime does not own the pinned module identity")
+
+    async def healthy_handshake(_client, _timeout) -> None:
+        return None
+
+    async def healthy_health(_client, _timeout) -> str:
+        return "READY"
+
+    supervisor = RuntimeSupervisor(InstallationIdentityStore(tmp_path / "non-consecutive-identity.key"))
+    for failing in (True, False, True, False, True):
+        module.state = ModuleState.READY.value
+        await system_link_session.commit()
+        monkeypatch.setattr(
+            AuthenticatedRuntimeClient,
+            "handshake",
+            rejecting_handshake if failing else healthy_handshake,
+        )
+        if not failing:
+            monkeypatch.setattr(AuthenticatedRuntimeClient, "health", healthy_health)
+        result = await supervisor.reconcile_existing_runtime(system_link_session, module)
+        expected = ModuleState.ERROR if failing else ModuleState.READY
+        assert result == expected
+        assert ModuleState(module.state) == expected
+        # Every healthy reconciliation resets the streak back to zero.
+        assert module.crash_count == (1 if failing else 0)
+    assert ModuleState(module.state) != ModuleState.QUARANTINED
 
 
 @pytest.mark.asyncio
