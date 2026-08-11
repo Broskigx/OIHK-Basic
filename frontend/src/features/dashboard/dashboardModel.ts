@@ -1,80 +1,52 @@
-import type { CaseMonitor, GraphRead, SourceRead } from "../../types";
+import type { DashboardSummary } from "../../types";
 
-export type DashboardMetricTone = "neutral" | "success" | "warning" | "danger";
-
-export interface DashboardMetric {
-  key: string;
+export type DashboardMetric = {
+  key: "investigations" | "evidence" | "tasks" | "modules";
   label: string;
-  value: string | number;
-  tone?: DashboardMetricTone;
-  description?: string;
-}
+  value: number | string;
+  detail: string;
+  tone: "positive" | "neutral" | "warning";
+};
 
-export interface DashboardMetricInput {
-  investigations: number;
-  graph: GraphRead;
-  sources: SourceRead[];
-  monitor: CaseMonitor | null;
-}
-
-export function buildDashboardMetrics({
-  investigations,
-  graph,
-  sources,
-  monitor,
-}: DashboardMetricInput): DashboardMetric[] {
-  const entityCount = graph?.nodes?.length || monitor?.entity_count || 0;
-  const relationshipCount = graph?.edges?.length || monitor?.relationship_count || 0;
-  const sourceCount = sources?.length || monitor?.source_count || 0;
-  const sealedCount = monitor?.sealed_count ?? 0;
-  const custodyIntact = monitor?.custody_intact ?? null;
-
+export function buildDashboardMetrics(summary: DashboardSummary): DashboardMetric[] {
+  const { counts } = summary;
   return [
     {
       key: "investigations",
-      label: "Investigations",
-      value: investigations,
-      tone: "neutral",
-      description: "Total local investigations",
+      label: "Active investigations",
+      value: counts.active_investigations,
+      detail: "Authorized active records",
+      tone: counts.active_investigations > 0 ? "positive" : "neutral",
     },
     {
-      key: "entities",
-      label: "Entities",
-      value: entityCount,
-      tone: entityCount > 0 ? "success" : "neutral",
-      description: "Verified entities in active case",
+      key: "evidence",
+      label: "Registered evidence",
+      value: counts.registered_evidence,
+      detail: "Managed evidence files",
+      tone: counts.registered_evidence > 0 ? "positive" : "neutral",
     },
     {
-      key: "relationships",
-      label: "Relationships",
-      value: relationshipCount,
-      tone: relationshipCount > 0 ? "success" : "neutral",
-      description: "Verified relationships in active case",
+      key: "tasks",
+      label: "Pending tasks",
+      value: counts.tasks_available ? (counts.pending_tasks ?? 0) : "—",
+      detail: counts.tasks_available ? "Open task records" : "Task registry not available",
+      tone: counts.tasks_available && (counts.pending_tasks ?? 0) > 0 ? "warning" : "neutral",
     },
     {
-      key: "evidence_sources",
-      label: "Evidence sources",
-      value: sourceCount,
-      tone: sourceCount > 0 ? "success" : "neutral",
-      description: "Sources and evidence items attached",
-    },
-    {
-      key: "sealed_items",
-      label: "Sealed items",
-      value: sealedCount,
-      tone: sealedCount > 0 ? "success" : "neutral",
-      description: "Cryptographically sealed evidence",
-    },
-    {
-      key: "custody_status",
-      label: "Custody Status",
-      value: custodyIntact === null ? "Unavailable" : custodyIntact ? "Intact" : "Review required",
-      tone: custodyIntact === null ? "neutral" : custodyIntact ? "success" : "warning",
-      description: "Evidence custody chain status",
+      key: "modules",
+      label: "Connected modules",
+      value: counts.registered_modules > 0
+        ? `${counts.connected_modules} / ${counts.registered_modules}`
+        : 0,
+      detail: counts.registered_modules > 0 ? "READY or BUSY" : "No linked modules",
+      tone: counts.connected_modules > 0 ? "positive" : "neutral",
     },
   ];
 }
 
 export function dashboardActionLabel(action: string): string {
-  return action.replace(/[._-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return action
+    .replace(/_/g, " ")
+    .replace(/\./g, " ")
+    .replace(/\b\w/g, (letter: string) => letter.toUpperCase());
 }

@@ -1,10 +1,13 @@
-import { Camera, ChevronDown, Download, Focus, Globe, Layers, Link2, Loader2, Maximize2, Minus, Network, Pencil, Pin, PinOff, Play, Plus, Redo2, Save, Search, Table2, Trash2, Undo2, Upload, Wand2, X, Zap } from "lucide-react";
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { createGraphSnapshot, createMachine, deleteGraphRelationship, deleteGraphSnapshot, fetchGraphExport, getGraphWorkspace, listGraphSnapshots, listMachines, listTransforms, restoreGraphSnapshot, saveGraphWorkspace, updateGraphRelationship } from "../api";
+import { Camera, ChevronDown, ChevronUp, Download, Focus, Globe, Layers, Link2, Loader2, Maximize2, Minus, Network, Pencil, Pin, PinOff, Play, Plus, Redo2, Save, Search, Table2, Trash2, Undo2, Upload, Wand2, X, Zap } from "lucide-react";
+import { ChangeEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createGraphSnapshot, createMachine, deleteGraphEntity, deleteGraphRelationship, deleteGraphSnapshot, fetchGraphExport, getGraphWorkspace, listGraphSnapshots, listMachines, listTransforms, restoreGraphSnapshot, saveGraphWorkspace, updateGraphRelationship } from "../api";
 import { GraphModeTabs } from "../features/graph/GraphModeTabs";
 import { GRAPH_VIEW_OPTIONS, type GraphViewMode } from "../features/graph/graphModes";
 import type { GraphAnalytics, GraphNode, GraphRead, GraphSnapshot, GraphWorkspace, MachineSpec, TransformSpec } from "../types";
 import { score } from "../utils";
+import { searchGraphNodes } from "../features/graph/graphSearch";
+import { filterGraphForView, type GraphSourceFilter } from "../features/graph/graphFilters";
+import { resolveGraphShortcut } from "../features/graph/graphKeyboard";
 import { GraphView, type GraphViewHandle } from "./GraphView";
 import { getNodeConfig } from "./graphTypes";
 
@@ -42,7 +45,7 @@ export function GraphPanel({
   graphAnalytics: GraphAnalytics | null;
   expanding: boolean;
   caseId: string;
-  onSelectNode: (node: GraphNode) => void;
+  onSelectNode: (node: GraphNode | null) => void;
   onOpenNode: (node: GraphNode) => void;
   onExpandNode: (node: GraphNode) => void;
   onEnrichNode: (node: GraphNode) => void;
@@ -57,6 +60,7 @@ export function GraphPanel({
   const [graphMode, setGraphMode] = useState<"graph" | "table">("graph");
   const [graphView, setGraphView] = useState<GraphViewMode>("network");
   const [typeFilter, setTypeFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState<GraphSourceFilter>("all");
   const [popover, setPopover] = useState<Popover | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [menuTransforms, setMenuTransforms] = useState<TransformSpec[]>([]);
@@ -67,24 +71,30 @@ export function GraphPanel({
   const [snapshots, setSnapshots] = useState<GraphSnapshot[]>([]);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchCursor, setSearchCursor] = useState(0);
   const [pinVersion, setPinVersion] = useState(0);
   const stageRef = useRef<HTMLDivElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const graphViewRef = useRef<GraphViewHandle>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const saveWorkspaceTimer = useRef<number | null>(null);
+  const workspaceLoadedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    workspaceLoadedRef.current = false;
     setWorkspace(null);
     setSnapshots([]);
     Promise.all([getGraphWorkspace(caseId), listGraphSnapshots(caseId)])
       .then(([saved, savedSnapshots]) => {
         if (cancelled) return;
         if (saveWorkspaceTimer.current !== null) window.clearTimeout(saveWorkspaceTimer.current);
+        workspaceLoadedRef.current = true;
         setWorkspace(saved);
         setSnapshots(savedSnapshots);
         setGraphView(saved.view_mode);
         setTypeFilter(saved.filters.type ?? "all");
+        setSourceFilter(saved.filters.source === "with-sources" || saved.filters.source === "without-sources" ? saved.filters.source : "all");
       })
       .catch((cause) => { if (!cancelled) onError(cause instanceof Error ? cause.message : "Could not load the saved graph workspace"); });
     return () => {
@@ -94,22 +104,23 @@ export function GraphPanel({
   }, [caseId, onError]);
 
   useEffect(() => {
+    if (!workspaceLoadedRef.current) return;
     const current = graphViewRef.current?.getWorkspace();
     if (!current) return;
-    const next = { ...current, view_mode: graphView, filters: { type: typeFilter } };
+    const next = { ...current, view_mode: graphView, filters: { type: typeFilter, source: sourceFilter } };
     setWorkspace(next);
     if (saveWorkspaceTimer.current !== null) window.clearTimeout(saveWorkspaceTimer.current);
     saveWorkspaceTimer.current = window.setTimeout(() => {
-      void saveGraphWorkspace(caseId, next).catch(() => undefined);
+      void saveGraphWorkspace(caseId, next).catch((cause) => onError(cause instanceof Error ? cause.message : "Could not save graph filters"));
     }, 500);
-  }, [caseId, graphView, typeFilter]);
+  }, [caseId, graphView, onError, sourceFilter, typeFilter]);
 
   function persistWorkspace(state: { positions: GraphWorkspace["positions"]; camera: GraphWorkspace["camera"] }) {
     const next: GraphWorkspace = {
       positions: state.positions,
       camera: state.camera,
       view_mode: graphView,
-      filters: { type: typeFilter },
+      filters: { type: typeFilter, source: sourceFilter },
     };
     setWorkspace(next);
     if (saveWorkspaceTimer.current !== null) window.clearTimeout(saveWorkspaceTimer.current);
@@ -122,7 +133,7 @@ export function GraphPanel({
     const name = window.prompt("Snapshot name", `Graph ${new Date().toLocaleString()}`)?.trim();
     if (!name) return;
     const current = graphViewRef.current?.getWorkspace();
-    if (current) await saveGraphWorkspace(caseId, { ...current, view_mode: graphView, filters: { type: typeFilter } });
+    if (current) await saveGraphWorkspace(caseId, { ...current, view_mode: graphView, filters: { type: typeFilter, source: sourceFilter } });
     const snapshot = await createGraphSnapshot(caseId, name);
     setSnapshots((items) => [snapshot, ...items]);
     setShowSnapshots(true);
@@ -133,6 +144,7 @@ export function GraphPanel({
     setWorkspace(saved);
     setGraphView(saved.view_mode);
     setTypeFilter(saved.filters.type ?? "all");
+    setSourceFilter(saved.filters.source === "with-sources" || saved.filters.source === "without-sources" ? saved.filters.source : "all");
     graphViewRef.current?.applyWorkspace({ positions: saved.positions, camera: saved.camera });
   }
 
@@ -226,15 +238,14 @@ export function GraphPanel({
     const discovered = Array.from(new Set(graph.nodes.map((node) => node.type))).sort();
     return ["all", ...discovered.filter(Boolean)];
   }, [graph.nodes]);
-  const filteredGraph = useMemo(() => {
-    if (typeFilter === "all") return graph;
-    const nodes = graph.nodes.filter((node) => node.type === typeFilter);
-    const visibleIds = new Set(nodes.map((node) => node.id));
-    return {
-      nodes,
-      edges: graph.edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)),
-    };
-  }, [graph, typeFilter]);
+  const sourceFilteredGraph = useMemo(
+    () => filterGraphForView(graph, "all", sourceFilter),
+    [graph, sourceFilter],
+  );
+  const filteredGraph = useMemo(
+    () => filterGraphForView(graph, typeFilter, sourceFilter),
+    [graph, sourceFilter, typeFilter],
+  );
   const degree = useMemo(() => {
     const map = new Map<string, number>();
     graph.edges.forEach((edge) => {
@@ -246,12 +257,12 @@ export function GraphPanel({
   const topHubs = graphAnalytics?.top_hubs.slice(0, 4) ?? [];
   const activeGraphView = GRAPH_VIEW_OPTIONS.find((option) => option.id === graphView) ?? GRAPH_VIEW_OPTIONS[0];
   const searchResults = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return [];
-    return graph.nodes.filter((node) => `${node.label} ${node.type}`.toLowerCase().includes(query)).slice(0, 8);
-  }, [graph.nodes, searchQuery]);
+    return searchGraphNodes(filteredGraph.nodes, searchQuery).slice(0, 50);
+  }, [filteredGraph.nodes, searchQuery]);
   const engineWorkspace = useMemo(() => workspace ? { positions: workspace.positions, camera: workspace.camera } : null, [workspace]);
   void pinVersion;
+
+  useEffect(() => setSearchCursor(0), [searchQuery]);
 
   // Close overlays if their node vanished (e.g. after a refresh/merge).
   useEffect(() => {
@@ -313,6 +324,94 @@ export function GraphPanel({
     setContextMenu(null);
   }
 
+  function focusSearchResult(index: number) {
+    if (searchResults.length === 0) return;
+    const nextIndex = (index + searchResults.length) % searchResults.length;
+    const node = searchResults[nextIndex];
+    setSearchCursor(nextIndex);
+    graphViewRef.current?.focusNode(node.id);
+    onSelectNode(node);
+  }
+
+  async function removeSelectedEntities() {
+    const selectedIds = graphViewRef.current?.getSelectedNodeIds() ?? [];
+    const deletable = selectedIds.filter((id) => !id.startsWith("prepared-") && graph.nodes.some((node) => node.id === id));
+    if (deletable.length === 0) return;
+    const label = deletable.length === 1
+      ? `Delete “${graph.nodes.find((node) => node.id === deletable[0])?.label ?? "selected entity"}” and its relationships?`
+      : `Delete ${deletable.length} selected entities and their relationships?`;
+    if (!window.confirm(label)) return;
+    let deletedCount = 0;
+    try {
+      for (const entityId of deletable) {
+        await deleteGraphEntity(entityId);
+        deletedCount += 1;
+      }
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : "Could not delete the selected entities");
+    }
+    if (deletedCount > 0) {
+      graphViewRef.current?.clearSelection();
+      onSelectNode(null);
+      closeOverlays();
+      try {
+        await onGraphChanged();
+      } catch (cause) {
+        onError(cause instanceof Error ? cause.message : "The graph changed but could not be refreshed");
+      }
+    }
+  }
+
+  function handleStageKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    const shortcut = resolveGraphShortcut({
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      shiftKey: event.shiftKey,
+      editable: Boolean(target.closest("input, textarea, select, [contenteditable='true']")),
+    });
+    if (shortcut === "dismiss-input") {
+        searchInputRef.current?.blur();
+        setSearchQuery("");
+      return;
+    }
+    if (!shortcut) return;
+    if (shortcut === "focus-search") {
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      return;
+    }
+    if (shortcut === "select-all") {
+      event.preventDefault();
+      graphViewRef.current?.selectAll();
+      return;
+    }
+    if (shortcut === "undo" || shortcut === "redo") {
+      event.preventDefault();
+      if (shortcut === "redo") graphViewRef.current?.redo();
+      else graphViewRef.current?.undo();
+      return;
+    }
+    if (shortcut === "clear-selection") {
+      graphViewRef.current?.clearSelection();
+      onSelectNode(null);
+      setSearchQuery("");
+      closeOverlays();
+      return;
+    }
+    if (shortcut === "delete-selection") {
+      event.preventDefault();
+      void removeSelectedEntities();
+      return;
+    }
+    if (shortcut === "fit-view") {
+      event.preventDefault();
+      graphViewRef.current?.fitToView();
+    }
+  }
+
   const popoverNode = popover ? graph.nodes.find((n) => n.id === popover.node.id) ?? popover.node : null;
   const isPrepared = popoverNode?.id.startsWith("prepared-") ?? false;
 
@@ -357,7 +456,7 @@ export function GraphPanel({
       </div>
       {showFilters && (
         <div className="graph-filterbar">
-          <span>Filtro</span>
+          <span>Type</span>
           {graphTypes.map((type) => (
             <button
               key={type}
@@ -365,21 +464,46 @@ export function GraphPanel({
               type="button"
               onClick={() => setTypeFilter(type)}
             >
-              {type === "all" ? "Todo" : type}
+              {type === "all" ? "All" : type}
             </button>
           ))}
-          <small>{filteredGraph.nodes.length} nodos visibles / zoom {Math.round(zoom * 100)}%</small>
+          <i />
+          <span>Provenance</span>
+          {(["all", "with-sources", "without-sources"] as const).map((filter) => (
+            <button key={filter} className={sourceFilter === filter ? "selected" : ""} type="button" onClick={() => setSourceFilter(filter)}>
+              {filter === "all" ? "All" : filter === "with-sources" ? "With sources" : "Without sources"}
+            </button>
+          ))}
+          <small>{filteredGraph.nodes.length} visible nodes</small>
         </div>
       )}
       {graphMode === "graph" && <div className="graph-canvas-toolbar">
         <div className="graph-node-search">
           <Search size={13} />
-          <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Find entity" aria-label="Find entity in graph" />
-          {searchResults.length > 0 && <div className="graph-node-search-results">{searchResults.map((node) => <button type="button" key={node.id} onClick={() => { graphViewRef.current?.focusNode(node.id); onSelectNode(node); setSearchQuery(""); }}>{node.label}<small>{node.type}</small></button>)}</div>}
+          <input
+            ref={searchInputRef}
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (resolveGraphShortcut({ key: event.key, editable: true }) === "dismiss-input") {
+                event.currentTarget.blur();
+                setSearchQuery("");
+              }
+            }}
+            placeholder="Find label, ID, email, IP, alias…"
+            aria-label="Find entity in graph"
+          />
+          {searchQuery && <span className="graph-search-count">{searchResults.length ? `${searchCursor + 1}/${searchResults.length}` : "0"}</span>}
+          {searchResults.length > 0 && <>
+            <button type="button" className="graph-search-step" onClick={() => focusSearchResult(searchCursor - 1)} aria-label="Previous graph search result"><ChevronUp size={12} /></button>
+            <button type="button" className="graph-search-step" onClick={() => focusSearchResult(searchCursor + 1)} aria-label="Next graph search result"><ChevronDown size={12} /></button>
+            <div className="graph-node-search-results">{searchResults.slice(0, 8).map((node, index) => <button type="button" key={node.id} className={index === searchCursor ? "active" : ""} onClick={() => focusSearchResult(index)}>{node.label}<small>{node.type} · {node.id}</small></button>)}</div>
+          </>}
         </div>
         <button type="button" title="Zoom out" onClick={() => graphViewRef.current?.zoomBy(.82)}><Minus size={14} /></button>
         <button type="button" title="Zoom in" onClick={() => graphViewRef.current?.zoomBy(1.22)}><Plus size={14} /></button>
         <button type="button" title="Fit graph to screen" onClick={() => graphViewRef.current?.fitToView()}><Focus size={14} /></button>
+        <button type="button" title="Run auto layout" onClick={() => graphViewRef.current?.resetLayout()}><Wand2 size={14} /></button>
         <span />
         <button type="button" title="Undo canvas change" onClick={() => graphViewRef.current?.undo()}><Undo2 size={14} /></button>
         <button type="button" title="Redo canvas change" onClick={() => graphViewRef.current?.redo()}><Redo2 size={14} /></button>
@@ -391,6 +515,7 @@ export function GraphPanel({
           className="graph-stage"
           ref={stageRef}
           onPointerDown={closeOverlays}
+          onKeyDown={handleStageKeyDown}
           style={{
             position: "relative",
             minHeight: "500px",
@@ -399,7 +524,7 @@ export function GraphPanel({
         >
           <GraphView
             ref={graphViewRef}
-            graph={graph}
+            graph={sourceFilteredGraph}
             zoom={zoom}
             layoutVersion={layoutVersion}
             selectedNodeId={selectedNode?.id}

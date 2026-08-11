@@ -21,11 +21,15 @@ import {
   Cpu,
   Cable,
   PackageCheck,
+  Hexagon,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getLocalModelConfiguration } from "../api";
-import type { CaseRead, DesktopStatus, StorageStatus, User } from "../types";
+import type { CaseRead, DesktopStatus, LocalModelRuntimeStatus, StorageStatus, User } from "../types";
+import type { SystemLinkStatus } from "../system-link/types";
 import { formatByteSize } from "../utils";
 import { PRODUCT_VERSION } from "../version";
 import {
@@ -36,6 +40,7 @@ import {
   type NavigationItem,
   type PlatformArea,
 } from "./navigation";
+import { CopilotDock } from "./CopilotDock";
 
 const NAV_ICONS: Record<CorePlatformArea, LucideIcon> = {
   dashboard: CircleGauge,
@@ -62,6 +67,9 @@ export function PlatformShell({
   currentUser,
   desktopStatus,
   storageStatus,
+  localModelStatus,
+  localModelLoading,
+  systemLinkStatus,
   moduleNavigation,
   loading,
   error,
@@ -77,6 +85,9 @@ export function PlatformShell({
   currentUser: User;
   desktopStatus: DesktopStatus | null;
   storageStatus: StorageStatus | null;
+  localModelStatus: LocalModelRuntimeStatus | null;
+  localModelLoading: boolean;
+  systemLinkStatus: SystemLinkStatus | null;
   moduleNavigation: readonly NavigationItem[];
   loading: boolean;
   error: string;
@@ -88,7 +99,20 @@ export function PlatformShell({
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem("oihk.sidebar.collapsed") === "true");
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [copilotOpen, setCopilotOpen] = useState(() => window.localStorage.getItem("oihk.copilot.open") !== "false");
+  const [copilotCollapsed, setCopilotCollapsed] = useState(() => window.localStorage.getItem("oihk.copilot.collapsed") === "true");
   const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    window.localStorage.setItem("oihk.sidebar.collapsed", String(sidebarCollapsed));
+  }, [sidebarCollapsed]);
+
+  useEffect(() => {
+    window.localStorage.setItem("oihk.copilot.open", String(copilotOpen));
+    window.localStorage.setItem("oihk.copilot.collapsed", String(copilotCollapsed));
+  }, [copilotCollapsed, copilotOpen]);
 
   // Global search shortcut: Ctrl+K
   useEffect(() => {
@@ -146,31 +170,33 @@ export function PlatformShell({
     ? `${formatByteSize(storageStatus.database_bytes + storageStatus.evidence_bytes)} · ${storageStatus.writable ? "Writable" : "Read-only"}`
     : "Checking local storage…";
 
-  // Real local-model configuration status (falls back to "not configured").
-  const [modelStatus, setModelStatus] = useState("Checking…");
-  useEffect(() => {
-    let active = true;
-    getLocalModelConfiguration()
-      .then((configuration) => {
-        if (active) setModelStatus(configuration?.model ? configuration.model : "Not configured");
-      })
-      .catch(() => active && setModelStatus("Not configured"));
-    return () => {
-      active = false;
-    };
-  }, []);
+  const connectedModules = systemLinkStatus?.modules.filter(
+    (module) => module.enabled && (module.state === "READY" || module.state === "BUSY"),
+  ).length ?? 0;
+  const modelLabel = localModelLoading
+    ? "Checking model…"
+    : localModelStatus?.connected
+      ? `${localModelStatus.model || localModelStatus.provider} ready`
+      : localModelStatus?.error === "StatusUnavailable"
+        ? "Model status unavailable"
+      : localModelStatus?.configured
+        ? "Model offline"
+        : "Model not configured";
 
   return (
-    <main className="platform-shell">
+    <main className={`platform-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${copilotOpen ? " copilot-open" : ""}${copilotCollapsed ? " copilot-collapsed" : ""}`}>
       {/* ── Sidebar ── */}
-      <aside className="platform-sidebar">
+      <aside className={mobileSidebarOpen ? "platform-sidebar mobile-open" : "platform-sidebar"}>
         {/* Brand */}
         <div className="platform-brand">
-          <span className="platform-brand-mark">O</span>
+          <span className="platform-brand-mark"><Hexagon size={27} /><i /></span>
           <div className="platform-brand-info">
             <strong>OIHK Basic</strong>
             <small>Local Intelligence Workspace</small>
           </div>
+          <button type="button" className="platform-sidebar-toggle" onClick={() => setSidebarCollapsed((value) => !value)} aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"} title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}>
+            {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
+          </button>
         </div>
 
         {/* Navigation groups */}
@@ -188,7 +214,7 @@ export function PlatformShell({
                       type="button"
                       key={item.id}
                       className={area === item.id ? "platform-nav-item active" : "platform-nav-item"}
-                      onClick={() => onNavigate(item.id)}
+                      onClick={() => { onNavigate(item.id); setMobileSidebarOpen(false); }}
                       title={item.label}
                     >
                       <Icon size={16} aria-hidden="true" />
@@ -212,7 +238,7 @@ export function PlatformShell({
           </div>
           <div className="platform-sidebar-bottom">
             <div className="platform-sidebar-brand-bottom">
-              <span className="platform-brand-mark-sm">O</span>
+              <span className="platform-brand-mark-sm"><Hexagon size={15} /></span>
               <span className="platform-version">
                 OIHK Basic v{appVersion}
               </span>
@@ -231,6 +257,7 @@ export function PlatformShell({
       {/* ── Topbar ── */}
       <header className="platform-topbar">
         <div className="platform-topbar-left">
+          <button type="button" className="platform-mobile-menu" onClick={() => setMobileSidebarOpen((value) => !value)} aria-label="Toggle navigation"><Menu size={17} /></button>
           {/* Case selector */}
           <div className="platform-case-context">
             <span className="platform-context-label">Case</span>
@@ -262,7 +289,7 @@ export function PlatformShell({
             <input
               ref={searchRef}
               type="text"
-              placeholder="Search investigations, entities and evidence"
+              placeholder="Search investigations"
               value={searchQuery}
               onChange={handleSearchInput}
               onKeyDown={handleSearchKeyDown}
@@ -300,13 +327,20 @@ export function PlatformShell({
 
         <div className="platform-topbar-right">
           {/* Model status indicator */}
-          <div className="platform-model-status" title={modelStatus}>
+          <div className={`platform-model-status ${localModelStatus?.connected ? "connected" : "offline"}`} title={modelLabel}>
             <Cpu size={13} />
-            <span>{modelStatus}</span>
+            <span>{modelLabel}</span>
           </div>
 
-          {/* Local-First badge */}
-          <span className="platform-topbar-badge">Local-First</span>
+          <div className={`platform-runtime-status ${storageStatus ? "connected" : "checking"}`} title="Local SQLite status">
+            <Database size={13} /><span>{storageStatus ? "SQLite ready" : "Checking SQLite…"}</span>
+          </div>
+
+          <div className={`platform-runtime-status ${connectedModules > 0 ? "connected" : "idle"}`} title="System Link modules in READY or BUSY state">
+            <Cable size={13} /><span>{connectedModules} linked</span>
+          </div>
+
+          <span className="platform-topbar-badge">Local mode</span>
 
           {/* New Investigation button */}
           <button type="button" className="platform-ghost-btn" onClick={onNewCase} disabled={loading}>
@@ -323,6 +357,8 @@ export function PlatformShell({
           >
             <Settings size={15} />
           </button>
+
+          {!copilotOpen && <button type="button" className="platform-icon-btn" onClick={() => setCopilotOpen(true)} title="Open Copilot" aria-label="Open Copilot"><Bot size={15} /></button>}
 
           {/* User chip */}
           <div className="platform-user-chip">
@@ -357,6 +393,16 @@ export function PlatformShell({
         )}
         {children}
       </section>
+      <CopilotDock
+        area={area}
+        open={copilotOpen}
+        collapsed={copilotCollapsed}
+        modelStatus={localModelStatus}
+        onOpen={() => setCopilotOpen(true)}
+        onClose={() => setCopilotOpen(false)}
+        onToggleCollapsed={() => setCopilotCollapsed((value) => !value)}
+        onNavigate={onNavigate}
+      />
     </main>
   );
 }

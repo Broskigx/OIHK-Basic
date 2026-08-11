@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import models
 from app.core.config import get_settings
-from app.core.deps import CurrentUser, get_current_user
+from app.core.deps import CurrentUser, accessible_cases_statement, get_current_user, require_case_access
 from app.database import get_session
 
 router = APIRouter(prefix="/operations", tags=["operations"])
@@ -108,9 +108,10 @@ async def list_audit_events(
     """List audit events, optionally filtered by case."""
     statement = select(models.AuditEvent).order_by(models.AuditEvent.created_at.desc()).limit(limit)
     if case_id:
+        await require_case_access(session, case_id, current)
         statement = statement.where(models.AuditEvent.case_id == case_id)
-    if not current.is_system:
-        statement = statement.where(models.AuditEvent.payload["organization_id"].as_string() == current.organization_id)
+    elif not current.is_system:
+        statement = statement.where(models.AuditEvent.case_id.in_(accessible_cases_statement(current)))
     result = await session.execute(statement)
     events = result.scalars().all()
     return [

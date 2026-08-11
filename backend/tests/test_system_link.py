@@ -10,6 +10,12 @@ from pathlib import Path
 import httpx
 import pytest
 import pytest_asyncio
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from pydantic import ValidationError
+from sqlalchemy import event, select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
 from app import models
 from app.database import Base
 from app.database_migrations import run_migrations
@@ -33,11 +39,6 @@ from app.system_link.protocol import (
 from app.system_link.security import InstallationIdentityStore, b64encode
 from app.system_link.service import SystemLinkError, SystemLinkService, pairing_proof_payload
 from app.version import PRODUCT_VERSION
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-from pydantic import ValidationError
-from sqlalchemy import event, select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 @pytest_asyncio.fixture
@@ -977,8 +978,9 @@ async def test_crash_counter_tracks_consecutive_failures_only(
 
 @pytest.mark.asyncio
 async def test_module_ui_surface_serves_only_verified_package_files(tmp_path: Path, system_link_session) -> None:
-    from app.system_link.router import module_ui_file
     from fastapi import HTTPException as FastAPIHTTPException
+
+    from app.system_link.router import module_ui_file
 
     manifest, module_key, package_root = _module_fixture(tmp_path)
     module = models.SystemLinkModule(

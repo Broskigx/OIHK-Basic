@@ -151,6 +151,68 @@ class StorageStatusRead(BaseModel):
     writable: bool
 
 
+# --- Dashboard ---
+class DashboardCountsRead(BaseModel):
+    active_investigations: int
+    registered_evidence: int
+    pending_tasks: int | None = None
+    tasks_available: bool = False
+    connected_modules: int
+    registered_modules: int
+
+
+class DashboardRecentCaseRead(BaseModel):
+    id: str
+    title: str
+    status: str
+    priority: str
+    evidence_count: int
+    updated_at: datetime | None
+
+
+class DashboardActivityRead(BaseModel):
+    id: str
+    kind: Literal["audit", "system_link"]
+    action: str
+    actor: str
+    detail: str
+    case_id: str | None = None
+    case_title: str | None = None
+    module_id: str | None = None
+    created_at: datetime
+
+
+class DashboardModuleRead(BaseModel):
+    module_id: str
+    product_name: str
+    module_version: str
+    state: str
+    enabled: bool
+    last_activity_at: datetime | None = None
+
+
+class DashboardSummaryRead(BaseModel):
+    generated_at: datetime
+    counts: DashboardCountsRead
+    recent_investigations: list[DashboardRecentCaseRead]
+    recent_activity: list[DashboardActivityRead]
+    modules: list[DashboardModuleRead]
+
+
+class LocalModelRuntimeStatusRead(BaseModel):
+    configured: bool
+    connected: bool
+    provider: str = ""
+    endpoint: str = ""
+    model: str = ""
+    model_available: bool = False
+    model_count: int = 0
+    context_length: int | None = None
+    max_tokens: int | None = None
+    latency_ms: int | None = None
+    error: str = ""
+
+
 class UpdatePrepareRequest(BaseModel):
     target_version: str = Field(min_length=1, max_length=80, pattern=r"^[0-9A-Za-z.+-]+$")
     channel: Literal["alpha", "beta", "stable"] = "alpha"

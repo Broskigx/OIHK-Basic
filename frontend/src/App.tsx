@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { createCase, deleteCase, downloadCaseExport, duplicateCase, getApplicationSettings, getStorageStatus, importCaseDocument, rerunTargetSearch, saveApplicationSettings, updateCase } from "./api";
+import { createCase, deleteCase, downloadCaseExport, duplicateCase, getApplicationSettings, getLocalModelRuntimeStatus, getStorageStatus, importCaseDocument, rerunTargetSearch, saveApplicationSettings, updateCase } from "./api";
 import { isCaseScopedArea, isModuleRouteId, type PlatformArea } from "./app/navigation";
 import { PlatformShell } from "./app/PlatformShell";
 import { usePlatformRoute } from "./app/usePlatformRoute";
@@ -28,7 +28,7 @@ import { WorkspaceHeader } from "./shared/ui/WorkspaceHeader";
 import { SystemLinkControlPlane } from "./system-link/components/SystemLinkControlPlane";
 import { SystemLinkModuleView } from "./system-link/components/SystemLinkModuleView";
 import { useSystemLinkRegistry } from "./system-link/registry";
-import type { ApplicationSettings, CaseRead, DesktopStatus, GraphNode, InvestigationDraft, StorageStatus, User } from "./types";
+import type { ApplicationSettings, CaseRead, DesktopStatus, GraphNode, InvestigationDraft, LocalModelRuntimeStatus, StorageStatus, User } from "./types";
 
 export function App({ currentUser }: { currentUser: User }) {
   const [error, setError] = useState("");
@@ -38,6 +38,8 @@ export function App({ currentUser }: { currentUser: User }) {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [applicationSettings, setApplicationSettings] = useState<ApplicationSettings | null>(null);
   const [storageStatus, setStorageStatus] = useState<StorageStatus | null>(null);
+  const [localModelStatus, setLocalModelStatus] = useState<LocalModelRuntimeStatus | null>(null);
+  const [localModelLoading, setLocalModelLoading] = useState(true);
   const [settingsError, setSettingsError] = useState("");
 
   const systemLink = useSystemLinkRegistry();
@@ -120,6 +122,33 @@ export function App({ currentUser }: { currentUser: User }) {
       if (preferences && !preferences.onboarding_complete) setShowOnboarding(true);
     });
   }, [refreshApplicationSettings]);
+
+  const refreshLocalModelStatus = useCallback(async () => {
+    setLocalModelLoading(true);
+    try {
+      setLocalModelStatus(await getLocalModelRuntimeStatus());
+    } catch {
+      setLocalModelStatus({
+        configured: false,
+        connected: false,
+        provider: "",
+        endpoint: "",
+        model: "",
+        model_available: false,
+        model_count: 0,
+        context_length: null,
+        max_tokens: null,
+        latency_ms: null,
+        error: "StatusUnavailable",
+      });
+    } finally {
+      setLocalModelLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshLocalModelStatus();
+  }, [refreshLocalModelStatus]);
 
   useEffect(() => {
     if (!applicationSettings) return;
@@ -349,17 +378,13 @@ export function App({ currentUser }: { currentUser: User }) {
       case "dashboard":
         content = (
           <DashboardView
-            cases={caseMgr.cases}
-            activeCase={activeCase}
-            monitor={caseMgr.monitor}
-            auditEvents={caseMgr.auditEvents}
-            sources={caseMgr.sources}
-            graph={canvasGraph}
-            graphAnalytics={caseMgr.graphAnalytics}
+            refreshKey={`${caseMgr.cases.map((item) => `${item.id}:${item.status}:${item.updated_at}`).join("|")}:${caseMgr.auditEvents[0]?.id ?? 0}`}
             storageStatus={storageStatus}
-            selectedNode={graph.selectedNode}
-            onSelectNode={graph.setSelectedNode}
+            localModelStatus={localModelStatus}
+            localModelLoading={localModelLoading}
+            onRefreshLocalModel={() => void refreshLocalModelStatus()}
             onNavigate={handleNavigate}
+            onOpenCase={(caseId) => void openCase(caseId)}
             onNewCase={openNewCaseDialog}
           />
         );
@@ -447,6 +472,10 @@ export function App({ currentUser }: { currentUser: User }) {
             onAddEntity={(event) => void addManualEntity(event)}
             onSelectNode={graph.setSelectedNode}
             onOpenNode={graph.openNode}
+            onCloseInspector={() => {
+              graph.setSelectedNode(null);
+              graph.setOpenedNode(null);
+            }}
             onExpandNode={(node) => void expandNode(node)}
             onEnrichNode={(node) => void enrichNode(node)}
             onRunTransform={(transformId, node) => void runTransformOnNode(transformId, node)}
@@ -502,7 +531,7 @@ export function App({ currentUser }: { currentUser: User }) {
         );
         break;
       case "models":
-        content = <LocalModelsView />;
+        content = <LocalModelsView onStatusChanged={() => void refreshLocalModelStatus()} />;
         break;
       case "sources":
         content = (
@@ -556,6 +585,9 @@ export function App({ currentUser }: { currentUser: User }) {
         currentUser={currentUser}
         desktopStatus={desktopStatus}
         storageStatus={storageStatus}
+        localModelStatus={localModelStatus}
+        localModelLoading={localModelLoading}
+        systemLinkStatus={systemLink.status}
         moduleNavigation={systemLink.moduleNavigation}
         loading={loading}
         error={error}

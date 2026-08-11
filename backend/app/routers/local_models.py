@@ -16,6 +16,7 @@ from app.schemas import (
     LocalModelConfigurationRead,
     LocalModelConfigurationWrite,
     LocalModelProbeRequest,
+    LocalModelRuntimeStatusRead,
     LocalModelTestRequest,
 )
 from app.services.local_models import build_local_provider, detect_local_services, validate_local_endpoint
@@ -64,6 +65,49 @@ async def save_configuration(
 @router.get("/detect")
 async def detect() -> dict:
     return {"services": await detect_local_services()}
+
+
+@router.get("/status", response_model=LocalModelRuntimeStatusRead)
+async def runtime_status(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> LocalModelRuntimeStatusRead:
+    """Probe the saved private endpoint without running inference."""
+
+    configuration = await _configuration(session, current.id)
+    if configuration is None or not configuration.endpoint:
+        return LocalModelRuntimeStatusRead(configured=False, connected=False)
+
+    configured = bool(configuration.model)
+    started = perf_counter()
+    try:
+        provider = build_local_provider(configuration.provider, configuration.endpoint, 4)
+        available = await provider.list_models()
+        model_ids = {model.id for model in available}
+        return LocalModelRuntimeStatusRead(
+            configured=configured,
+            connected=True,
+            provider=configuration.provider,
+            endpoint=configuration.endpoint,
+            model=configuration.model,
+            model_available=bool(configuration.model and configuration.model in model_ids),
+            model_count=len(available),
+            context_length=configuration.context_length,
+            max_tokens=configuration.max_tokens,
+            latency_ms=round((perf_counter() - started) * 1000),
+        )
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        return LocalModelRuntimeStatusRead(
+            configured=configured,
+            connected=False,
+            provider=configuration.provider,
+            endpoint=configuration.endpoint,
+            model=configuration.model,
+            context_length=configuration.context_length,
+            max_tokens=configuration.max_tokens,
+            latency_ms=round((perf_counter() - started) * 1000),
+            error=type(exc).__name__,
+        )
 
 
 @router.post("/models")

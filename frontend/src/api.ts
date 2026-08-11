@@ -12,6 +12,7 @@ import type {
   CarveResult,
   CorrelationQueryResult,
   CustodyReport,
+  DashboardSummary,
   HashLookupResult,
   HashSetImportResult,
   HashSetInfo,
@@ -36,6 +37,7 @@ import type {
   LocalModelConfiguration,
   LocalModelDescriptor,
   LocalModelProviderId,
+  LocalModelRuntimeStatus,
   LocalModelServiceProbe,
   OsintLookupResult,
   OsintQuery,
@@ -567,6 +569,10 @@ export function getStorageStatus(): Promise<StorageStatus> {
   return request<StorageStatus>("/settings/storage");
 }
 
+export function getDashboardSummary(): Promise<DashboardSummary> {
+  return request<DashboardSummary>("/dashboard/summary");
+}
+
 export async function downloadStorageBackup(): Promise<Blob> {
   const response = await fetch(`${API_URL}/settings/backup`, { credentials: "include", headers: authHeaders() });
   if (!response.ok) {
@@ -910,6 +916,13 @@ export function deleteGraphRelationship(relationshipId: string): Promise<{ delet
   return request<{ deleted: boolean }>(`/graph/relationships/${encodeURIComponent(relationshipId)}`, { method: "DELETE" });
 }
 
+export function deleteGraphEntity(entityId: string): Promise<{ deleted: boolean; entity_id: string; relationship_count: number }> {
+  return request<{ deleted: boolean; entity_id: string; relationship_count: number }>(
+    `/graph/entities/${encodeURIComponent(entityId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export function getGraphWorkspace(caseId: string): Promise<GraphWorkspace> {
   return request<GraphWorkspace>(`/graph/${encodeURIComponent(caseId)}/workspace`);
 }
@@ -936,6 +949,10 @@ export function deleteGraphSnapshot(caseId: string, snapshotId: string): Promise
 
 export function getLocalModelConfiguration(): Promise<LocalModelConfiguration | null> {
   return request<LocalModelConfiguration | null>("/local-models/config");
+}
+
+export function getLocalModelRuntimeStatus(): Promise<LocalModelRuntimeStatus> {
+  return request<LocalModelRuntimeStatus>("/local-models/status");
 }
 
 export function saveLocalModelConfiguration(

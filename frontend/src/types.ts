@@ -54,6 +54,59 @@ export type StorageStatus = {
   writable: boolean;
 };
 
+export type DashboardSummary = {
+  generated_at: string;
+  counts: {
+    active_investigations: number;
+    registered_evidence: number;
+    pending_tasks: number | null;
+    tasks_available: boolean;
+    connected_modules: number;
+    registered_modules: number;
+  };
+  recent_investigations: Array<{
+    id: string;
+    title: string;
+    status: string;
+    priority: string;
+    evidence_count: number;
+    updated_at: string | null;
+  }>;
+  recent_activity: Array<{
+    id: string;
+    kind: "audit" | "system_link";
+    action: string;
+    actor: string;
+    detail: string;
+    case_id: string | null;
+    case_title: string | null;
+    module_id: string | null;
+    created_at: string;
+  }>;
+  modules: Array<{
+    module_id: string;
+    product_name: string;
+    module_version: string;
+    state: string;
+    enabled: boolean;
+    last_activity_at: string | null;
+  }>;
+};
+
+export type LocalModelRuntimeStatus = {
+  configured: boolean;
+  connected: boolean;
+  provider: string;
+  endpoint: string;
+  model: string;
+  model_available: boolean;
+  model_count: number;
+  context_length: number | null;
+  max_tokens: number | null;
+  latency_ms: number | null;
+  error: string;
+};
+
 export type SourceRead = {
   id: string;
   case_id: string;
@@ -73,6 +126,9 @@ export type GraphNode = {
   type: string;
   confidence: number;
   source_ids: string[];
+  value?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
   properties?: Record<string, string>;
   notes?: string;
 };

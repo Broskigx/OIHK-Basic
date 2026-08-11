@@ -56,7 +56,7 @@ function formatBytes(value?: number | null): string {
   return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
-export function LocalModelsView() {
+export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => void }) {
   const [configuration, setConfiguration] = useState<LocalModelConfiguration>(EMPTY_CONFIGURATION);
   const [models, setModels] = useState<LocalModelDescriptor[]>([]);
   const [services, setServices] = useState<LocalModelServiceProbe[]>([]);
@@ -135,6 +135,7 @@ export function LocalModelsView() {
       const saved = await saveLocalModelConfiguration(configuration);
       setConfiguration(saved);
       setMessage("Local model configuration saved");
+      onStatusChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save configuration");
     } finally {
@@ -160,6 +161,7 @@ export function LocalModelsView() {
         timeout_seconds: configuration.timeout_seconds,
       });
       setMessage(`Inference succeeded in ${result.latency_ms} ms · ${result.reply.slice(0, 120)}`);
+      onStatusChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Inference test failed");
     } finally {

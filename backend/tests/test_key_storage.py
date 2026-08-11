@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 
 import pytest
+
 from app.system_link import security
 from app.system_link.security import (
     EncryptedFileProvider,

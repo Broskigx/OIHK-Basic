@@ -17,18 +17,18 @@ export type GraphLayoutPoint = {
 export const GRAPH_VIEW_OPTIONS: GraphViewOption[] = [
   {
     id: "network",
-    label: "Grafo principal",
-    description: "Mapa completo de entidades y relaciones",
+    label: "Main graph",
+    description: "Complete map of entities and relationships",
   },
   {
     id: "hierarchy",
-    label: "Padre → hijo",
-    description: "Jerarquía dirigida por niveles",
+    label: "Parent → child",
+    description: "Directed hierarchy by level",
   },
   {
     id: "connections",
-    label: "Conexiones",
-    description: "Vecindad y vínculos del nodo activo",
+    label: "Connections",
+    description: "Neighborhood and links for the active node",
   },
 ];
 
