@@ -1,3 +1,9 @@
+<div align="center">
+  <a href="https://ko-fi.com/broskigx">
+    <img src="https://img.shields.io/badge/☕_Apóyame_en_Ko--fi-BROSKIGX-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Apóyame en Ko-fi — BROSKIGX" />
+  </a>
+</div>
+
 # OIHK Basic
 
 [![CI](https://github.com/Broskigx/OIHK-Basic/actions/workflows/ci.yml/badge.svg)](https://github.com/Broskigx/OIHK-Basic/actions/workflows/ci.yml)
@@ -28,6 +34,8 @@ La versión actual es `0.1.1-alpha.2`. El repositorio se publica para revisión 
 
 - No hay una versión estable disponible.
 - Los candidatos `0.1.1-alpha.x` son prereleases experimentales, no un canal de distribución general.
+- El empaquetado Windows x64/NSIS existe, pero requiere validación en entornos limpios antes de considerarse release-ready.
+- Linux y macOS tienen soporte de build en desarrollo, pero todavía no se declaran release-ready.
 - No se garantiza compatibilidad de datos entre commits, soporte ni funcionamiento completo.
 - Los artefactos de GitHub Actions no deben tratarse como instaladores oficiales.
 
@@ -227,6 +235,21 @@ npm audit --audit-level=high
 
 La integración continua ejecuta lint, pruebas, builds, auditorías, Gitleaks, smoke tests del sidecar y validaciones de empaquetado. Un pipeline verde reduce riesgos conocidos, pero no convierte una alpha en software de producción.
 
+System Link incluye además un smoke E2E real contra un clon local de OIHK Evidence Lab:
+
+```powershell
+python scripts/smoke_system_link_e2e.py --evidence-lab C:\path\to\OiHK-evidence-lab
+```
+
+Ese smoke valida pairing, aprobación, Power On/Off, autenticación mutua, health `READY`, capabilities y rechazo de replay o paquetes alterados.
+
+## Evidencia, reportes y backups
+
+- La vista previa inline se limita a tipos raster considerados seguros; otros archivos se entregan como attachments.
+- Los reportes exportan Markdown, HTML seguro y JSON estructurado. PDF y DOCX no forman parte del producto actual.
+- Cambiar el directorio de almacenamiento requiere backup y reinicio; la relocalización en vivo está bloqueada deliberadamente.
+- Backups, migraciones y recuperación continúan en evolución y no constituyen una garantía absoluta de integridad.
+
 ## Seguridad, privacidad y uso responsable
 
 OIHK Basic está destinado al trabajo autorizado con fuentes públicas o datos incorporados legalmente por el usuario. No autoriza acceso a sistemas, cuentas ni datos privados de terceros.
@@ -239,11 +262,21 @@ OIHK Basic está destinado al trabajo autorizado con fuentes públicas o datos i
 
 Consulta [Security Policy](SECURITY.md), [Privacy](PRIVACY.md), [Threat Model](THREAT_MODEL.md) y [Responsible Use](RESPONSIBLE_USE.md).
 
+### Autenticación opcional
+
+OIHK Basic es monousuario y local por defecto. Con `OIHK_AUTH_ENABLED=false`, el backend se niega a iniciar en un bind no-loopback. Los despliegues personalizados pueden activar autenticación con `OIHK_AUTH_ENABLED=true`, pero ese modo también es experimental durante la etapa alpha.
+
 ## OIHK System Link
 
 System Link enlaza productos OIHK instalados por separado mediante identidades Ed25519, pairing local con una Link Key temporal y de un solo uso, grants de capacidades, manifests hasheados y estados de lifecycle explícitos.
 
-No acepta comandos shell ni scripts arbitrarios. Solo puede ejecutar el binario relativo registrado bajo un root de instalación después de verificar su SHA-256. OIHK Basic continúa funcionando sin módulos vinculados. El contrato completo está en [System Link v1](docs/SYSTEM_LINK_V1.md).
+OIHK Evidence Lab no está embebido en Basic: conserva instalación, proceso, UI, dominio y datos propios. Basic actúa únicamente como host/control plane y continúa funcionando sin módulos vinculados.
+
+System Link no acepta comandos shell ni scripts arbitrarios. Solo puede ejecutar el binario relativo registrado bajo un root de instalación después de verificar su SHA-256. El contrato, las identidades Ed25519, el bridge UI y los límites de capabilities están documentados en [System Link v1](docs/SYSTEM_LINK_V1.md).
+
+## Diferencia frente a OIHK normal
+
+OIHK Basic conserva un flujo local de investigación, evidencia, grafo, modelos y módulos first-party, pero no incluye colaboración multiusuario, organizations, enterprise SSO, sincronización cloud, administración de conectores privados, billing, licensing, Redis, queues, GraphQL ni infraestructura distribuida. OIHK normal y OIHK Basic son productos separados.
 
 ## Builds y releases
 
@@ -259,6 +292,7 @@ No distribuyas ese instalador como versión oficial. Los releases alpha firmados
 ## Documentación
 
 - [Build por plataforma](docs/BUILDING.md)
+- [Arquitectura](docs/ARCHITECTURE.md)
 - [Limitaciones conocidas](docs/KNOWN_LIMITATIONS.md)
 - [Arquitectura del updater](docs/UPDATES.md)
 - [Proceso de release](docs/RELEASING.md)
