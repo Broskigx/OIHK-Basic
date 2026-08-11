@@ -217,6 +217,7 @@ cd frontend
 npm run check
 npm run test -- --run
 npm run build
+npm audit --audit-level=high
 
 # Desktop
 cd ..\src-tauri
