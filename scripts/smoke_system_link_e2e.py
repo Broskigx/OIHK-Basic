@@ -99,7 +99,15 @@ def _run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None, ti
     process_env = os.environ.copy()
     if env:
         process_env.update(env)
-    result = subprocess.run(command, cwd=str(cwd), env=process_env, capture_output=True, text=True, timeout=timeout)
+    result = subprocess.run(
+        command,
+        cwd=str(cwd),
+        env=process_env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+    )
     if result.returncode != 0:
         _log(f"  stdout: {result.stdout[-2000:]}")
         _log(f"  stderr: {result.stderr[-3000:]}")
@@ -193,6 +201,7 @@ def _kill_smoke_runtimes(install_root: Path) -> None:
         ["powershell", "-NoProfile", "-NonInteractive", "-Command", powershell],
         capture_output=True,
         timeout=30,
+        check=False,
     )
 
 
@@ -242,14 +251,14 @@ async def _run_e2e(
         from contextlib import suppress
 
         for process in processes_to_kill:
-            with suppress(Exception):  # noqa: BLE001 - best-effort cleanup
+            with suppress(Exception):
                 process.terminate()
         basic.stop()
         if os.name == "nt":
             # A Basic terminate() cannot propagate to the verified runtime child.
             # Kill ONLY the smoke's own runtimes (executables under the temp
             # install root) — never a user's real Evidence Lab runtime by name.
-            with suppress(Exception):  # noqa: BLE001 - best-effort cleanup
+            with suppress(Exception):
                 _kill_smoke_runtimes(install_root)
         if not keep:
             shutil.rmtree(tmp_root, ignore_errors=True)
@@ -593,7 +602,7 @@ def main() -> None:
         if args.keep:
             argv.append("--keep")
         _log(f"Re-executing in smoke venv: {' '.join(argv)}")
-        os.execv(str(smoke_python), argv)  # noqa: S606 - controlled re-exec for the smoke environment
+        os.execv(str(smoke_python), argv)
     port = args.port or _free_port()
     _log(f"Basic port: {port}")
     asyncio.run(_run_e2e(evidence_lab=evidence_lab, port=port, keep=args.keep, smoke_python=smoke_python))

@@ -8,7 +8,14 @@ from app import models
 from app.core.deps import CurrentUser
 from app.database import Base
 from app.routers.local_models import runtime_status
-from app.services.local_models import LMStudioProvider, OllamaProvider, build_local_provider, validate_local_endpoint
+from app.services.local_models import (
+    LMStudioProvider,
+    ModelDescriptor,
+    OllamaProvider,
+    build_local_provider,
+    detect_local_services,
+    validate_local_endpoint,
+)
 
 
 class _Response:
@@ -88,6 +95,34 @@ async def test_ollama_listing_and_inference(monkeypatch):
         max_tokens=20,
     )
     assert reply == "ollama ready"
+
+
+@pytest.mark.asyncio
+async def test_detection_probes_lm_studio_and_ollama_independently(monkeypatch):
+    class _DetectedProvider:
+        def __init__(self, provider: str):
+            self.provider = provider
+
+        async def list_models(self):
+            if self.provider == "ollama":
+                raise httpx.ConnectError("ollama is not running")
+            return [ModelDescriptor(id="lmstudio-local", name="lmstudio-local", context_length=16384)]
+
+    monkeypatch.setattr(
+        "app.services.local_models.build_local_provider",
+        lambda provider, _endpoint, _timeout: _DetectedProvider(provider),
+    )
+
+    services = await detect_local_services()
+
+    assert [service["provider"] for service in services] == ["lmstudio", "ollama"]
+    assert services[0]["status"] == "online"
+    assert services[0]["models"] == [
+        {"id": "lmstudio-local", "name": "lmstudio-local", "context_length": 16384, "size_bytes": None}
+    ]
+    assert services[1]["status"] == "offline"
+    assert services[1]["models"] == []
+    assert "not running" in services[1]["error"]
 
 
 @pytest.mark.asyncio
