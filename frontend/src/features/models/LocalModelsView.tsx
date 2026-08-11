@@ -26,22 +26,7 @@ import type {
   LocalModelServiceProbe,
 } from "../../types";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
-
-const EMPTY_CONFIGURATION: LocalModelConfiguration = {
-  provider: "ollama",
-  endpoint: "",
-  model: "",
-  context_length: 8192,
-  temperature: 0.2,
-  max_tokens: 900,
-  timeout_seconds: 150,
-  streaming: true,
-  system_prompt: "",
-  capabilities: ["chat"],
-  tools_enabled: [],
-  role_models: {},
-  fallback_model: "",
-};
+import { DEFAULT_LOCAL_MODEL_CONFIGURATION } from "./localModelConfiguration";
 
 const PROVIDERS: { id: LocalModelProviderId; label: string; detail: string }[] = [
   { id: "lmstudio", label: "LM Studio", detail: "OpenAI-compatible local server" },
@@ -56,8 +41,8 @@ function formatBytes(value?: number | null): string {
   return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
 }
 
-export function LocalModelsView() {
-  const [configuration, setConfiguration] = useState<LocalModelConfiguration>(EMPTY_CONFIGURATION);
+export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => void }) {
+  const [configuration, setConfiguration] = useState<LocalModelConfiguration>(DEFAULT_LOCAL_MODEL_CONFIGURATION);
   const [models, setModels] = useState<LocalModelDescriptor[]>([]);
   const [services, setServices] = useState<LocalModelServiceProbe[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,12 +52,28 @@ export function LocalModelsView() {
   const importRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    getLocalModelConfiguration()
-      .then((saved) => {
-        if (saved) setConfiguration(saved);
-      })
-      .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not load local model settings"))
-      .finally(() => setLoading(false));
+    let cancelled = false;
+
+    async function loadConfiguration() {
+      try {
+        const saved = await getLocalModelConfiguration();
+        if (!saved || cancelled) return;
+        setConfiguration(saved);
+        try {
+          const result = await listLocalModels(saved.provider, saved.endpoint);
+          if (!cancelled) setModels(result.models);
+        } catch {
+          // Keep the saved configuration visible when its runtime is currently offline.
+        }
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load local model settings");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void loadConfiguration();
+    return () => { cancelled = true; };
   }, []);
 
   function patch(patchValue: Partial<LocalModelConfiguration>) {
@@ -135,6 +136,7 @@ export function LocalModelsView() {
       const saved = await saveLocalModelConfiguration(configuration);
       setConfiguration(saved);
       setMessage("Local model configuration saved");
+      onStatusChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save configuration");
     } finally {
@@ -160,6 +162,7 @@ export function LocalModelsView() {
         timeout_seconds: configuration.timeout_seconds,
       });
       setMessage(`Inference succeeded in ${result.latency_ms} ms · ${result.reply.slice(0, 120)}`);
+      onStatusChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Inference test failed");
     } finally {
@@ -187,7 +190,7 @@ export function LocalModelsView() {
         if (!PROVIDERS.some((provider) => provider.id === parsed.provider) || typeof parsed.endpoint !== "string") {
           throw new Error("Invalid OIHK local model configuration");
         }
-        patch({ ...EMPTY_CONFIGURATION, ...parsed, id: undefined, updated_at: undefined });
+        patch({ ...DEFAULT_LOCAL_MODEL_CONFIGURATION, ...parsed, id: undefined, updated_at: undefined });
         setMessage("Configuration imported. Review and save it to activate.");
       })
       .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not import configuration"));
@@ -245,6 +248,7 @@ export function LocalModelsView() {
             <label>Active model
               <select value={configuration.model} onChange={(event) => patch({ model: event.target.value })}>
                 <option value="">Select a detected model</option>
+                {configuration.model && !models.some((model) => model.id === configuration.model) && <option value={configuration.model}>{configuration.model}</option>}
                 {models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
               </select>
             </label>

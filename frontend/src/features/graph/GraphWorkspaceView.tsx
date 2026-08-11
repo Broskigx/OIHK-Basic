@@ -3,6 +3,7 @@ import { lazy, Suspense } from "react";
 import type { FormEvent } from "react";
 import type { GraphAnalytics, GraphNode, GraphRead, ManualEntityForm } from "../../types";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
+import { GraphInspector } from "./GraphInspector";
 
 const GraphPanel = lazy(() =>
   import("../../components/GraphPanel").then((module) => ({ default: module.GraphPanel })),
@@ -23,6 +24,7 @@ export function GraphWorkspaceView({
   onAddEntity,
   onSelectNode,
   onOpenNode,
+  onCloseInspector,
   onExpandNode,
   onEnrichNode,
   onRunTransform,
@@ -49,6 +51,7 @@ export function GraphWorkspaceView({
   onAddEntity: (event: FormEvent) => void;
   onSelectNode: (node: GraphNode | null) => void;
   onOpenNode: (node: GraphNode) => void;
+  onCloseInspector: () => void;
   onExpandNode: (node: GraphNode) => void;
   onEnrichNode: (node: GraphNode) => void;
   onRunTransform: (transformId: string, node: GraphNode) => void;
@@ -61,6 +64,13 @@ export function GraphWorkspaceView({
   onOpenEntityManager: () => void;
   onError: (message: string) => void;
 }) {
+  const inspectedNode = openedNode ?? selectedNode;
+  const selectAndInspect = (node: GraphNode | null) => {
+    onSelectNode(node);
+    if (node) onOpenNode(node);
+    else onCloseInspector();
+  };
+
   return (
     <div className="platform-view platform-graph-view">
       <WorkspaceHeader
@@ -75,7 +85,7 @@ export function GraphWorkspaceView({
             </button>
             <button type="button" onClick={onResetLayout}>
               <RotateCcw size={14} />
-              Reset layout
+              Auto layout
             </button>
           </>
         }
@@ -133,7 +143,7 @@ export function GraphWorkspaceView({
           Add to graph
         </button>
       </form>
-      <div className={openedNode ? "platform-graph-layout inspected" : "platform-graph-layout"}>
+      <div className={inspectedNode ? "platform-graph-layout inspected" : "platform-graph-layout"}>
         <section className="platform-graph-canvas">
           <Suspense fallback={<div className="platform-module-loading">Loading graph engine…</div>}>
             <GraphPanel
@@ -145,7 +155,7 @@ export function GraphWorkspaceView({
               graphAnalytics={analytics}
               expanding={expanding}
               caseId={caseId}
-              onSelectNode={onSelectNode}
+              onSelectNode={selectAndInspect}
               onOpenNode={onOpenNode}
               onExpandNode={onExpandNode}
               onEnrichNode={onEnrichNode}
@@ -159,26 +169,7 @@ export function GraphWorkspaceView({
             />
           </Suspense>
         </section>
-        {openedNode && (
-          <aside className="platform-graph-inspector">
-            <span className="platform-eyebrow">Selected entity</span>
-            <h2>{openedNode.label}</h2>
-            <div className="platform-entity-meta">
-              <span>{openedNode.type}</span>
-              <span>{Math.round(openedNode.confidence * 100)}% confidence</span>
-            </div>
-            {openedNode.notes && <p>{openedNode.notes}</p>}
-            <dl className="platform-property-list">
-              {Object.entries(openedNode.properties ?? {}).map(([key, value]) => (
-                <div key={key}><dt>{key}</dt><dd>{String(value)}</dd></div>
-              ))}
-              <div><dt>Sources</dt><dd>{openedNode.source_ids.length}</dd></div>
-            </dl>
-            <button type="button" className="platform-primary platform-wide" onClick={onOpenEntityManager}>
-              Open full entity record
-            </button>
-          </aside>
-        )}
+        {inspectedNode && <GraphInspector node={inspectedNode} onClose={onCloseInspector} onOpenNode={onOpenNode} onOpenRecord={onOpenEntityManager} />}
       </div>
     </div>
   );

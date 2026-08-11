@@ -35,30 +35,27 @@ export type NavigationItem = {
 };
 
 export const SIDEBAR_GROUPS: { id: string; label: string }[] = [
-  { id: "workspace", label: "Workspace" },
-  { id: "analysis", label: "Analysis" },
-  { id: "evidence", label: "Evidence" },
-  { id: "ai", label: "AI" },
+  { id: "primary", label: "Workspace" },
   { id: "linked-modules", label: "Linked modules" },
-  { id: "system", label: "System" },
+  { id: "more", label: "More tools" },
 ];
 
 export const CORE_NAVIGATION: NavigationItem[] = [
-  { id: "dashboard", label: "Dashboard", caseScoped: false, group: "workspace" },
-  { id: "investigations", label: "Investigations", caseScoped: false, group: "workspace" },
-  { id: "entities", label: "Entities", caseScoped: true, group: "analysis" },
-  { id: "graph", label: "Intelligence Graph", caseScoped: true, group: "analysis" },
-  { id: "timeline", label: "Timeline", caseScoped: true, group: "analysis" },
-  { id: "osint", label: "OSINT Workspace", caseScoped: true, group: "analysis" },
-  { id: "tools", label: "Tools", caseScoped: true, group: "analysis" },
-  { id: "evidence", label: "Evidence Lab", caseScoped: true, group: "evidence" },
-  { id: "sources", label: "Data Sources", caseScoped: true, group: "evidence" },
-  { id: "reports", label: "Reports", caseScoped: true, group: "evidence" },
-  { id: "copilot", label: "Copilot", caseScoped: true, group: "ai" },
-  { id: "models", label: "Local Models", caseScoped: false, group: "ai" },
-  { id: "system-link", label: "OIHK System Link", caseScoped: false, group: "system" },
-  { id: "settings", label: "Settings", caseScoped: false, group: "system" },
-  { id: "about", label: "About", caseScoped: false, group: "system" },
+  { id: "dashboard", label: "Dashboard", caseScoped: false, group: "primary" },
+  { id: "investigations", label: "Investigations", caseScoped: false, group: "primary" },
+  { id: "graph", label: "Graph", caseScoped: true, group: "primary" },
+  { id: "evidence", label: "Evidence", caseScoped: true, group: "primary" },
+  { id: "reports", label: "Reports", caseScoped: true, group: "primary" },
+  { id: "models", label: "Local Models", caseScoped: false, group: "primary" },
+  { id: "system-link", label: "System Link", caseScoped: false, group: "primary" },
+  { id: "settings", label: "Settings", caseScoped: false, group: "primary" },
+  { id: "entities", label: "Entities", caseScoped: true, group: "more" },
+  { id: "timeline", label: "Timeline", caseScoped: true, group: "more" },
+  { id: "osint", label: "OSINT Workspace", caseScoped: true, group: "more" },
+  { id: "tools", label: "Tools", caseScoped: true, group: "more" },
+  { id: "sources", label: "Data Sources", caseScoped: true, group: "more" },
+  { id: "copilot", label: "Copilot", caseScoped: true, group: "more" },
+  { id: "about", label: "About", caseScoped: false, group: "more" },
 ];
 
 // Compatibility export for callers/tests that still use the original catalog name.

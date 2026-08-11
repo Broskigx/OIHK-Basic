@@ -18,6 +18,7 @@ from app.routers import (
     auth,
     cases,
     custody,
+    dashboard,
     evidence,
     exports,
     forensic_core,
@@ -120,9 +121,7 @@ async def _ensure_loopback_system_user() -> None:
 
     placeholder = "!loopback-auth-disabled!"
     async with SessionLocal() as session:
-        row = (
-            await session.execute(select(models.User).where(models.User.id == "system"))
-        ).scalar_one_or_none()
+        row = (await session.execute(select(models.User).where(models.User.id == "system"))).scalar_one_or_none()
         if row is not None:
             # Upgrade databases seeded before the well-formed hash existed.
             if row.hashed_password == placeholder:
@@ -206,9 +205,7 @@ async def lifespan(app: FastAPI):
                 try:
                     await runtime_supervisor.reconcile_existing_runtime(session, module)
                 except Exception as exc:
-                    logger.warning(
-                        "System Link runtime reconciliation failed for %s: %s", module.module_id, exc
-                    )
+                    logger.warning("System Link runtime reconciliation failed for %s: %s", module.module_id, exc)
     except Exception as exc:
         # Optional modules must never prevent Basic from starting.
         logger.warning("System Link startup reconciliation was isolated: %s", type(exc).__name__)
@@ -250,6 +247,7 @@ app.include_router(system_link_module_api_router)
 # Authenticated routers
 _auth = [Depends(get_current_user)]
 app.include_router(cases.router, dependencies=_auth)
+app.include_router(dashboard.router, dependencies=_auth)
 app.include_router(sources.router, dependencies=_auth)
 app.include_router(targets.router, dependencies=_auth)
 app.include_router(graph.router, dependencies=_auth)

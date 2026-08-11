@@ -1,14 +1,15 @@
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import type { GraphNode } from "../../types";
 import { GraphWorkspaceView } from "./GraphWorkspaceView";
 
-function renderGraphWorkspace(label = "") {
+function renderGraphWorkspace(label = "", selectedNode: GraphNode | null = null) {
   return renderToString(
     createElement(GraphWorkspaceView, {
       graph: { nodes: [], edges: [] },
       analytics: null,
-      selectedNode: null,
+      selectedNode,
       openedNode: null,
       zoom: 1,
       layoutVersion: 0,
@@ -20,6 +21,7 @@ function renderGraphWorkspace(label = "") {
       onAddEntity: vi.fn(),
       onSelectNode: vi.fn(),
       onOpenNode: vi.fn(),
+      onCloseInspector: vi.fn(),
       onExpandNode: vi.fn(),
       onEnrichNode: vi.fn(),
       onRunTransform: vi.fn(),
@@ -45,5 +47,23 @@ describe("GraphWorkspaceView", () => {
     const populatedMarkup = renderGraphWorkspace("Example Entity");
     expect(populatedMarkup).toContain("Example Entity");
     expect(populatedMarkup).not.toContain('disabled=""');
+  });
+
+  it("opens a real-data inspector for the selected entity", () => {
+    const markup = renderGraphWorkspace("", {
+      id: "entity-1",
+      label: "analyst@example.test",
+      type: "email",
+      confidence: 0.9,
+      source_ids: ["source-1"],
+      value: "analyst@example.test",
+      properties: { alias: "Analyst" },
+      notes: "Verified in local evidence",
+    });
+
+    expect(markup).toContain("Entity inspector");
+    expect(markup).toContain("entity-1");
+    expect(markup).toContain("analyst@example.test");
+    expect(markup).toContain("Open full entity record");
   });
 });

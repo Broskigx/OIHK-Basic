@@ -80,13 +80,13 @@ function drawEdge(
   ctx.moveTo(sx, sy);
   ctx.lineTo(ex, ey);
   if (highlighted) {
-    ctx.strokeStyle = "rgba(66, 245, 200, 0.85)";
+    ctx.strokeStyle = "rgba(102, 211, 71, 0.82)";
     ctx.lineWidth = 2.2;
   } else if (dimmed) {
     ctx.strokeStyle = "rgba(100, 116, 139, 0.15)";
     ctx.lineWidth = 0.8;
   } else {
-    ctx.strokeStyle = "rgba(66, 245, 200, 0.25)";
+    ctx.strokeStyle = "rgba(153, 166, 174, 0.3)";
     ctx.lineWidth = 1.2;
   }
   ctx.stroke();
@@ -100,10 +100,10 @@ function drawEdge(
     ctx.lineTo(ex - nx * arrowSize + ny * arrowSize * 0.5, ey - ny * arrowSize - nx * arrowSize * 0.5);
     ctx.closePath();
     ctx.fillStyle = highlighted
-      ? "rgba(66, 245, 200, 0.9)"
+      ? "rgba(102, 211, 71, 0.9)"
       : dimmed
         ? "rgba(100, 116, 139, 0.2)"
-        : "rgba(66, 245, 200, 0.35)";
+        : "rgba(153, 166, 174, 0.42)";
     ctx.fill();
   }
 
@@ -143,12 +143,12 @@ function drawLabel(
   const pad = 4;
   const bw = metrics.width + pad * 2;
   const bh = fontSize + 4;
-  ctx.fillStyle = "rgba(4, 10, 12, 0.82)";
+  ctx.fillStyle = "rgba(9, 13, 16, 0.88)";
   ctx.beginPath();
   ctx.roundRect(x - bw / 2, labelY - 1, bw, bh, 4);
   ctx.fill();
 
-  ctx.fillStyle = "#eafff8";
+  ctx.fillStyle = "#edf1ee";
   ctx.fillText(text, x, labelY);
 }
 
@@ -219,25 +219,17 @@ export function renderGraph(
   const visibleNodeIds = new Set(visibleNodes.map((n) => n.id));
 
   // 1. Background
-  ctx.fillStyle = compact ? "transparent" : "#041012";
+  ctx.fillStyle = compact ? "transparent" : "#0a0f12";
   ctx.fillRect(0, 0, width, height);
 
   // 2. Grid (only in non-compact mode)
   if (!compact) {
-    ctx.strokeStyle = "rgba(117, 255, 211, 0.055)";
-    ctx.lineWidth = 1;
-    const gridSize = 36;
-    for (let x = -gridSize; x < width + gridSize; x += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
-    }
-    for (let y = -gridSize; y < height + gridSize; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
+    ctx.fillStyle = "rgba(153, 166, 174, 0.09)";
+    const gridSize = 28;
+    for (let x = gridSize / 2; x < width; x += gridSize) {
+      for (let y = gridSize / 2; y < height; y += gridSize) {
+        ctx.fillRect(x, y, 1, 1);
+      }
     }
   }
 
@@ -302,7 +294,7 @@ export function renderGraph(
       ctx.save();
       ctx.globalAlpha = 0.2;
       ctx.shadowColor = config.color;
-      ctx.shadowBlur = 20;
+      ctx.shadowBlur = 12;
       ctx.beginPath();
       ctx.arc(node.x, node.y, radius * 1.5, 0, Math.PI * 2);
       ctx.fillStyle = config.color;

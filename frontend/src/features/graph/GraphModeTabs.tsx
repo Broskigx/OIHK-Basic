@@ -17,7 +17,7 @@ export function GraphModeTabs({
   compact?: boolean;
 }) {
   return (
-    <div className={compact ? "graph-view-tabs compact" : "graph-view-tabs"} role="tablist" aria-label="Vistas del grafo">
+    <div className={compact ? "graph-view-tabs compact" : "graph-view-tabs"} role="tablist" aria-label="Graph views">
       {GRAPH_VIEW_OPTIONS.map((option) => {
         const Icon = MODE_ICONS[option.id];
         const selected = option.id === value;
@@ -38,9 +38,9 @@ export function GraphModeTabs({
           </button>
         );
       })}
-      <span className="graph-view-tabs-future" title="La barra admite nuevas vistas sin reorganizar el workspace">
+      <span className="graph-view-tabs-future" title="Additional views can be added without reorganizing the workspace">
         <Plus size={14} />
-        Más vistas
+        More views
       </span>
     </div>
   );

@@ -19,6 +19,9 @@ export interface GraphViewHandle {
   isPinned: (nodeId: string) => boolean;
   undo: () => boolean;
   redo: () => boolean;
+  getSelectedNodeIds: () => string[];
+  selectAll: () => void;
+  clearSelection: () => void;
   getWorkspace: () => EngineWorkspaceState | null;
   applyWorkspace: (workspace: EngineWorkspaceState) => void;
 }
@@ -64,6 +67,9 @@ export const GraphView = forwardRef<GraphViewHandle, Props>(function GraphView(p
     isPinned: (nodeId) => canvasRef.current?.isPinned(nodeId) ?? false,
     undo: () => canvasRef.current?.undo() ?? false,
     redo: () => canvasRef.current?.redo() ?? false,
+    getSelectedNodeIds: () => canvasRef.current?.getSelectedNodeIds() ?? [],
+    selectAll: () => canvasRef.current?.selectAll(),
+    clearSelection: () => canvasRef.current?.clearSelection(),
     getWorkspace: () => canvasRef.current?.getWorkspace() ?? null,
     applyWorkspace: (state) => canvasRef.current?.applyWorkspace(state),
   }));

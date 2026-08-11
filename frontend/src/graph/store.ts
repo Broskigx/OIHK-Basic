@@ -78,6 +78,12 @@ export class GraphStore {
     this.dirty.interaction = true;
   }
 
+  setSelectedMany(nodeIds: Iterable<string>): void {
+    this.selectedNodeIds = new Set(nodeIds);
+    this.selectedNodeId = this.selectedNodeIds.values().next().value ?? null;
+    this.dirty.interaction = true;
+  }
+
   setHovered(nodeId: string | null): void {
     if (this.hoveredNodeId === nodeId) return;
     this.hoveredNodeId = nodeId;

@@ -22,6 +22,9 @@ export interface CanvasHandle {
   zoomBy: (factor: number) => void;
   undo: () => boolean;
   redo: () => boolean;
+  getSelectedNodeIds: () => string[];
+  selectAll: () => void;
+  clearSelection: () => void;
   engine: GraphEngine | null;
 }
 
@@ -76,6 +79,9 @@ const IntelligenceCanvas = forwardRef<CanvasHandle, Props>(function Intelligence
     zoomBy: (factor) => engineRef.current?.zoomBy(factor),
     undo: () => engineRef.current?.undo() ?? false,
     redo: () => engineRef.current?.redo() ?? false,
+    getSelectedNodeIds: () => Array.from(engineRef.current?.store.selectedNodeIds ?? []),
+    selectAll: () => engineRef.current?.store.setSelectedMany(graph.nodes.map((node) => node.id)),
+    clearSelection: () => engineRef.current?.store.setSelected(null),
     engine: engineRef.current,
   }));
 
@@ -130,7 +136,9 @@ const IntelligenceCanvas = forwardRef<CanvasHandle, Props>(function Intelligence
   // Sync external selection changes to the engine
   useEffect(() => {
     if (!engineReady) return;
-    engineRef.current?.store.setSelected(selectedNodeId || null);
+    const engine = engineRef.current;
+    const next = selectedNodeId || null;
+    if (engine && engine.store.selectedNodeId !== next) engine.store.setSelected(next);
   }, [selectedNodeId, engineReady]);
 
   if (graph.nodes.length === 0) {
@@ -165,7 +173,7 @@ const IntelligenceCanvas = forwardRef<CanvasHandle, Props>(function Intelligence
       <canvas
         ref={canvasRef}
         tabIndex={0}
-        aria-label="Interactive intelligence graph. Drag nodes, drag the background to pan, and use Shift-click for multi-selection."
+        aria-label="Interactive intelligence graph. Drag nodes, drag the background to pan, use Shift-click for multi-selection, F to fit, and Escape to clear selection."
         style={{
           display: "block",
           width: "100%",
