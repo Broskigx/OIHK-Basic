@@ -48,4 +48,23 @@ describe("authenticated request protection", () => {
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
     expect(headers.get("X-CSRF-Token")).toBe("csrf-test-token");
   });
+
+  it("surfaces structured backend errors without stringifying objects", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: { code: "backup_failed", message: "The local backup could not be verified." } }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    await expect(createCase({
+      title: "Authorized review",
+      summary: "",
+      legal_basis: "Consent",
+      scope_statement: "Bounded public-source review",
+      priority: "normal",
+      tags: [],
+      notes: "",
+    })).rejects.toThrow("The local backup could not be verified.");
+  });
 });

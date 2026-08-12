@@ -80,6 +80,7 @@ class LocalModelTestRequest(LocalModelProbeRequest):
     prompt: str = Field(default="Respond with: OIHK Basic local model ready", min_length=1, max_length=2000)
     temperature: float = Field(default=0.1, ge=0, le=2)
     max_tokens: int = Field(default=80, ge=1, le=2048)
+    timeout_seconds: int = Field(default=60, ge=2, le=600)
 
 
 class GeneralSettings(BaseModel):

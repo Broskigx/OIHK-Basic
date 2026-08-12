@@ -8,12 +8,14 @@ const apiMocks = vi.hoisted(() => ({
   detect: vi.fn(),
   storage: vi.fn(),
   save: vi.fn(),
+  test: vi.fn(),
 }));
 
 vi.mock("../../api", () => ({
   detectLocalModelServices: apiMocks.detect,
   getStorageStatus: apiMocks.storage,
   saveLocalModelConfiguration: apiMocks.save,
+  testLocalModel: apiMocks.test,
 }));
 
 const settings: ApplicationSettings = {
@@ -35,7 +37,7 @@ afterEach(() => {
 });
 
 describe("first-run local model discovery", () => {
-  it("detects Ollama automatically and saves the selected connection", async () => {
+  it("distinguishes detected, configured, and inference-verified Ollama states", async () => {
     apiMocks.storage.mockResolvedValue({
       data_directory: "C:/OIHK-Basic",
       database_path: "C:/OIHK-Basic/oihk-basic.db",
@@ -56,7 +58,8 @@ describe("first-run local model discovery", () => {
       }],
     });
     apiMocks.save.mockImplementation(async (configuration) => ({ ...configuration, id: "saved" }));
-    const onConnected = vi.fn();
+    apiMocks.test.mockResolvedValue({ status: "ok", reply: "OIHK local model ready", latency_ms: 21 });
+    const onStatusChanged = vi.fn();
     const host = document.createElement("div");
     document.body.append(host);
     const root = createRoot(host);
@@ -69,17 +72,19 @@ describe("first-run local model discovery", () => {
           cases={[]}
           onComplete={vi.fn()}
           onCreateCase={vi.fn()}
-          onLocalModelConnected={onConnected}
+          onLocalModelStatusChanged={onStatusChanged}
           onOpenModels={vi.fn()}
         />,
       );
     });
 
     expect(host.textContent).toContain("Ollama detected");
-    const review = Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("Review & connect"));
+    const review = Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("Review detection"));
     await act(async () => { review?.click(); });
-    const connect = Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("Connect Ollama"));
-    await act(async () => { connect?.click(); });
+    expect(host.textContent).toContain("Configure LM Studio or Ollama");
+    expect(host.textContent).not.toContain("Inference verified");
+    const save = Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("Save configuration"));
+    await act(async () => { save?.click(); });
 
     expect(apiMocks.detect).toHaveBeenCalledOnce();
     expect(apiMocks.save).toHaveBeenCalledWith(expect.objectContaining({
@@ -88,8 +93,20 @@ describe("first-run local model discovery", () => {
       model: "qwen-local",
       context_length: 32768,
     }));
-    expect(onConnected).toHaveBeenCalledOnce();
-    expect(host.textContent).toContain("Connected");
+    expect(onStatusChanged).toHaveBeenCalledOnce();
+    expect(host.textContent).toContain("Test inference");
+    expect(host.textContent).not.toContain("Inference verified");
+
+    const test = Array.from(host.querySelectorAll("button")).find((button) => button.textContent?.includes("Test inference"));
+    await act(async () => { test?.click(); });
+    expect(apiMocks.test).toHaveBeenCalledWith(expect.objectContaining({
+      provider: "ollama",
+      endpoint: "http://127.0.0.1:11434",
+      model: "qwen-local",
+      timeout_seconds: 150,
+    }));
+    expect(onStatusChanged).toHaveBeenCalledTimes(2);
+    expect(host.textContent).toContain("Inference verified");
 
     await act(async () => { root.unmount(); });
   });

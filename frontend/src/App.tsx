@@ -610,7 +610,7 @@ export function App({ currentUser }: { currentUser: User }) {
         cases={caseMgr.cases}
         onComplete={completeOnboarding}
         onCreateCase={createOnboardingInvestigation}
-        onLocalModelConnected={() => void refreshLocalModelStatus()}
+        onLocalModelStatusChanged={() => void refreshLocalModelStatus()}
         onOpenModels={() => { setShowOnboarding(false); handleNavigate("models"); }}
       />
     </>

@@ -24,6 +24,53 @@ from app.services.local_models import build_local_provider, detect_local_service
 router = APIRouter(prefix="/local-models", tags=["local-models"])
 
 
+def _runtime_http_error(exc: httpx.HTTPError, *, operation: str) -> HTTPException:
+    """Translate model-runtime failures into actionable, non-sensitive UI copy."""
+
+    if isinstance(exc, httpx.TimeoutException):
+        return HTTPException(
+            status_code=504,
+            detail=(
+                f"The local model endpoint timed out while {operation}. No OIHK data or configuration was changed. "
+                "Confirm the runtime and model are ready, then retry or increase the timeout."
+            ),
+        )
+    if isinstance(exc, httpx.ConnectError):
+        return HTTPException(
+            status_code=503,
+            detail=(
+                f"OIHK Basic could not reach the local model endpoint while {operation}. No OIHK data or "
+                "configuration was changed. Start the LM Studio or Ollama server, verify the endpoint, and retry."
+            ),
+        )
+    if isinstance(exc, httpx.HTTPStatusError):
+        return HTTPException(
+            status_code=502,
+            detail=(
+                f"The local model endpoint rejected the request with HTTP {exc.response.status_code} while "
+                f"{operation}. No OIHK data or configuration was changed. Check the provider type, endpoint, and "
+                "loaded model."
+            ),
+        )
+    return HTTPException(
+        status_code=503,
+        detail=(
+            f"The local model endpoint became unavailable while {operation}. No OIHK data or configuration was "
+            "changed. Check the runtime diagnostics and retry."
+        ),
+    )
+
+
+def _malformed_runtime_response(*, operation: str) -> HTTPException:
+    return HTTPException(
+        status_code=502,
+        detail=(
+            f"The local model endpoint returned an unsupported response while {operation}. No OIHK data or "
+            "configuration was changed. Confirm that the selected provider matches the endpoint API."
+        ),
+    )
+
+
 async def _configuration(session: AsyncSession, user_id: str) -> models.LocalModelConfiguration | None:
     return (
         await session.execute(
@@ -114,11 +161,14 @@ async def runtime_status(
 async def list_models(payload: LocalModelProbeRequest) -> dict:
     try:
         provider = build_local_provider(payload.provider, payload.endpoint, 12)
-        models_found = await provider.list_models()
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        models_found = await provider.list_models()
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail=f"Local model service unavailable: {type(exc).__name__}") from exc
+        raise _runtime_http_error(exc, operation="listing models") from exc
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise _malformed_runtime_response(operation="listing models") from exc
     return {"models": [model.__dict__ for model in models_found]}
 
 
@@ -127,14 +177,19 @@ async def test_inference(payload: LocalModelTestRequest) -> dict:
     started = perf_counter()
     try:
         provider = build_local_provider(payload.provider, payload.endpoint, payload.timeout_seconds)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
         reply = await provider.complete(
             model=payload.model,
             messages=[{"role": "user", "content": payload.prompt}],
             temperature=payload.temperature,
             max_tokens=payload.max_tokens,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=503, detail=f"Inference failed: {type(exc).__name__}") from exc
+        raise _runtime_http_error(exc, operation="testing inference") from exc
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise _malformed_runtime_response(operation="testing inference") from exc
+    if not reply.strip():
+        raise _malformed_runtime_response(operation="testing inference")
     return {"status": "ok", "reply": reply, "latency_ms": round((perf_counter() - started) * 1000)}

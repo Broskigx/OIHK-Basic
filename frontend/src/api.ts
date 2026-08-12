@@ -107,6 +107,25 @@ function csrfSafeMethod(method?: string): boolean {
   return !method || ["GET", "HEAD", "OPTIONS", "TRACE"].includes(method.toUpperCase());
 }
 
+function responseErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== "object") return fallback;
+  const record = payload as Record<string, unknown>;
+  const detail = record.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+    const message = (detail as Record<string, unknown>).message;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => item && typeof item === "object" ? (item as Record<string, unknown>).msg : null)
+      .filter((message): message is string => typeof message === "string" && Boolean(message.trim()));
+    if (messages.length > 0) return messages.join("; ");
+  }
+  if (typeof record.message === "string" && record.message.trim()) return record.message;
+  return fallback;
+}
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET";
   const csrfToken = csrfSafeMethod(method) ? "" : getCsrfToken();
@@ -136,7 +155,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof payload.detail === "string" ? payload.detail : `Request failed (${response.status})`);
+    throw new Error(responseErrorMessage(payload, `Request failed (${response.status})`));
   }
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
@@ -168,7 +187,7 @@ async function requestForm<T>(path: string, body: FormData, signal?: AbortSignal
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof payload.detail === "string" ? payload.detail : `Request failed (${response.status})`);
+    throw new Error(responseErrorMessage(payload, `Request failed (${response.status})`));
   }
   return response.json() as Promise<T>;
 }
@@ -304,7 +323,7 @@ export async function streamCopilotMessage(
   }
   if (!response.ok || !response.body) {
     const err = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof err.detail === "string" ? err.detail : `Request failed (${response.status})`);
+    throw new Error(responseErrorMessage(err, `Request failed (${response.status})`));
   }
 
   const reader = response.body.getReader();
@@ -397,7 +416,7 @@ export async function investigateStream(
   }
   if (!response.ok || !response.body) {
     const err = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof err.detail === "string" ? err.detail : `Request failed (${response.status})`);
+    throw new Error(responseErrorMessage(err, `Request failed (${response.status})`));
   }
 
   const reader = response.body.getReader();
@@ -463,7 +482,7 @@ export async function autoInvestigateStream(
   }
   if (!response.ok || !response.body) {
     const err = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof err.detail === "string" ? err.detail : `Request failed (${response.status})`);
+    throw new Error(responseErrorMessage(err, `Request failed (${response.status})`));
   }
 
   const reader = response.body.getReader();
@@ -577,7 +596,7 @@ export async function downloadStorageBackup(): Promise<Blob> {
   const response = await fetch(`${API_URL}/settings/backup`, { credentials: "include", headers: authHeaders() });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof payload.detail === "string" ? payload.detail : "Could not create the local backup");
+    throw new Error(responseErrorMessage(payload, "Could not create the local backup"));
   }
   return response.blob();
 }
@@ -733,7 +752,7 @@ export async function fetchGraphExport(caseId: string, kind: "graphml" | "csv-no
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof payload.detail === "string" ? payload.detail : `Export failed (${response.status})`);
+    throw new Error(responseErrorMessage(payload, `Export failed (${response.status})`));
   }
   return response.blob();
 }
@@ -768,7 +787,7 @@ export async function downloadReport(caseId: string): Promise<Blob> {
   }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof payload.detail === "string" ? payload.detail : `Request failed (${response.status})`);
+    throw new Error(responseErrorMessage(payload, `Request failed (${response.status})`));
   }
   return response.blob();
 }
