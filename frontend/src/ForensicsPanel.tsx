@@ -5,9 +5,9 @@ import { analyzeForensics } from "./api";
 import type { ForensicReport } from "./types";
 
 const VERDICT_LABEL: Record<string, string> = {
-  clean: "Sin indicios",
-  suspicious: "Sospechoso",
-  high: "Probable dato oculto",
+  clean: "No indicators",
+  suspicious: "Suspicious",
+  high: "Likely hidden data",
 };
 
 function renderMetaValue(value: unknown): string {
@@ -34,7 +34,7 @@ export function ForensicsPanel({ caseId, onAnalyzed }: { caseId: string; onAnaly
       setReport(result);
       onAnalyzed?.();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "No se pudo analizar el archivo");
+      setError(err instanceof Error ? err.message : "The file could not be analyzed. No evidence was added.");
     } finally {
       setBusy(false);
       event.target.value = "";
@@ -46,18 +46,18 @@ export function ForensicsPanel({ caseId, onAnalyzed }: { caseId: string; onAnaly
       <div className="forensics-head">
         <FileSearch size={16} />
         <div>
-          <strong>Forense / estego</strong>
-          <span>Detecta datos ocultos y metadatos tecnicos</span>
+          <strong>Forensic and steganography check</strong>
+          <span>Inspect hidden data signals and technical metadata</span>
         </div>
       </div>
 
       <label className="forensics-drop">
         <Upload size={18} />
-        <span>{busy ? "Analizando..." : fileName || "Subir archivo para analizar"}</span>
+        <span>{busy ? "Analyzing…" : fileName || "Choose a file to analyze"}</span>
         <input type="file" onChange={onFile} disabled={busy} hidden />
       </label>
 
-      {error && <div className="forensics-error">{error}</div>}
+      {error && <div className="forensics-error" role="alert">{error}</div>}
 
       {report && (
         <div className="forensics-report">
@@ -72,24 +72,24 @@ export function ForensicsPanel({ caseId, onAnalyzed }: { caseId: string; onAnaly
 
           <dl className="forensics-facts">
             <div>
-              <dt>Tipo real</dt>
+              <dt>Detected type</dt>
               <dd>{report.detected_label}</dd>
             </div>
             {report.type_mismatch && (
               <div>
                 <dt>Extension</dt>
-                <dd className="warn">no coincide ({report.claimed_type})</dd>
+                <dd className="warn">does not match ({report.claimed_type})</dd>
               </div>
             )}
             <div>
-              <dt>Entropia</dt>
+              <dt>Entropy</dt>
               <dd>
                 {report.entropy} (max {report.max_window_entropy})
               </dd>
             </div>
             {report.trailing_bytes > 0 && (
               <div>
-                <dt>Datos anexados</dt>
+                <dt>Trailing data</dt>
                 <dd className="warn">{report.trailing_bytes} bytes</dd>
               </div>
             )}

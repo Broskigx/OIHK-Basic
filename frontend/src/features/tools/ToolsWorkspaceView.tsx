@@ -92,7 +92,7 @@ function ArtifactHistory({ sources, custody, onOpenEvidence }: { sources: Source
             {seal?.ok ? <CheckCircle2 size={15} /> : <ShieldAlert size={15} />}
             <span>{seal?.ok ? "Stored content and custody chain verify correctly." : "Open Evidence to inspect the complete custody chain."}</span>
           </div>
-          <button type="button" onClick={onOpenEvidence}>Open Evidence Vault</button>
+          <button type="button" onClick={onOpenEvidence}>Open Evidence</button>
           <small>The artifact inventory exposes provenance and seal state. Raw evidence remains in protected backend storage.</small>
         </aside>
       )}

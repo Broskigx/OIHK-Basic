@@ -44,7 +44,7 @@ export const NODE_TYPE_CONFIGS: Record<string, NodeTypeConfig> = {
   hash:         { type: "hash",         label: "Hash",            category: "evidence", color: "#c4b5fd", borderColor: "#6d28d9", shape: "square" },
   location:     { type: "location",     label: "Ubicación",       category: "other",    color: "#6ee7b7", borderColor: "#047857", shape: "circle" },
   username:     { type: "username",     label: "Usuario",         category: "person",   color: "#f9a8d4", borderColor: "#be185d", shape: "circle" },
-  custom:       { type: "custom",       label: "Entidad personalizada", category: "other", color: "#e2e8f0", borderColor: "#64748b", shape: "hexagon" },
+  custom:       { type: "custom",       label: "Custom entity", category: "other", color: "#e2e8f0", borderColor: "#64748b", shape: "hexagon" },
   cve:          { type: "cve",          label: "CVE",             category: "other",    color: "#fda4af", borderColor: "#9f1239", shape: "diamond" },
   btc:          { type: "btc",          label: "Bitcoin",         category: "crypto",   color: "#facc15", borderColor: "#a16207", shape: "hexagon" },
   eth:          { type: "eth",          label: "Ethereum",        category: "crypto",   color: "#94a3b8", borderColor: "#475569", shape: "hexagon" },

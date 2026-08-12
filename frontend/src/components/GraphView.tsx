@@ -109,10 +109,13 @@ export const GraphView = forwardRef<GraphViewHandle, Props>(function GraphView(p
   }, [selectedNodeId, viewMode, visible]);
 
   if (visible.nodes.length === 0) {
-    const emptyLabel = viewMode === "connections"
-      ? "Select an entity to inspect its connections"
-      : typeFilter === "all" ? "Graph ready" : "No entities match this filter";
-    return <div className="empty-state"><Network size={34} /><span>{emptyLabel}</span></div>;
+    const emptyTitle = viewMode === "connections"
+      ? "No entity selected"
+      : typeFilter === "all" ? "No entities yet" : "No entities match this filter";
+    const emptyDescription = viewMode === "connections"
+      ? "Select an entity in Network view to inspect its direct connections."
+      : typeFilter === "all" ? "Use Add entity above or import a CSV to populate this investigation graph." : "Choose All types or adjust the active filters. Graph data was not removed.";
+    return <div className="platform-empty graph-empty-state" role="status"><Network size={34} /><strong>{emptyTitle}</strong><p>{emptyDescription}</p></div>;
   }
 
   return (
