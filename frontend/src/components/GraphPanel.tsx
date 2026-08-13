@@ -693,19 +693,19 @@ export function GraphPanel({
           {graphAnalytics && (
             <div className="graph-metrics">
               <div>
-                <span>Densidad</span>
+                <span>Density</span>
                 <strong>{Math.round(graphAnalytics.density * 1000) / 1000}</strong>
               </div>
               <div>
-                <span>Componentes</span>
+                <span>Components</span>
                 <strong>{graphAnalytics.component_count}</strong>
               </div>
               <div>
-                <span>Aislados</span>
+                <span>Isolated</span>
                 <strong>{graphAnalytics.isolated_node_count}</strong>
               </div>
               <div>
-                <span>Puentes</span>
+                <span>Bridges</span>
                 <strong>{graphAnalytics.bridges.length}</strong>
               </div>
               {topHubs.length > 0 && (
