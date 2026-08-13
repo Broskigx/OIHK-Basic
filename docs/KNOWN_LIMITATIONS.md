@@ -5,6 +5,8 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 ## Analysis and OSINT
 
 - DNS, RDAP/WHOIS and certificate transparency are the built-in network lookups.
+- Lookup inputs must be syntactically valid hostnames or IPv4 literals. Values that are not — including anything carrying a URL delimiter — are refused rather than escaped, so a transform run against a malformed entity value returns no results instead of contacting the network.
+- Third-party lookup responses are read under a size ceiling (`OIHK_MAX_LOOKUP_RESPONSE_BYTES`, default 5 MB). A registry returning more than that yields a partial-lookup error rather than a complete result; certificate-transparency queries for very large domains can hit this.
 - Username, phone, generic text, crypto address and remote hash intelligence require a legitimate user-configured adapter; Basic reports the adapter gap instead of inventing results.
 - Cross-case correlation uses deterministic attribute overlap; it is not an identity-resolution engine.
 
@@ -13,6 +15,7 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 - No model weights or inference server are bundled.
 - Copilot and assisted report drafts require a local or private compatible endpoint configured by the user. LM Studio is the currently validated backend; Ollama and other OpenAI-compatible endpoints exist in code but are not guaranteed in this preview.
 - Model output is unverified and cannot approve or mutate evidence automatically.
+- Model responses are bounded (`OIHK_MAX_MODEL_RESPONSE_BYTES`, default 8 MB) and streamed completions stop at `OIHK_MAX_MODEL_STREAM_CHARS` (default 1,000,000 characters). A long generation is truncated at that ceiling rather than allowed to run unbounded.
 
 ## Evidence and reports
 
