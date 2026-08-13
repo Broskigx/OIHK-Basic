@@ -128,15 +128,32 @@ fn start_backend(port: u16) -> Result<Child, String> {
         } else {
             "oihk-basic-backend"
         };
-        let mut candidates = Vec::new();
-        if let Ok(resource_dir) = std::env::var("OIHK_RESOURCE_DIR") {
-            candidates.push(std::path::PathBuf::from(resource_dir).join(backend_name));
-        }
-        if let Some(executable_dir) = std::env::current_exe()
+        // The installed executable's own directory is the authoritative
+        // location and is tried first. `OIHK_RESOURCE_DIR` is normally set by
+        // `run()` from Tauri's resolved resource directory, but that lookup can
+        // fail, in which case a value inherited from the environment would
+        // otherwise decide which binary runs as the backend. It is therefore
+        // accepted only as a fallback, and only when it resolves inside the
+        // installation directory.
+        let executable_dir = std::env::current_exe()
             .ok()
-            .and_then(|path| path.parent().map(|dir| dir.to_path_buf()))
+            .and_then(|path| path.parent().map(|dir| dir.to_path_buf()));
+
+        let mut candidates = Vec::new();
+        if let Some(dir) = executable_dir.as_ref() {
+            candidates.push(dir.join(backend_name));
+        }
+        if let (Ok(resource_dir), Some(install_dir)) =
+            (std::env::var("OIHK_RESOURCE_DIR"), executable_dir.as_ref())
         {
-            candidates.push(executable_dir.join(backend_name));
+            let candidate = std::path::PathBuf::from(resource_dir).join(backend_name);
+            let contained = match (candidate.canonicalize(), install_dir.canonicalize()) {
+                (Ok(resolved), Ok(root)) => resolved.starts_with(&root),
+                _ => false,
+            };
+            if contained {
+                candidates.push(candidate);
+            }
         }
         let backend_exe = candidates
             .into_iter()

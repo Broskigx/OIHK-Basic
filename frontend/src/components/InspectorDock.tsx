@@ -18,6 +18,7 @@ import {
 import { FormEvent, useEffect, useState } from "react";
 import { createGraphEntity, getEntityDossier, renameEntity, updateEntityDetails } from "../api";
 import { ForensicsPanel } from "../ForensicsPanel";
+import { safeExternalHref } from "../lib/safeUrl";
 import type {
   CaseMonitor,
   CaseRead,
@@ -349,7 +350,7 @@ export function InspectorDock({
 
             <div className="ni-actions">
               {openedNode.type === "url" && openedNode.label.startsWith("http") && (
-                <a className="button" href={openedNode.label} target="_blank" rel="noreferrer">
+                <a className="button" href={safeExternalHref(openedNode.label)} target="_blank" rel="noopener noreferrer">
                   <Maximize2 size={14} />
                   Abrir URL
                 </a>
@@ -446,7 +447,7 @@ export function InspectorDock({
                   {dossier.sources.map((source) => (
                     <div key={source.source_id} className="ni-source">
                       {source.url ? (
-                        <a href={source.url} target="_blank" rel="noreferrer">
+                        <a href={safeExternalHref(source.url)} target="_blank" rel="noopener noreferrer">
                           {source.title}
                         </a>
                       ) : (

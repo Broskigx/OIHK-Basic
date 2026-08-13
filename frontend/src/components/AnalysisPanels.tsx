@@ -1,5 +1,6 @@
 import { Activity, BrainCircuit, Camera, Database, FileText, LinkIcon, LockKeyhole, ServerCog, Upload } from "lucide-react";
 import { ChangeEvent, FormEvent, useMemo } from "react";
+import { safeExternalHref } from "../lib/safeUrl";
 import type { AuditEvent, CaseMemory, ProviderCatalog, SearchHit, SourceForm, SourceRead, TargetPhoto } from "../types";
 import { actionLabel, score, shortDate } from "../utils";
 
@@ -42,7 +43,7 @@ export function IntelGrid({ hits, memory }: { hits: SearchHit[]; memory: CaseMem
         <div className="hit-list">
           {hits.length === 0 && <div className="empty-inline">Sin resultados revisables</div>}
           {hits.map((hit) => (
-            <a className="hit" key={hit.id} href={hit.url} target="_blank" rel="noreferrer">
+            <a className="hit" key={hit.id} href={safeExternalHref(hit.url)} target="_blank" rel="noopener noreferrer">
               <strong>{hit.title}</strong>
               <span>{hit.snippet || hit.url}</span>
               <small>{score(hit.confidence)} confianza inicial</small>
