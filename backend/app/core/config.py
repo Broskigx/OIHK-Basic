@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     search_target_results: Annotated[int, Field(alias="OIHK_SEARCH_TARGET_RESULTS")] = 50
     max_fetch_bytes: Annotated[int, Field(alias="OIHK_MAX_FETCH_BYTES")] = 1_048_576
     max_evidence_bytes: Annotated[int, Field(alias="OIHK_MAX_EVIDENCE_BYTES")] = 262_144_000
+    # Ceilings for third-party lookup and model responses. httpx decompresses
+    # transparently, so an unbounded read lets a small compressed body expand
+    # without limit in memory; these caps apply to the decompressed stream.
+    max_lookup_response_bytes: Annotated[int, Field(alias="OIHK_MAX_LOOKUP_RESPONSE_BYTES")] = 5_242_880
+    max_model_response_bytes: Annotated[int, Field(alias="OIHK_MAX_MODEL_RESPONSE_BYTES")] = 8_388_608
+    max_model_stream_chars: Annotated[int, Field(alias="OIHK_MAX_MODEL_STREAM_CHARS")] = 1_000_000
     search_deep_read: Annotated[bool, Field(alias="OIHK_SEARCH_DEEP_READ")] = True
     search_max_pages: Annotated[int, Field(alias="OIHK_SEARCH_MAX_PAGES")] = 10
     search_link_depth: Annotated[int, Field(alias="OIHK_SEARCH_LINK_DEPTH")] = 1
