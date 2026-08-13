@@ -194,7 +194,7 @@ export function GraphPanel({
       const ext = kind === "graphml" ? "graphml" : "csv";
       saveBlob(blob, `oihk-${kind}.${ext}`);
     } catch (err) {
-      onError(err instanceof Error ? err.message : "No se pudo exportar");
+      onError(err instanceof Error ? err.message : "The graph could not be exported.");
     }
   }
 
@@ -203,7 +203,7 @@ export function GraphPanel({
     const canvases = Array.from(stageRef.current?.querySelectorAll("canvas") ?? []);
     const firstCanvas = canvases[0];
     if (!firstCanvas) {
-      onError("No hay un grafo visible para exportar");
+      onError("There is no visible graph to export.");
       return;
     }
     try {
@@ -211,16 +211,16 @@ export function GraphPanel({
       output.width = firstCanvas.width;
       output.height = firstCanvas.height;
       const context = output.getContext("2d");
-      if (!context) throw new Error("El navegador no pudo crear la imagen");
+      if (!context) throw new Error("The browser could not create the graph image.");
       context.fillStyle = "#07111f";
       context.fillRect(0, 0, output.width, output.height);
       canvases.forEach((canvas) => context.drawImage(canvas, 0, 0, output.width, output.height));
       output.toBlob((blob) => {
         if (blob) saveBlob(blob, "oihk-graph.png");
-        else onError("No se pudo codificar el grafo como PNG");
+        else onError("The graph could not be encoded as PNG.");
       }, "image/png");
     } catch (err) {
-      onError(err instanceof Error ? err.message : "No se pudo exportar el PNG");
+      onError(err instanceof Error ? err.message : "The graph PNG could not be exported.");
     }
   }
 
@@ -230,7 +230,7 @@ export function GraphPanel({
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => onImportCsv(String(reader.result || ""));
-    reader.onerror = () => onError("No se pudo leer el archivo CSV");
+    reader.onerror = () => onError("The CSV file could not be read.");
     reader.readAsText(file);
   }
 
@@ -309,13 +309,13 @@ export function GraphPanel({
   async function saveMachine(node: GraphNode) {
     const ids = menuTransforms.map((t) => t.id);
     if (ids.length === 0) return;
-    const name = window.prompt("Nombre de la cadena (machine):", `Cadena ${node.type}`);
+    const name = window.prompt("Machine name:", `${node.type} transform chain`);
     if (!name || !name.trim()) return;
     try {
       await createMachine({ name: name.trim(), transform_ids: ids, input_type: node.type });
       setMenuMachines(await listMachines(node.type).catch(() => []));
     } catch (err) {
-      onError(err instanceof Error ? err.message : "No se pudo guardar la cadena");
+      onError(err instanceof Error ? err.message : "The transform machine could not be saved.");
     }
   }
 
@@ -427,29 +427,29 @@ export function GraphPanel({
         </div>
         <div className="graph-tabbar-right">
           <div className="data-tools">
-            <button type="button" title="Importar CSV de entidades" onClick={() => csvInputRef.current?.click()} disabled={!caseId}>
-              <Upload size={14} /> Importar
+            <button type="button" title="Import entity CSV" onClick={() => csvInputRef.current?.click()} disabled={!caseId}>
+              <Upload size={14} /> Import
             </button>
             <input ref={csvInputRef} type="file" accept=".csv,text/csv" hidden onChange={onCsvFile} />
             <div className="data-export">
-              <button type="button" title="Exportar grafo" onClick={() => setDataMenu((v) => !v)} disabled={!caseId}>
-                <Download size={14} /> Exportar <ChevronDown size={12} />
+              <button type="button" title="Export graph" onClick={() => setDataMenu((v) => !v)} disabled={!caseId}>
+                <Download size={14} /> Export <ChevronDown size={12} />
               </button>
               {dataMenu && (
                 <div className="data-export-menu" onPointerDown={(e) => e.stopPropagation()}>
-                  <button type="button" onClick={exportPng}>PNG (imagen)</button>
+                  <button type="button" onClick={exportPng}>PNG image</button>
                   <button type="button" onClick={() => downloadExport("graphml")}>GraphML (Gephi/yEd)</button>
-                  <button type="button" onClick={() => downloadExport("csv-nodes")}>CSV · nodos</button>
-                  <button type="button" onClick={() => downloadExport("csv-edges")}>CSV · aristas</button>
+                  <button type="button" onClick={() => downloadExport("csv-nodes")}>CSV · nodes</button>
+                  <button type="button" onClick={() => downloadExport("csv-edges")}>CSV · edges</button>
                 </div>
               )}
             </div>
           </div>
           <div className="view-switch">
-            <button type="button" className={graphMode === "graph" ? "selected" : ""} onClick={() => setGraphMode("graph")}>Grafo</button>
+            <button type="button" className={graphMode === "graph" ? "selected" : ""} onClick={() => setGraphMode("graph")}>Graph</button>
             <button type="button" className={graphMode === "table" ? "selected" : ""} onClick={() => setGraphMode("table")}>
               <Table2 size={14} />
-              Tabla
+              Table
             </button>
           </div>
         </div>
@@ -553,9 +553,9 @@ export function GraphPanel({
                 <Wand2 size={12} />
                 <span>Transforms · {getNodeConfig(contextMenu.node.type).label}</span>
               </div>
-              {menuLoading && <div className="node-menu-empty">Cargando…</div>}
+              {menuLoading && <div className="node-menu-empty">Loading…</div>}
               {!menuLoading && menuTransforms.length === 0 && (
-                <div className="node-menu-empty">Sin transforms para este tipo de nodo.</div>
+                <div className="node-menu-empty">No transforms are available for this entity type.</div>
               )}
               {!menuLoading &&
                 menuTransforms.map((transform) => (
@@ -573,7 +573,7 @@ export function GraphPanel({
                     <Zap size={12} />
                     <span className="node-menu-title">{transform.title}</span>
                     <small className={transform.keyless ? "node-menu-tag" : "node-menu-tag key"}>
-                      {transform.keyless ? transform.category : "clave"}
+                      {transform.keyless ? transform.category : "key required"}
                     </small>
                   </button>
                 ))}
@@ -583,7 +583,7 @@ export function GraphPanel({
                   <div className="node-menu-sep" />
                   <div className="node-menu-head">
                     <Layers size={12} />
-                    <span>Machines (cadenas)</span>
+                    <span>Transform machines</span>
                   </div>
                   <button
                     type="button"
@@ -595,11 +595,11 @@ export function GraphPanel({
                     }}
                   >
                     <Play size={12} />
-                    <span className="node-menu-title">Ejecutar todo ({menuTransforms.length})</span>
+                    <span className="node-menu-title">Run all ({menuTransforms.length})</span>
                   </button>
                   <button type="button" className="node-menu-item" onClick={() => saveMachine(contextMenu.node)}>
                     <Save size={12} />
-                    <span className="node-menu-title">Guardar como cadena…</span>
+                    <span className="node-menu-title">Save as machine…</span>
                   </button>
                   {menuMachines.map((machine) => (
                     <button
@@ -635,35 +635,35 @@ export function GraphPanel({
                   <strong title={popoverNode.label}>{popoverNode.label}</strong>
                   <span>{getNodeConfig(popoverNode.type).label}</span>
                 </div>
-                <button type="button" className="node-card-close" onClick={() => setPopover(null)} aria-label="Cerrar">
+                <button type="button" className="node-card-close" onClick={() => setPopover(null)} aria-label="Close entity preview">
                   <X size={13} />
                 </button>
               </div>
-              <div className="node-card-meter" title={`Confianza ${score(popoverNode.confidence)}`}>
+              <div className="node-card-meter" title={`Confidence ${score(popoverNode.confidence)}`}>
                 <i style={{ width: `${Math.round(popoverNode.confidence * 100)}%`, background: getNodeConfig(popoverNode.type).color }} />
               </div>
               <div className="node-card-stats">
                 <span>{score(popoverNode.confidence)} conf.</span>
-                <span>{degree.get(popoverNode.id) ?? 0} conexiones</span>
-                <span>{popoverNode.source_ids.length} fuentes</span>
+                <span>{degree.get(popoverNode.id) ?? 0} connections</span>
+                <span>{popoverNode.source_ids.length} sources</span>
               </div>
               {isPrepared ? (
-                <p className="node-card-hint">Vista previa — lanza la investigación para operar este nodo.</p>
+                <p className="node-card-hint">Preview only — run the investigation before operating on this entity.</p>
               ) : (
                 <div className="node-card-actions">
                   <button type="button" onClick={() => { onOpenNode(popoverNode); setPopover(null); }}>
-                    <Maximize2 size={13} /> Abrir
+                    <Maximize2 size={13} /> Open
                   </button>
                   <button type="button" onClick={() => { onExpandNode(popoverNode); }} disabled={expanding}>
-                    {expanding ? <Loader2 size={13} className="ip-spin" /> : <Network size={13} />} Expandir
+                    {expanding ? <Loader2 size={13} className="ip-spin" /> : <Network size={13} />} Expand
                   </button>
                   {ENRICHABLE.has(popoverNode.type) && (
                     <button type="button" onClick={() => { onEnrichNode(popoverNode); }}>
-                      <Globe size={13} /> Enriquecer
+                      <Globe size={13} /> Enrich
                     </button>
                   )}
                   <button type="button" onClick={() => { onConnectNode(popoverNode); setPopover(null); }}>
-                    <Link2 size={13} /> Conectar
+                    <Link2 size={13} /> Connect
                   </button>
                 </div>
               )}
@@ -693,19 +693,19 @@ export function GraphPanel({
           {graphAnalytics && (
             <div className="graph-metrics">
               <div>
-                <span>Densidad</span>
+                <span>Density</span>
                 <strong>{Math.round(graphAnalytics.density * 1000) / 1000}</strong>
               </div>
               <div>
-                <span>Componentes</span>
+                <span>Components</span>
                 <strong>{graphAnalytics.component_count}</strong>
               </div>
               <div>
-                <span>Aislados</span>
+                <span>Isolated</span>
                 <strong>{graphAnalytics.isolated_node_count}</strong>
               </div>
               <div>
-                <span>Puentes</span>
+                <span>Bridges</span>
                 <strong>{graphAnalytics.bridges.length}</strong>
               </div>
               {topHubs.length > 0 && (

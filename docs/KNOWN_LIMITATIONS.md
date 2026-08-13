@@ -11,7 +11,8 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 ## Models
 
 - No model weights or inference server are bundled.
-- Copilot and assisted report drafts require a local or private compatible endpoint configured by the user. LM Studio is the currently validated backend; Ollama and other OpenAI-compatible endpoints exist in code but are not guaranteed in this preview.
+- Copilot and assisted report drafts require a local or private compatible endpoint configured by the user. LM Studio and Ollama have adapter and automated regression coverage, but Ollama has not completed the same clean-machine runtime validation for this alpha. Other private OpenAI-compatible endpoints are not guaranteed.
+- Endpoint detection and model listing do not prove that a completion works. The Local Models workspace reports detection, saved configuration, model selection, and a real inference test separately.
 - Model output is unverified and cannot approve or mutate evidence automatically.
 
 ## Evidence and reports
@@ -30,6 +31,7 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 - A valid end-to-end updater test requires the protected production/test signing key and a controlled public HTTPS alpha endpoint; neither is stored in this repository.
 - Cancellation during an active updater HTTP transfer is best-effort, although cancellation prevents installation.
 - Linux and macOS builders exist, but this alpha readiness review targets Windows x64 and does not declare those artifacts release-ready.
+- No operating-system package is currently presented as a generally supported production download. Local and CI artifacts are for controlled validation unless a maintainer explicitly designates a candidate.
 
 ## Edition boundary
 

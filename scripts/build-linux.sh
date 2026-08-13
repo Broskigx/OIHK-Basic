@@ -45,7 +45,7 @@ echo "  Done"
 # 4. Run lint
 echo ""
 echo "[4/8] Running lint..."
-python -m ruff check "$BACKEND_DIR/app" "$BACKEND_DIR/run.py" "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/tests" --quiet
+python -m ruff check "$BACKEND_DIR/app" "$BACKEND_DIR/run.py" "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/tests" --config "$BACKEND_DIR/pyproject.toml" --quiet
 
 # 5. Run backend tests
 echo ""
@@ -87,7 +87,7 @@ echo "  Frontend built"
 # 8. Build Tauri desktop app
 echo ""
 echo "[8/8] Building Tauri desktop app..."
-cd "$FRONTEND_DIR"
+cd "$PROJECT_ROOT"
 # Install Linux system deps if needed
 if command -v apt-get &>/dev/null; then
     sudo apt-get update -qq && sudo apt-get install -y -qq \

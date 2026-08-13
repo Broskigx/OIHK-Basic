@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-
 from app import models
 from app.core.deps import CurrentUser
 from app.database import Base
 from app.routers.local_models import runtime_status
+from app.routers.local_models import test_inference as run_test_inference
+from app.schemas import LocalModelTestRequest
 from app.services.local_models import (
     LMStudioProvider,
     ModelDescriptor,
@@ -16,6 +16,8 @@ from app.services.local_models import (
     detect_local_services,
     validate_local_endpoint,
 )
+from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 
 class _Response:
@@ -95,6 +97,54 @@ async def test_ollama_listing_and_inference(monkeypatch):
         max_tokens=20,
     )
     assert reply == "ollama ready"
+
+
+@pytest.mark.asyncio
+async def test_inference_endpoint_honors_the_requested_timeout(monkeypatch):
+    observed: dict[str, int] = {}
+
+    class _ReadyProvider:
+        async def complete(self, **_kwargs):
+            return "OIHK local model ready"
+
+    def build(_provider: str, _endpoint: str, timeout_seconds: int):
+        observed["timeout_seconds"] = timeout_seconds
+        return _ReadyProvider()
+
+    monkeypatch.setattr("app.routers.local_models.build_local_provider", build)
+    result = await run_test_inference(
+        LocalModelTestRequest(
+            provider="ollama",
+            endpoint="http://127.0.0.1:11434",
+            model="qwen-local",
+            timeout_seconds=17,
+        )
+    )
+
+    assert observed == {"timeout_seconds": 17}
+    assert result["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_inference_endpoint_rejects_an_empty_runtime_response(monkeypatch):
+    class _EmptyProvider:
+        async def complete(self, **_kwargs):
+            return "  "
+
+    monkeypatch.setattr("app.routers.local_models.build_local_provider", lambda *_args: _EmptyProvider())
+
+    with pytest.raises(HTTPException) as captured:
+        await run_test_inference(
+            LocalModelTestRequest(
+                provider="lmstudio",
+                endpoint="http://127.0.0.1:1234",
+                model="loaded-model",
+            )
+        )
+
+    assert captured.value.status_code == 502
+    assert "unsupported response" in str(captured.value.detail)
+    assert "No OIHK data or configuration was changed" in str(captured.value.detail)
 
 
 @pytest.mark.asyncio

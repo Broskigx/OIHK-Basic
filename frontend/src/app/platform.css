@@ -2647,7 +2647,7 @@ textarea:focus-visible,
   animation: onboarding-service-in 320ms ease-out both;
 }
 .onboarding-services article:nth-child(2) { animation-delay: 70ms; }
-.onboarding-services article.connected { border-color: var(--accent-border); background: linear-gradient(100deg, var(--bg-input), var(--accent-soft)); }
+.onboarding-services article.configured { border-color: var(--accent-border); background: linear-gradient(100deg, var(--bg-input), var(--accent-soft)); }
 .onboarding-service-mark { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid var(--accent-border); border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
 .onboarding-service-copy { display: grid; min-width: 0; gap: 6px; }
 .onboarding-service-copy > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -2658,7 +2658,7 @@ textarea:focus-visible,
 .onboarding-service-copy label { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; color: var(--text-muted); font-size: 8.5px; }
 .onboarding-service-copy select { min-height: 29px; padding: 5px 8px; font-size: 9px; }
 .onboarding-services .onboarding-connect { border-color: var(--accent-border); color: var(--accent); white-space: nowrap; }
-.onboarding-services .onboarding-connected { border-color: transparent; background: transparent; color: var(--accent); white-space: nowrap; }
+.onboarding-services .onboarding-connected { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; color: var(--accent); font-size: 9px; white-space: nowrap; }
 .onboarding-services .lucide-loader-circle,
 .onboarding-finish .lucide-loader-circle { animation: onboarding-spin 900ms linear infinite; }
 .onboarding-model-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 10px; }
@@ -2693,6 +2693,13 @@ textarea:focus-visible,
 .local-privacy-note,
 .platform-inline-success { display: flex; align-items: center; gap: 8px; margin: 0 22px; padding: 8px 12px; border: 1px solid var(--accent-border); border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent); font-size: 10px; }
 .local-provider-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 22px; }
+.local-connection-stages { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin: 0 22px; }
+.local-connection-stages > div { display: grid; gap: 3px; min-width: 0; padding: 9px 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-input); }
+.local-connection-stages span { color: var(--text-muted); font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+.local-connection-stages strong { overflow: hidden; color: var(--text-secondary); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.local-connection-stages > .complete { border-color: var(--accent-border); background: var(--accent-soft); }
+.local-connection-stages > .complete strong { color: var(--accent); }
+.local-connection-stages > .error strong { color: var(--danger); }
 .local-provider-card { display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto; justify-content: stretch !important; text-align: left; }
 .local-provider-card > span { display: grid; min-width: 0; gap: 2px; }
 .local-provider-card strong { font-size: 10.5px; }
@@ -2726,6 +2733,7 @@ textarea:focus-visible,
   .onboarding-dialog > aside { padding-inline: 14px; }
   .onboarding-dialog > main { padding-inline: 24px; }
   .local-model-layout { grid-template-columns: 1fr; }
+  .local-connection-stages { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .local-settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -2741,6 +2749,7 @@ textarea:focus-visible,
   .onboarding-services article > button { grid-column: 1 / -1; width: 100%; }
   .onboarding-checks { grid-template-columns: 1fr; }
   .local-provider-grid { grid-template-columns: 1fr; }
+  .local-connection-stages { grid-template-columns: 1fr; }
   .local-settings-grid { grid-template-columns: 1fr; }
 }
 

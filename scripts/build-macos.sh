@@ -57,7 +57,7 @@ echo "  Done"
 # 4. Run lint
 echo ""
 echo "[4/8] Running lint..."
-python -m ruff check "$BACKEND_DIR/app" "$BACKEND_DIR/run.py" "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/tests" --quiet
+python -m ruff check "$BACKEND_DIR/app" "$BACKEND_DIR/run.py" "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/tests" --config "$BACKEND_DIR/pyproject.toml" --quiet
 
 # 5. Run backend tests
 echo ""

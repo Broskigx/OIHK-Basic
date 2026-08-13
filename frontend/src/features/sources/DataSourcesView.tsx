@@ -45,12 +45,12 @@ export function DataSourcesView({
         eyebrow="Provenance registry"
         title="Data Sources"
         description="A searchable inventory of sources actually collected for the active investigation."
-        actions={activeCase ? <button type="button" onClick={onOpenEvidence}>Open Evidence Lab <ArrowRight size={14} /></button> : undefined}
+        actions={activeCase ? <button type="button" onClick={onOpenEvidence}>Open Evidence <ArrowRight size={14} /></button> : undefined}
       />
       {!activeCase ? (
         <EmptyState title="No active investigation" description="Choose an investigation to inspect its collected sources." action={<button onClick={onOpenInvestigations}>View investigations</button>} />
       ) : sources.length === 0 ? (
-        <EmptyState title="No sources collected" description="Run an authorized query or ingest evidence to populate this registry." action={<button onClick={onOpenEvidence}>Open Evidence Lab</button>} />
+        <EmptyState title="No sources collected" description="Run an authorized query or ingest evidence to populate this registry." action={<button onClick={onOpenEvidence}>Open Evidence</button>} />
       ) : (
         <section className="platform-section">
           <div className="platform-table-tools">

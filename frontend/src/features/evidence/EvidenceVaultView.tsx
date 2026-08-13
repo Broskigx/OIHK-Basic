@@ -128,40 +128,70 @@ export function EvidenceVaultView({ caseId, sources, photos, custody, entities, 
 
   async function saveMetadata() {
     if (!selected) return;
-    const updated = await updateEvidence(selected.id, { notes, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean) });
-    setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
-    setMessage("Evidence metadata saved.");
+    setError("");
+    setMessage("");
+    try {
+      const updated = await updateEvidence(selected.id, { notes, tags: tags.split(",").map((tag) => tag.trim()).filter(Boolean) });
+      setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+      setMessage("Evidence metadata saved.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Evidence metadata could not be saved. No file content was changed.");
+    }
   }
 
   async function toggleEntity(entityId: string) {
     if (!selected) return;
-    const entityIds = selected.entity_ids.includes(entityId) ? selected.entity_ids.filter((id) => id !== entityId) : [...selected.entity_ids, entityId];
-    const updated = await updateEvidence(selected.id, { entity_ids: entityIds });
-    setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+    setError("");
+    setMessage("");
+    try {
+      const entityIds = selected.entity_ids.includes(entityId) ? selected.entity_ids.filter((id) => id !== entityId) : [...selected.entity_ids, entityId];
+      const updated = await updateEvidence(selected.id, { entity_ids: entityIds });
+      setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The evidence association could not be updated. The managed file was not changed.");
+    }
   }
 
   async function verify(item: EvidenceItem) {
-    const result = await verifyEvidence(item.id);
-    setMessage(result.intact ? "SHA-256 verification passed." : "Hash mismatch: the managed file no longer matches its ingestion hash.");
-    await refreshFiles();
+    setError("");
+    setMessage("");
+    try {
+      const result = await verifyEvidence(item.id);
+      setMessage(result.intact ? "SHA-256 verification passed." : "Hash mismatch: the managed file no longer matches its ingestion hash.");
+      await refreshFiles();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Integrity verification could not complete. The evidence record was not changed.");
+    }
   }
 
   async function remove(item: EvidenceItem) {
     if (!window.confirm(`Delete the managed copy of “${item.original_name}”? The sealed provenance record remains in the audit trail.`)) return;
-    await deleteEvidence(item.id);
-    await Promise.all([refreshFiles(), onRefresh()]);
-    setMessage("Managed file deleted; provenance was retained and custody verification will record the missing content.");
+    setError("");
+    setMessage("");
+    try {
+      await deleteEvidence(item.id);
+      await Promise.all([refreshFiles(), onRefresh()]);
+      setMessage("Managed file deleted; provenance was retained and custody verification will record the missing content.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The managed file could not be deleted. Its evidence record is unchanged.");
+    }
   }
 
   async function exportManifest() {
-    const blob = await downloadEvidenceManifest(caseId);
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `oihk-basic-evidence-${caseId}.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-    setMessage("Evidence manifest exported.");
+    setError("");
+    setMessage("");
+    try {
+      const blob = await downloadEvidenceManifest(caseId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `oihk-basic-evidence-${caseId}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      setMessage("Evidence manifest exported.");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The evidence manifest could not be exported. Stored evidence was not changed.");
+    }
   }
 
   const tabs: Array<{ id: EvidenceTab; label: string; count?: number }> = [
@@ -172,10 +202,10 @@ export function EvidenceVaultView({ caseId, sources, photos, custody, entities, 
   ];
 
   return (
-    <div className="platform-view evidence-lab">
+    <div className="platform-view evidence-workspace">
       <WorkspaceHeader
-        eyebrow="Evidence Lab Basic"
-        title="Evidence Lab"
+        eyebrow="Investigation evidence"
+        title="Evidence"
         description="Stream files into managed local storage, calculate SHA-256, link entities, and verify integrity later. Files are never executed."
         actions={<><button type="button" onClick={() => void exportManifest()}><Download size={14} /> Manifest</button><span className={custody?.intact ? "platform-health good" : "platform-health warning"}>{custody?.intact ? <CheckCircle2 size={15} /> : <ShieldAlert size={15} />}{custody?.intact ? "Custody verified" : "Review custody"}</span></>}
       />
@@ -192,7 +222,7 @@ export function EvidenceVaultView({ caseId, sources, photos, custody, entities, 
         <div className="evidence-layout">
           <section className="platform-section evidence-browser">
             <div className="evidence-toolbar"><label><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, hash, tag, or note" /></label><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">All types</option><option value="image/">Images</option><option value="text/">Text</option><option value="application/">Documents / binary</option></select><select value={sort} onChange={(event) => setSort(event.target.value as typeof sort)}><option value="newest">Newest</option><option value="name">Name</option><option value="size">Largest</option></select></div>
-            {visible.length === 0 ? <EmptyState title="No managed evidence" description="Drop a file or use the selector to create a hashed, sealed local copy." /> : <div className="evidence-file-list">{visible.map((item) => <button type="button" key={item.id} className={item.id === selectedId ? "active" : ""} onClick={() => setSelectedId(item.id)}><span className="platform-evidence-icon">{canPreview(item) ? <Image size={16} /> : <File size={16} />}</span><span><strong>{item.original_name}</strong><small>{item.mime_type} · {bytes(item.size_bytes)} · {formatDate(item.created_at)}</small><code>{item.sha256}</code></span>{item.verified_at && <FileCheck2 size={15} />}</button>)}</div>}
+            {visible.length === 0 ? <EmptyState title={items.length === 0 ? "No managed evidence" : "No matching evidence"} description={items.length === 0 ? "Drop a file or use the selector to create a hashed, sealed local copy." : "Adjust the search text or file-type filter. Existing evidence remains unchanged."} action={items.length > 0 ? <button type="button" onClick={() => { setQuery(""); setTypeFilter("all"); }}>Clear filters</button> : undefined} /> : <div className="evidence-file-list">{visible.map((item) => <button type="button" key={item.id} className={item.id === selectedId ? "active" : ""} onClick={() => setSelectedId(item.id)}><span className="platform-evidence-icon">{canPreview(item) ? <Image size={16} /> : <File size={16} />}</span><span><strong>{item.original_name}</strong><small>{item.mime_type} · {bytes(item.size_bytes)} · {formatDate(item.created_at)}</small><code>{item.sha256}</code></span>{item.verified_at && <FileCheck2 size={15} />}</button>)}</div>}
           </section>
           <aside className="platform-section evidence-inspector">
             {!selected ? <EmptyState title="Select evidence" description="Choose a managed file to inspect provenance and associations." /> : <>

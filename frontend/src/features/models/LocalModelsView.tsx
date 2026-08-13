@@ -25,6 +25,7 @@ import type {
   LocalModelProviderId,
   LocalModelServiceProbe,
 } from "../../types";
+import { EmptyState } from "../../shared/ui/EmptyState";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
 import { DEFAULT_LOCAL_MODEL_CONFIGURATION } from "./localModelConfiguration";
 
@@ -36,6 +37,26 @@ const PROVIDERS: { id: LocalModelProviderId; label: string; detail: string }[] =
 
 const MODEL_ROLES = ["chat", "extraction", "summary", "classification", "reasoning"];
 
+type EndpointState = "unchecked" | "online" | "offline";
+
+function comparableConfiguration(value: LocalModelConfiguration) {
+  return {
+    provider: value.provider,
+    endpoint: value.endpoint.trim().replace(/\/$/, ""),
+    model: value.model,
+    context_length: value.context_length,
+    temperature: value.temperature,
+    max_tokens: value.max_tokens,
+    timeout_seconds: value.timeout_seconds,
+    streaming: value.streaming,
+    system_prompt: value.system_prompt,
+    capabilities: value.capabilities,
+    tools_enabled: value.tools_enabled,
+    role_models: value.role_models,
+    fallback_model: value.fallback_model,
+  };
+}
+
 function formatBytes(value?: number | null): string {
   if (!value) return "Size not reported";
   return `${(value / 1024 / 1024 / 1024).toFixed(1)} GB`;
@@ -43,8 +64,12 @@ function formatBytes(value?: number | null): string {
 
 export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => void }) {
   const [configuration, setConfiguration] = useState<LocalModelConfiguration>(DEFAULT_LOCAL_MODEL_CONFIGURATION);
+  const [savedConfiguration, setSavedConfiguration] = useState<LocalModelConfiguration | null>(null);
   const [models, setModels] = useState<LocalModelDescriptor[]>([]);
   const [services, setServices] = useState<LocalModelServiceProbe[]>([]);
+  const [hasScanned, setHasScanned] = useState(false);
+  const [endpointState, setEndpointState] = useState<EndpointState>("unchecked");
+  const [inferenceVerified, setInferenceVerified] = useState(false);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState("");
@@ -59,11 +84,16 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
         const saved = await getLocalModelConfiguration();
         if (!saved || cancelled) return;
         setConfiguration(saved);
+        setSavedConfiguration(saved);
         try {
           const result = await listLocalModels(saved.provider, saved.endpoint);
-          if (!cancelled) setModels(result.models);
+          if (!cancelled) {
+            setModels(result.models);
+            setEndpointState("online");
+          }
         } catch {
           // Keep the saved configuration visible when its runtime is currently offline.
+          if (!cancelled) setEndpointState("offline");
         }
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load local model settings");
@@ -77,7 +107,14 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
   }, []);
 
   function patch(patchValue: Partial<LocalModelConfiguration>) {
+    if (
+      (patchValue.provider !== undefined && patchValue.provider !== configuration.provider)
+      || (patchValue.endpoint !== undefined && patchValue.endpoint !== configuration.endpoint)
+    ) {
+      setEndpointState("unchecked");
+    }
     setConfiguration((current) => ({ ...current, ...patchValue }));
+    setInferenceVerified(false);
     setMessage("");
   }
 
@@ -87,6 +124,7 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
     try {
       const result = await detectLocalModelServices();
       setServices(result.services);
+      setHasScanned(true);
       const online = result.services.find((service) => service.status === "online");
       if (online && !configuration.endpoint) {
         patch({
@@ -95,8 +133,14 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
           model: online.models[0]?.id ?? "",
         });
         setModels(online.models);
+        setEndpointState("online");
       }
-      setMessage(online ? `Detected ${online.provider} in ${online.latency_ms} ms` : "No local model service responded");
+      const configuredProbe = result.services.find(
+        (service) => service.provider === configuration.provider
+          && service.endpoint.replace(/\/$/, "") === configuration.endpoint.trim().replace(/\/$/, ""),
+      );
+      if (configuredProbe) setEndpointState(configuredProbe.status === "online" ? "online" : "offline");
+      setMessage(online ? `Detected ${PROVIDERS.find((provider) => provider.id === online.provider)?.label ?? online.provider} in ${online.latency_ms} ms. Detection does not run inference.` : "No LM Studio or Ollama endpoint responded. No configuration was changed.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Detection failed");
     } finally {
@@ -114,11 +158,13 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
     try {
       const result = await listLocalModels(configuration.provider, configuration.endpoint);
       setModels(result.models);
+      setEndpointState("online");
       if (!result.models.some((model) => model.id === configuration.model)) {
         patch({ model: result.models[0]?.id ?? "" });
       }
       setMessage(`${result.models.length} local model${result.models.length === 1 ? "" : "s"} available`);
     } catch (cause) {
+      setEndpointState("offline");
       setError(cause instanceof Error ? cause.message : "Could not list models");
     } finally {
       setLoading(false);
@@ -135,7 +181,8 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
     try {
       const saved = await saveLocalModelConfiguration(configuration);
       setConfiguration(saved);
-      setMessage("Local model configuration saved");
+      setSavedConfiguration(saved);
+      setMessage("Configuration saved. Run Test inference to verify generation with the selected model.");
       onStatusChanged?.();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save configuration");
@@ -161,9 +208,12 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
         max_tokens: Math.min(configuration.max_tokens, 80),
         timeout_seconds: configuration.timeout_seconds,
       });
-      setMessage(`Inference succeeded in ${result.latency_ms} ms · ${result.reply.slice(0, 120)}`);
+      setEndpointState("online");
+      setInferenceVerified(true);
+      setMessage(`Inference verified in ${result.latency_ms} ms · ${result.reply.slice(0, 120)}`);
       onStatusChanged?.();
     } catch (cause) {
+      setInferenceVerified(false);
       setError(cause instanceof Error ? cause.message : "Inference test failed");
     } finally {
       setTesting(false);
@@ -196,6 +246,16 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
       .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not import configuration"));
   }
 
+  const configurationSaved = Boolean(
+    savedConfiguration
+      && JSON.stringify(comparableConfiguration(savedConfiguration)) === JSON.stringify(comparableConfiguration(configuration)),
+  );
+  const detected = services.find(
+    (service) => service.provider === configuration.provider
+      && service.endpoint.replace(/\/$/, "") === configuration.endpoint.trim().replace(/\/$/, "")
+      && service.status === "online",
+  );
+
   return (
     <div className="platform-view local-models-view">
       <WorkspaceHeader
@@ -217,6 +277,14 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
       <div className="local-privacy-note"><ShieldCheck size={16} /> No cloud provider is required or enabled by this page.</div>
       {error && <div className="platform-inline-error" role="alert">{error}</div>}
       {message && <div className="platform-inline-success" role="status">{message}</div>}
+
+      <div className="local-connection-stages" aria-label="Local model setup status">
+        <div className={detected ? "complete" : ""}><span>Detection</span><strong>{!hasScanned ? "Not scanned" : detected ? "Detected" : "Not detected"}</strong></div>
+        <div className={endpointState === "online" ? "complete" : endpointState === "offline" ? "error" : ""}><span>Connection</span><strong>{endpointState === "online" ? "Endpoint responded" : endpointState === "offline" ? "Endpoint unavailable" : "Not checked"}</strong></div>
+        <div className={configurationSaved ? "complete" : ""}><span>Configuration</span><strong>{configurationSaved ? "Saved" : savedConfiguration ? "Unsaved changes" : "Not saved"}</strong></div>
+        <div className={configuration.model ? "complete" : ""}><span>Model</span><strong>{configuration.model ? "Selected" : "Not selected"}</strong></div>
+        <div className={inferenceVerified ? "complete" : ""}><span>Inference</span><strong>{inferenceVerified ? "Verified this session" : "Not tested"}</strong></div>
+      </div>
 
       <div className="local-provider-grid" aria-label="Local model providers">
         {PROVIDERS.map((provider) => {
@@ -272,7 +340,7 @@ export function LocalModelsView({ onStatusChanged }: { onStatusChanged?: () => v
 
         <aside className="platform-section local-models-catalog">
           <div className="platform-section-heading"><div><span className="platform-eyebrow">Catalog</span><h2>{models.length ? `${models.length} available` : "No models listed"}</h2></div><Gauge size={18} /></div>
-          {models.length === 0 ? <p className="platform-muted">Detect a service or list models from the configured endpoint.</p> : models.map((model) => (
+          {models.length === 0 ? <EmptyState title="No models listed" description={configuration.endpoint ? "Start the selected runtime, load a model, then list models again." : "Detect LM Studio or Ollama, or enter a private endpoint first."} action={<button type="button" onClick={() => configuration.endpoint ? void refreshModels() : void detect()} disabled={loading}>{configuration.endpoint ? "List models" : "Detect services"}</button>} /> : models.map((model) => (
             <button type="button" key={model.id} className={configuration.model === model.id ? "active" : ""} onClick={() => patch({ model: model.id })}>
               <span><strong>{model.name}</strong><small>{formatBytes(model.size_bytes)}{model.context_length ? ` · ${model.context_length.toLocaleString()} context` : ""}</small></span>
               {configuration.model === model.id && <CheckCircle2 size={15} />}

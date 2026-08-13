@@ -1,51 +1,23 @@
-# Installing OIHK Basic on Linux
+# Linux build and installation status
 
-## System Requirements
+OIHK Basic does not currently publish a release-ready or generally recommended Linux package. Do not assume an AppImage or deb is available from the Releases page.
 
-- Linux x86_64
-- WebKit2GTK 4.1+
-- GTK 3
-- ~500 MB free disk space
+Linux x86_64 is exercised as a backend portability target in standard CI. The desktop builder exists for contributors who can validate the result on their own system.
 
-## Installation Methods
+## Build from source
 
-### AppImage (Recommended)
+Install Python 3.11+, Node.js 22, Rust, WebKitGTK 4.1, GTK 3, librsvg2, patchelf, and OpenSSL development headers. Then run from the repository root:
 
-1. Download `OIHK-Basic_0.1.1-alpha.2_amd64.AppImage` from the Releases page
-2. Make it executable: `chmod +x OIHK-Basic_0.1.1-alpha.2_amd64.AppImage`
-3. Run it: `./OIHK-Basic_0.1.1-alpha.2_amd64.AppImage`
-
-### Debian/Ubuntu Package
-
-1. Download `OIHK-Basic_0.1.1-alpha.2_amd64.deb`
-2. Install: `sudo dpkg -i OIHK-Basic_0.1.1-alpha.2_amd64.deb`
-3. Or: `sudo apt install ./OIHK-Basic_0.1.1-alpha.2_amd64.deb`
-4. Launch from the application menu or via `oihk-basic`
-
-## First Run
-
-1. Launch "OIHK Basic" from your application menu
-2. The application will:
-   - Generate secure encryption keys
-   - Initialize the local database
-   - Start the backend engine on a local port
-3. Complete or skip onboarding; no account is required in the default loopback-only desktop mode
-4. Start investigating!
-
-## Data Location
-
-All your data is stored in: `~/.local/share/OIHK-Basic/`
-
-Or, if `$XDG_DATA_HOME` is set: `$XDG_DATA_HOME/OIHK-Basic/`
-
-## Uninstallation
-
-### AppImage
-- Delete the AppImage file
-- Optionally delete `~/.local/share/OIHK-Basic/` to remove all data
-
-### Debian package
 ```bash
-sudo apt remove oihk-basic
+./scripts/build-linux.sh
 ```
-Your data is preserved. To delete data: `rm -rf ~/.local/share/OIHK-Basic/`
+
+The script runs quality gates, builds the PyInstaller sidecar and frontend, invokes Tauri, and places any generated bundles/checksums under `dist/linux/`. Exact native package names depend on the Tauri toolchain and target.
+
+Treat all resulting artifacts as local development builds. Before distribution, Linux still needs reproducible native dependency locking, clean-machine AppImage/deb install and launch checks, desktop integration tests, uninstall/residue verification, and a documented signing/publication policy.
+
+## Development data
+
+The default data root is `${XDG_DATA_HOME:-~/.local/share}/OIHK-Basic/`. Never remove that directory as part of an ordinary package uninstall. Back it up and inspect its resolved path before any manual cleanup.
+
+See [Building](BUILDING.md), [Known Limitations](KNOWN_LIMITATIONS.md), and [Troubleshooting](TROUBLESHOOTING.md).

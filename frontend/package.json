@@ -16,8 +16,8 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "check": "tsc -b --noEmit && eslint .",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build",
+    "desktop:dev": "tauri dev --config ../src-tauri/tauri.conf.json",
+    "desktop:build": "tauri build --config ../src-tauri/tauri.local.conf.json",
     "tauri:build": "tauri build --config ../src-tauri/tauri.local.conf.json",
     "release:local": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/build-windows.ps1 -Release -Channel local -Unsigned -SkipUpdater",
     "release:alpha": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/build-windows.ps1 -Release -Channel alpha"

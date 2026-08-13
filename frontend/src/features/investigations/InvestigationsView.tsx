@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { ChangeEvent, useMemo, useRef, useState } from "react";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
+import { EmptyState } from "../../shared/ui/EmptyState";
 import type { CaseMonitor, CaseRead, InvestigationDraft } from "../../types";
 import { NewInvestigationDialog } from "./NewInvestigationDialog";
 
@@ -138,7 +139,7 @@ export function InvestigationsView({
             <span className="platform-investigations-count">{filteredCases.length} of {cases.length}</span>
           </div>
 
-          <div className="platform-investigations-table-wrap">
+          {filteredCases.length === 0 ? <EmptyState title="No matching investigations" description="No investigation matches the current search and filters. Existing investigations were not changed." action={<button type="button" onClick={() => { setSearchQuery(""); setStatusFilter("all"); setPriorityFilter("all"); }}>Clear filters</button>} /> : <div className="platform-investigations-table-wrap">
             <table className="platform-table">
               <thead><tr><th>Investigation</th><th>Status</th><th>Priority</th><th>Entities</th><th>Relations / Evidence</th><th>Updated</th><th>Actions</th></tr></thead>
               <tbody>{filteredCases.map((item) => (
@@ -160,7 +161,7 @@ export function InvestigationsView({
                 </tr>
               ))}</tbody>
             </table>
-          </div>
+          </div>}
 
           {activeCase && <section className="platform-investigations-detail">
             <div className="platform-investigations-detail-header">

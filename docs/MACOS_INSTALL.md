@@ -1,56 +1,25 @@
-# Installing OIHK Basic on macOS
+# macOS build and installation status
 
-## System Requirements
+OIHK Basic does not currently publish a signed, notarized, release-ready macOS app. Do not assume Intel or Apple Silicon dmg files are available from the Releases page, and do not instruct testers to remove quarantine attributes as a substitute for signing and notarization.
 
-- macOS 10.15 (Catalina) or later
-- Intel x64 or Apple Silicon (arm64)
-- ~500 MB free disk space
+## Build from source
 
-## Installation
+On a supported macOS development host, install Python 3.11+, Node.js 22, Rust, and Xcode Command Line Tools. Run:
 
-1. Download the appropriate `.dmg` for your Mac:
-   - **Intel Macs:** `OIHK-Basic_0.1.1-alpha.2_x64.dmg`
-   - **Apple Silicon Macs:** `OIHK-Basic_0.1.1-alpha.2_arm64.dmg`
-2. Open the `.dmg` file
-3. Drag "OIHK Basic.app" to your Applications folder
-4. Launch from Applications or via Spotlight
+```bash
+./scripts/build-macos.sh
+```
 
-### Gatekeeper Warning (Unsigned Builds)
+The builder targets the host architecture, runs quality gates, assembles a PyInstaller sidecar, builds the frontend and Tauri bundle, and places generated artifacts/checksums under `dist/macos/`.
 
-If you see "OIHK Basic can't be opened because the developer cannot be verified":
+Treat the result as a local development build. Distribution still requires:
 
-1. Open System Settings → Privacy & Security
-2. Scroll to "Security"
-3. Click "Open Anyway" next to "OIHK Basic"
-4. Click "Open" in the confirmation dialog
+- clean builds and launch tests on Intel and Apple Silicon targets;
+- an Apple Developer identity and hardened runtime configuration;
+- code signing and notarization of the final app/bundle;
+- Gatekeeper validation on clean machines;
+- install, upgrade, uninstall, data-preservation, and residue checks.
 
-This warning appears because the application is not signed with an Apple Developer certificate. See [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md) for codesigning instructions.
+The default data root is `~/Library/Application Support/OIHK-Basic/`. Keep a verified backup before testing a candidate.
 
-## First Run
-
-1. Launch "OIHK Basic" from Applications
-2. The application will:
-   - Generate secure encryption keys
-   - Initialize the local database
-   - Start the backend engine on a local port
-3. Complete or skip onboarding; no account is required in the default loopback-only desktop mode
-4. Start investigating!
-
-## Data Location
-
-All your data is stored in: `~/Library/Application Support/OIHK-Basic/`
-
-## Uninstallation
-
-1. Drag "OIHK Basic.app" from Applications to Trash
-2. Optionally delete `~/Library/Application Support/OIHK-Basic/` to remove all data
-
-## Troubleshooting
-
-### App won't open
-- Check Console.app for crash reports
-- Verify the app is not quarantined: `xattr -d com.apple.quarantine /Applications/OIHK\ Basic.app`
-
-### Backend fails
-- Check logs in `~/Library/Application Support/OIHK-Basic/logs/`
-- Ensure no other app is using the default port
+See [Building](BUILDING.md), [Known Limitations](KNOWN_LIMITATIONS.md), and [Troubleshooting](TROUBLESHOOTING.md).

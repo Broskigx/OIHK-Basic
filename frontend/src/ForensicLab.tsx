@@ -23,13 +23,13 @@ type Tab = "hashsets" | "correlation" | "carving" | "rules";
 
 const TABS: { id: Tab; label: string; icon: typeof Database }[] = [
   { id: "hashsets", label: "Hash sets", icon: Database },
-  { id: "correlation", label: "Correlación", icon: GitCompareArrows },
+  { id: "correlation", label: "Correlation", icon: GitCompareArrows },
   { id: "carving", label: "Carving", icon: Scissors },
-  { id: "rules", label: "Reglas", icon: FileStack },
+  { id: "rules", label: "Rules", icon: FileStack },
 ];
 
 function Err({ msg }: { msg: string }) {
-  return msg ? <div className="forensics-error">{msg}</div> : null;
+  return msg ? <div className="forensics-error" role="alert">{msg}</div> : null;
 }
 
 // --- Hash sets ------------------------------------------------------------ #
@@ -42,6 +42,7 @@ function HashSets({ isAdmin }: { isAdmin: boolean }) {
   const [lookupValue, setLookupValue] = useState("");
   const [lookupResult, setLookupResult] = useState<HashLookupResult | null>(null);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
   const refresh = () => listHashSets().then(setSets).catch(() => undefined);
@@ -51,14 +52,15 @@ function HashSets({ isAdmin }: { isAdmin: boolean }) {
 
   async function onImport() {
     setError("");
+    setMessage("");
     setBusy(true);
     try {
       const result = await importHashSet({ set_name: setName, category, severity, hashes });
       setHashes("");
       await refresh();
-      setError(`Importadas ${result.added} · duplicadas ${result.skipped} · inválidas ${result.invalid}`);
+      setMessage(`Imported ${result.added} · duplicates ${result.skipped} · invalid ${result.invalid}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al importar");
+      setError(err instanceof Error ? err.message : "The hash set could not be imported.");
     } finally {
       setBusy(false);
     }
@@ -69,7 +71,7 @@ function HashSets({ isAdmin }: { isAdmin: boolean }) {
     try {
       setLookupResult(await lookupHash(lookupValue.trim()));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error en la búsqueda");
+      setError(err instanceof Error ? err.message : "The hash lookup could not be completed.");
     }
   }
 
@@ -77,13 +79,13 @@ function HashSets({ isAdmin }: { isAdmin: boolean }) {
     <div className="flab-body">
       <div className="flab-two">
         <div className="flab-block">
-          <h4>Importar hashes conocidos</h4>
-          {!isAdmin && <p className="flab-hint">Solo un administrador puede importar sets.</p>}
-          <input placeholder="Nombre del set (p.ej. malware-2026)" value={setName} onChange={(e) => setSetName(e.target.value)} />
+          <h4>Import known hashes</h4>
+          {!isAdmin && <p className="flab-hint">Only an administrator can import hash sets.</p>}
+          <input placeholder="Set name (for example, malware-2026)" value={setName} onChange={(e) => setSetName(e.target.value)} />
           <div className="flab-row">
             <select value={category} onChange={(e) => setCategory(e.target.value as "notable" | "known_good")}>
-              <option value="notable">notable (malo conocido)</option>
-              <option value="known_good">known_good (benigno)</option>
+              <option value="notable">notable (known harmful)</option>
+              <option value="known_good">known_good (known benign)</option>
             </select>
             <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
               {["info", "low", "medium", "high", "critical"].map((s) => (
@@ -94,21 +96,21 @@ function HashSets({ isAdmin }: { isAdmin: boolean }) {
             </select>
           </div>
           <textarea
-            placeholder="Un hash md5/sha1/sha256 por línea (opcional 'hash, etiqueta')"
+            placeholder="One MD5, SHA-1, or SHA-256 per line; optional: hash, label"
             rows={5}
             value={hashes}
             onChange={(e) => setHashes(e.target.value)}
           />
           <button type="button" onClick={onImport} disabled={busy || !isAdmin || !setName.trim() || !hashes.trim()}>
-            Importar
+            Import
           </button>
         </div>
 
         <div className="flab-block">
-          <h4>Comprobar un hash</h4>
+          <h4>Check a hash</h4>
           <input placeholder="md5 / sha1 / sha256" value={lookupValue} onChange={(e) => setLookupValue(e.target.value)} />
           <button type="button" onClick={onLookup} disabled={!lookupValue.trim()}>
-            Buscar
+            Search
           </button>
           {lookupResult && (
             <div className="flab-result">
@@ -119,7 +121,7 @@ function HashSets({ isAdmin }: { isAdmin: boolean }) {
                   </div>
                 ))
               ) : (
-                <span className="flab-hint">Sin coincidencias en ningún set.</span>
+                <span className="flab-hint">No matches in registered hash sets.</span>
               )}
             </div>
           )}
@@ -127,15 +129,16 @@ function HashSets({ isAdmin }: { isAdmin: boolean }) {
       </div>
 
       <Err msg={error} />
+      {message && <div className="platform-inline-success" role="status">{message}</div>}
 
       <div className="flab-list">
-        <h4>Sets registrados</h4>
-        {sets.length === 0 && <span className="flab-hint">Aún no hay sets.</span>}
+        <h4>Registered sets</h4>
+        {sets.length === 0 && <span className="flab-hint">No hash sets registered yet.</span>}
         {sets.map((s) => (
           <div key={`${s.set_name}-${s.category}`} className="flab-item">
             <span className={`flab-badge ${s.category}`}>{s.category}</span>
             <strong>{s.set_name}</strong>
-            <span className="flab-count">{s.entries} entradas</span>
+            <span className="flab-count">{s.entries} entries</span>
           </div>
         ))}
       </div>
@@ -155,14 +158,14 @@ function Correlation() {
     try {
       setResult(await correlateSelector(attrType, value.trim()));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error en la correlación");
+      setError(err instanceof Error ? err.message : "The cross-investigation correlation could not be completed.");
     }
   }
 
   return (
     <div className="flab-body">
       <div className="flab-block">
-        <h4>¿Este selector ya apareció en otros casos?</h4>
+        <h4>Has this selector appeared in another investigation?</h4>
         <div className="flab-row">
           <select value={attrType} onChange={(e) => setAttrType(e.target.value)}>
             {["file_hash", "email", "domain", "ip", "url", "handle", "crypto", "phone", "asn"].map((t) => (
@@ -171,9 +174,9 @@ function Correlation() {
               </option>
             ))}
           </select>
-          <input placeholder="valor del selector" value={value} onChange={(e) => setValue(e.target.value)} />
+          <input placeholder="Selector value" value={value} onChange={(e) => setValue(e.target.value)} />
           <button type="button" onClick={onQuery} disabled={!value.trim()}>
-            Correlacionar
+            Correlate
           </button>
         </div>
       </div>
@@ -183,7 +186,7 @@ function Correlation() {
       {result && (
         <div className="flab-list">
           <h4>
-            {result.count} aparición(es) de <code>{result.value}</code>
+            {result.count} occurrence{result.count === 1 ? "" : "s"} of <code>{result.value}</code>
           </h4>
           {result.hits.map((h, i) => (
             <div key={i} className="flab-item">
@@ -192,7 +195,7 @@ function Correlation() {
               <span className="flab-count">{h.first_seen_at?.slice(0, 10)}</span>
             </div>
           ))}
-          {result.count === 0 && <span className="flab-hint">No aparece en ningún caso todavía.</span>}
+          {result.count === 0 && <span className="flab-hint">This selector has not appeared in another investigation.</span>}
         </div>
       )}
     </div>
@@ -214,7 +217,7 @@ function Carving({ caseId }: { caseId: string }) {
     try {
       setResult(await carveFile(caseId, file));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al tallar");
+      setError(err instanceof Error ? err.message : "File carving could not be completed. No artifact was added.");
     } finally {
       setBusy(false);
       event.target.value = "";
@@ -224,11 +227,11 @@ function Carving({ caseId }: { caseId: string }) {
   return (
     <div className="flab-body">
       <div className="flab-block">
-        <h4>Recuperar ficheros ocultos en un portador</h4>
-        <p className="flab-hint">Sube un fichero; OIHK talla ZIP/PDF/ejecutables embebidos o datos añadidos y los sella como evidencia.</p>
+        <h4>Recover embedded files from a carrier</h4>
+        <p className="flab-hint">Choose a file to carve embedded ZIP, PDF, executable, or trailing data. Recovered artifacts are sealed as evidence.</p>
         <label className="forensics-drop">
           <Scissors size={18} />
-          <span>{busy ? "Tallando…" : "Subir fichero para tallar"}</span>
+          <span>{busy ? "Carving…" : "Choose a file to carve"}</span>
           <input type="file" onChange={onFile} disabled={busy || !caseId} hidden />
         </label>
       </div>
@@ -237,17 +240,17 @@ function Carving({ caseId }: { caseId: string }) {
 
       {result && (
         <div className="flab-list">
-          <h4>{result.count} artefacto(s) recuperado(s)</h4>
+          <h4>{result.count} recovered artifact{result.count === 1 ? "" : "s"}</h4>
           {result.artifacts.map((a) => (
             <div key={a.source_id} className="flab-item">
               <span className="flab-badge">{a.carved_type}</span>
               <strong>@ {a.offset}</strong>
               <span className="flab-count">{a.size} B · {a.reason}</span>
-              {a.hash_matches > 0 && <span className="flab-badge notable">hash malo</span>}
-              {a.correlation_hits > 0 && <span className="flab-badge">correlado</span>}
+              {a.hash_matches > 0 && <span className="flab-badge notable">notable hash</span>}
+              {a.correlation_hits > 0 && <span className="flab-badge">correlated</span>}
             </div>
           ))}
-          {result.count === 0 && <span className="flab-hint">No se encontraron ficheros embebidos.</span>}
+          {result.count === 0 && <span className="flab-hint">No embedded files were found.</span>}
         </div>
       )}
     </div>
@@ -288,7 +291,7 @@ function Rules({ isAdmin }: { isAdmin: boolean }) {
       setMinEntropy("");
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al crear la regla");
+      setError(err instanceof Error ? err.message : "The interesting-file rule could not be created.");
     }
   }
 
@@ -300,16 +303,16 @@ function Rules({ isAdmin }: { isAdmin: boolean }) {
   return (
     <div className="flab-body">
       <div className="flab-block">
-        <h4>Nueva regla de interés</h4>
-        {!isAdmin && <p className="flab-hint">Solo un administrador puede crear reglas.</p>}
-        <input placeholder="Nombre de la regla" value={name} onChange={(e) => setName(e.target.value)} />
+        <h4>New interesting-file rule</h4>
+        {!isAdmin && <p className="flab-hint">Only an administrator can create rules.</p>}
+        <input placeholder="Rule name" value={name} onChange={(e) => setName(e.target.value)} />
         <div className="flab-row">
-          <input placeholder="tipos (png,zip,pe)" value={types} onChange={(e) => setTypes(e.target.value)} />
-          <input placeholder="extensiones (exe,dll)" value={extensions} onChange={(e) => setExtensions(e.target.value)} />
+          <input placeholder="Types (png, zip, pe)" value={types} onChange={(e) => setTypes(e.target.value)} />
+          <input placeholder="Extensions (exe, dll)" value={extensions} onChange={(e) => setExtensions(e.target.value)} />
         </div>
         <div className="flab-row">
-          <input placeholder="glob de nombre (*secret*)" value={nameGlob} onChange={(e) => setNameGlob(e.target.value)} />
-          <input placeholder="entropía mín. (7.5)" value={minEntropy} onChange={(e) => setMinEntropy(e.target.value)} />
+          <input placeholder="Filename glob (*secret*)" value={nameGlob} onChange={(e) => setNameGlob(e.target.value)} />
+          <input placeholder="Minimum entropy (7.5)" value={minEntropy} onChange={(e) => setMinEntropy(e.target.value)} />
           <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
             {["info", "low", "medium", "high", "critical"].map((s) => (
               <option key={s} value={s}>
@@ -319,31 +322,31 @@ function Rules({ isAdmin }: { isAdmin: boolean }) {
           </select>
         </div>
         <button type="button" onClick={onCreate} disabled={!isAdmin || !name.trim()}>
-          Crear regla
+          Create rule
         </button>
       </div>
 
       <Err msg={error} />
 
       <div className="flab-list">
-        <h4>Reglas activas</h4>
-        {rules.length === 0 && <span className="flab-hint">Aún no hay reglas.</span>}
+        <h4>Active rules</h4>
+        {rules.length === 0 && <span className="flab-hint">No rules created yet.</span>}
         {rules.map((r) => (
           <div key={r.id} className="flab-item">
             <span className={`flab-badge sev-${r.severity}`}>{r.severity}</span>
             <strong>{r.name}</strong>
             <span className="flab-count">
               {[
-                r.types.length ? `tipos: ${r.types.join("/")}` : "",
+                r.types.length ? `types: ${r.types.join("/")}` : "",
                 r.extensions.length ? `ext: ${r.extensions.join("/")}` : "",
                 r.name_glob ? `glob: ${r.name_glob}` : "",
-                r.min_entropy != null ? `entropía≥${r.min_entropy}` : "",
+                r.min_entropy != null ? `entropy≥${r.min_entropy}` : "",
               ]
                 .filter(Boolean)
                 .join(" · ")}
             </span>
             {isAdmin && (
-              <button type="button" className="flab-del" onClick={() => onDelete(r.id)} aria-label="Eliminar">
+              <button type="button" className="flab-del" onClick={() => onDelete(r.id)} aria-label={`Delete ${r.name}`}>
                 <Trash2 size={14} />
               </button>
             )}

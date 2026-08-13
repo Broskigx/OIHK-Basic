@@ -1,309 +1,238 @@
 <div align="center">
-  <a href="https://ko-fi.com/broskigx">
-    <img src="https://img.shields.io/badge/☕_Apóyame_en_Ko--fi-BROSKIGX-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Apóyame en Ko-fi — BROSKIGX" />
-  </a>
-</div>
 
 # OIHK Basic
+
+**A local-first desktop workspace for authorized investigations, evidence, relationships, reports, and optional local AI.**
 
 [![CI](https://github.com/Broskigx/OIHK-Basic/actions/workflows/ci.yml/badge.svg)](https://github.com/Broskigx/OIHK-Basic/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-0.1.1--alpha.2-e8c84a)](VERSION)
 [![License: MIT](https://img.shields.io/badge/license-MIT-66d347.svg)](LICENSE)
 [![Local first](https://img.shields.io/badge/architecture-local--first-6bb5e8)](PRIVACY.md)
 
-Plataforma de investigación local-first para organizar casos autorizados, evidencia, fuentes, relaciones, reportes y flujos de IA local desde una aplicación de escritorio Tauri.
+[Quick start](#quick-start) · [First run](#first-run) · [Build from source](docs/BUILDING.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
+
+</div>
 
 > [!WARNING]
-> **OIHK Basic es software alpha experimental para revisión técnica y pruebas controladas.** No existe una versión estable ni un instalador recomendado para producción. Puede contener fallos, funciones incompletas y cambios incompatibles. No lo uses como única copia de evidencia, datos importantes o investigaciones reales.
+> OIHK Basic is alpha software for technical evaluation and controlled testing. There is no production-ready release or generally supported installer. Use disposable data, keep verified external backups, and expect breaking changes.
 
-## Contenido
+## What it is
 
-- [Qué incluye](#qué-incluye)
-- [Inicio rápido desde un clon](#inicio-rápido-desde-un-clon)
-- [Primera apertura y modelos locales](#primera-apertura-y-modelos-locales)
-- [Configuración manual de LM Studio u Ollama](#configuración-manual-de-lm-studio-u-ollama)
-- [Arquitectura](#arquitectura)
-- [Calidad y pruebas](#calidad-y-pruebas)
-- [Seguridad, privacidad y uso responsable](#seguridad-privacidad-y-uso-responsable)
-- [Builds y releases](#builds-y-releases)
-- [Documentación](#documentación)
+OIHK Basic is the single-user, local-first edition of OIHK. It combines a React/Tauri desktop interface with a loopback FastAPI service and SQLite storage. It can organize investigations, build an intelligence graph, manage evidence, query supported public sources, draft reports, and use a model served by LM Studio, Ollama, or another private OpenAI-compatible endpoint.
 
-## Estado del proyecto
+Basic also acts as a control plane for separately installed first-party OIHK modules through **OIHK System Link**. OIHK Evidence Lab is not bundled or embedded: the **Evidence** workspace in Basic manages investigation evidence, while the external Evidence Lab product retains its own process, UI, data, and lifecycle.
 
-La versión actual es `0.1.1-alpha.2`. El repositorio se publica para revisión de código y para testers que acepten trabajar con datos desechables y backups externos verificados.
+| Workspace | Current capability |
+| --- | --- |
+| Dashboard | Local status, recent activity, and honest shortcuts derived from the local database. |
+| Investigations | Create, edit, duplicate, archive, restore, import, and export cases. |
+| Intelligence Graph | Canvas graph, layouts, filters, snapshots, undo/redo, and explicit result promotion. |
+| OSINT | DNS, RDAP/WHOIS, and certificate-transparency lookups with local history and cancellation. |
+| Evidence | Managed uploads, SHA-256 verification, associations, manifests, and forensic utilities. |
+| Reports | Structured drafts with Markdown, safe HTML, and JSON export. |
+| Copilot | Persistent conversations using the model endpoint selected by the user. |
+| Local Models | Detection, configuration, model selection, and an explicit inference test. |
+| System Link | Verified identities, capabilities, and lifecycle for separately installed OIHK modules. |
 
-- No hay una versión estable disponible.
-- Los candidatos `0.1.1-alpha.x` son prereleases experimentales, no un canal de distribución general.
-- El empaquetado Windows x64/NSIS existe, pero requiere validación en entornos limpios antes de considerarse release-ready.
-- Linux y macOS tienen soporte de build en desarrollo, pero todavía no se declaran release-ready.
-- No se garantiza compatibilidad de datos entre commits, soporte ni funcionamiento completo.
-- Los artefactos de GitHub Actions no deben tratarse como instaladores oficiales.
+See [Known Limitations](docs/KNOWN_LIMITATIONS.md) before relying on any workflow.
 
-Publicar una candidata alpha no significa que la aplicación esté lanzada ni lista para producción.
+## Screenshots
 
-## Qué incluye
+Captured from the local development build with an isolated profile and synthetic data. No model runtime was available, so Local Models shows its real unconfigured state.
 
-OIHK Basic reúne once espacios de trabajo principales:
+| First run | Empty dashboard |
+| --- | --- |
+| ![OIHK Basic onboarding with no local runtime detected](docs/screenshots/01-onboarding.png) | ![OIHK Basic empty dashboard](docs/screenshots/02-dashboard-empty.png) |
+| **Investigation graph** | **Local model setup** |
+| ![OIHK Basic graph with two synthetic linked entities](docs/screenshots/03-investigation-graph.png) | ![OIHK Basic Local Models with honest setup states](docs/screenshots/04-local-models.png) |
 
-1. **Dashboard operativo** con actividad reciente, estado local y accesos rápidos.
-2. **Investigations** para crear, editar, duplicar, archivar, restaurar, importar y exportar casos.
-3. **Intelligence Graph** sobre Canvas 2D con cámara, minimapa, layouts, filtros, pinning, selección múltiple, undo/redo y snapshots persistentes.
-4. **OSINT Workspace** con consultas explícitas, historial SQLite, cancelación y promoción controlada al grafo.
-5. **Evidence Lab** con carga por streaming, almacenamiento administrado, SHA-256, asociaciones, manifiestos y análisis forense.
-6. **Reports** con secciones, plantillas, Markdown, HTML seguro, JSON, historial y aprobación de borradores.
-7. **Copilot** con conversaciones persistentes y un modelo local elegido por el usuario.
-8. **Local Models** con detección y configuración de LM Studio, Ollama y endpoints privados OpenAI-compatible.
-9. **Data Sources** para procedencia, citas y confiabilidad.
-10. **Settings** para apariencia, privacidad, rendimiento, backups y diagnósticos sanitizados.
-11. **OIHK System Link** para vincular módulos OIHK instalados de forma separada mediante identidades y capacidades verificadas.
+All repository screenshots follow the [repeatable capture checklist](docs/screenshots/README.md).
 
-Varias capacidades siguen en desarrollo o validación. Consulta [las limitaciones conocidas](docs/KNOWN_LIMITATIONS.md) antes de probar el proyecto.
+## Quick start
 
-## Inicio rápido desde un clon
+### Prerequisites
 
-### Requisitos
+- Git
+- Python 3.11+
+- Node.js 22 (`>=22 <23`)
+- Rust stable and the native [Tauri prerequisites](docs/BUILDING.md) only if you need the desktop shell or a packaged build
 
-- Git.
-- Python 3.11 o superior.
-- Node.js 22 (`>=22 <23`).
-- Rust estable y Cargo.
-- Dependencias nativas de Tauri 2 para tu sistema operativo; consulta [la guía de compilación](docs/BUILDING.md).
+### Windows web development
 
-### 1. Clonar e instalar dependencias
+From PowerShell:
 
 ```powershell
 git clone https://github.com/Broskigx/OIHK-Basic.git
 cd OIHK-Basic
 
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m venv backend\.venv
+.\backend\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\backend\.venv\Scripts\python.exe -m pip install -e ".\backend[dev]"
 
-cd ..\frontend
+cd frontend
+npm ci
+cd ..
+
+.\scripts\dev.ps1
+```
+
+The development UI is available at `http://127.0.0.1:5173` and the API at `http://127.0.0.1:8000`. Use `Ctrl+C` once to stop both processes. Pass `-FrontendOnly` or `-BackendOnly` when you need one side only.
+
+### Linux or macOS web development
+
+Install the platform packages listed in [Building](docs/BUILDING.md), then:
+
+```bash
+git clone https://github.com/Broskigx/OIHK-Basic.git
+cd OIHK-Basic
+
+python3 -m venv backend/.venv
+source backend/.venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e "./backend[dev]"
+
+cd frontend
 npm ci
 ```
 
-En Linux o macOS, activa el entorno Python con `source backend/.venv/bin/activate`.
+Run the backend and frontend in separate terminals:
 
-### 2. Ejecutar la aplicación web de desarrollo
+```bash
+# terminal 1, repository root with the Python environment active
+python backend/run.py
 
-Backend, terminal 1:
-
-```powershell
-cd backend
-.\.venv\Scripts\Activate.ps1
-python run.py
-```
-
-Frontend, terminal 2:
-
-```powershell
+# terminal 2
 cd frontend
 npm run dev
 ```
 
-La interfaz queda normalmente en `http://127.0.0.1:5173` y la API en `http://127.0.0.1:8000`.
+### Desktop development
 
-### 3. Ejecutar OIHK Basic con Tauri
-
-El modo Tauri de desarrollo administra el backend local, pero Vite debe estar abierto:
+Vite must be running before the Tauri shell starts:
 
 ```powershell
-# Terminal 1
+# terminal 1
 cd frontend
 npm run dev
 
-# Terminal 2 (con el entorno Python del backend activo)
+# terminal 2, with backend/.venv active
 cd frontend
 npm run desktop:dev
 ```
 
-Tauri selecciona un puerto libre en loopback, inicia `backend/run.py`, espera su health check y cierra el proceso administrado al salir de la aplicación. El build empaquetado utiliza el sidecar incluido y no requiere Python instalado.
+In debug mode Tauri launches and supervises `backend/run.py` on a free loopback port. A packaged build uses the bundled backend sidecar and does not require Python on the target machine.
 
-## Primera apertura y modelos locales
+## First run
 
-En un perfil nuevo, `onboarding_complete` comienza en `false`. Al abrir OIHK Basic por primera vez, el onboarding inicia automáticamente y, en paralelo, comprueba dos endpoints de loopback:
+On a new profile, onboarding opens automatically. You can finish it without a model and use every non-AI workspace. Reopen it later from **Settings → Run onboarding again**.
 
-| Runtime | Endpoint detectado | Protocolo |
-| --- | --- | --- |
-| LM Studio | `http://127.0.0.1:1234` | API local OpenAI-compatible |
-| Ollama | `http://127.0.0.1:11434` | API nativa de Ollama |
+Local model setup deliberately separates discovery from a working completion:
 
-Si un runtime responde, aparece la animación **“LM Studio detected”** o **“Ollama detected”** con la opción de revisar y conectarlo. El usuario puede:
-
-1. elegir uno de los servicios detectados;
-2. seleccionar uno de sus modelos cargados;
-3. guardar la conexión local con **Connect**;
-4. omitir el paso y seguir usando todas las funciones que no requieren IA;
-5. abrir la configuración manual.
-
-La detección solo lista servicios y modelos. No descarga pesos, no inicia Ollama o LM Studio, no usa una cuenta cloud y no ejecuta inferencia. El onboarding puede volver a abrirse desde **Settings → Run onboarding again**.
-
-## Configuración manual de LM Studio u Ollama
-
-La ruta **Local Models** permanece disponible aunque la detección automática no encuentre nada.
+| Status | Meaning |
+| --- | --- |
+| Detected | The endpoint responded and returned its model catalog. No inference has run. |
+| Connected | The endpoint currently responds to OIHK Basic. |
+| Configured | The provider, endpoint, and selected model were saved locally. |
+| Model selected | A concrete model is selected; OIHK Basic does not choose one silently. |
+| Inference verified | A real completion succeeded in the current app session. |
 
 ### LM Studio
 
-1. Abre LM Studio y carga un modelo.
-2. Inicia su servidor local OpenAI-compatible, normalmente en el puerto `1234`.
-3. En OIHK Basic abre **Local Models**.
-4. Selecciona **LM Studio** e ingresa `http://127.0.0.1:1234`.
-5. Pulsa **List models**, elige un modelo, guarda la configuración y usa **Test inference**.
+1. Load a model in LM Studio and start its local OpenAI-compatible server, normally at `http://127.0.0.1:1234`.
+2. Open **Local Models**, choose **LM Studio**, and select **List models**.
+3. Select a returned model, save the configuration, and select **Test inference**.
 
 ### Ollama
 
-1. Instala Ollama y asegúrate de tener al menos un modelo local.
-2. Inicia el servicio con `ollama serve` si no se está ejecutando como servicio del sistema.
-3. En OIHK Basic abre **Local Models**.
-4. Selecciona **Ollama** e ingresa `http://127.0.0.1:11434`.
-5. Pulsa **List models**, elige un modelo, guarda la configuración y usa **Test inference**.
+1. Install a model and start Ollama with `ollama serve` if it is not already a system service.
+2. Open **Local Models**, choose **Ollama**, and use `http://127.0.0.1:11434`.
+3. Select **List models**, choose a model, save, and select **Test inference**.
 
-También se permiten endpoints HTTP(S) en IP privadas o link-local. Las URLs públicas y las credenciales embebidas en la URL se rechazan. Para cambiar los puertos que usa el detector automático en desarrollo:
+The detector checks only those two loopback endpoints. It does not download weights, start a runtime, contact a cloud account, or run inference. Manual endpoints must use loopback, private, or link-local addressing; public hosts and credentials embedded in URLs are rejected. Adapter and automated test coverage do not replace clean-machine runtime validation—see [Known Limitations](docs/KNOWN_LIMITATIONS.md).
 
-```powershell
-$env:OIHK_LM_STUDIO_ENDPOINT = "http://127.0.0.1:1234"
-$env:OIHK_OLLAMA_ENDPOINT = "http://127.0.0.1:11434"
-```
-
-OIHK Basic no incluye modelos ni administra su instalación. La calidad, licencia, requisitos de hardware y seguridad de cada modelo son responsabilidad de quien lo ejecuta.
-
-## Arquitectura
+## Architecture and trust boundaries
 
 ```mermaid
 flowchart LR
-    UI["React + TypeScript\nVite"] -->|"HTTP en loopback"| API["FastAPI\nservicio local"]
-    Desktop["Tauri 2\nruntime de escritorio"] -->|"inicia y supervisa"| API
-    API --> DB["SQLite\nfuente de verdad"]
-    API --> Files["Evidencia y archivos\nadministrados"]
-    API -->|"solo endpoint elegido"| Models["LM Studio / Ollama\nendpoint privado"]
-    API --> Link["OIHK System Link\nmódulos firmados"]
+    UI["React + TypeScript"] -->|"HTTP on loopback"| API["FastAPI local service"]
+    Desktop["Tauri desktop runtime"] -->|"starts and supervises"| API
+    API --> DB["SQLite source of truth"]
+    API --> Files["Managed evidence files"]
+    API -->|"user-selected private endpoint"| Models["LM Studio / Ollama"]
+    API --> Link["OIHK System Link"]
 ```
 
-Principios de diseño:
+- The default desktop service binds to loopback. It refuses a non-loopback bind when authentication is disabled.
+- There is no mandatory telemetry, cloud synchronization, billing, Redis, GraphQL, or silent cloud-model fallback.
+- OSINT lookups and a user-configured model endpoint are intentional network operations. They are never described as offline.
+- An OSINT result does not enter the graph until the user explicitly promotes it.
+- Evidence is size-limited, copied into managed storage, hashed, and never executed by Basic.
+- System Link accepts registered capabilities and verified binaries, not arbitrary shell commands or scripts.
 
-- SQLite y los archivos locales son la fuente de verdad.
-- La edición desktop sin autenticación escucha únicamente en loopback.
-- No hay telemetría obligatoria, sincronización cloud, Redis, GraphQL, licencias ni facturación.
-- Copilot no tiene fallback silencioso a un proveedor cloud.
-- Una consulta OSINT no modifica el grafo hasta que el usuario promueve explícitamente el resultado.
-- La evidencia no se ejecuta: se limita por tamaño, se copia a almacenamiento administrado y se verifica por hash.
-- El sistema no debe fabricar resultados, fuentes ni métricas.
+Read [Privacy](PRIVACY.md), the [Threat Model](THREAT_MODEL.md), [Responsible Use](RESPONSIBLE_USE.md), and the [System Link v1 contract](docs/SYSTEM_LINK_V1.md) for the full boundaries.
 
-### Estructura del repositorio
+## Quality gates
 
-| Ruta | Responsabilidad |
-| --- | --- |
-| `frontend/` | React, TypeScript, diseño de producto, grafo Canvas y cliente API. |
-| `backend/app/` | FastAPI, servicios, adapters de modelos locales, persistencia y reglas de seguridad. |
-| `backend/tests/` | Pruebas del servicio local y regresiones. |
-| `src-tauri/` | Lifecycle desktop, sidecar, CSP, updater y empaquetado. |
-| `scripts/` | Builds reproducibles, auditorías y smoke tests por plataforma. |
-| `docs/` | Contratos, builds, releases, updater, System Link y limitaciones. |
-
-## Calidad y pruebas
-
-Desde la raíz del repositorio:
+The standard CI workflow runs on Python 3.11 for Ubuntu and Windows, Node 22, and the Windows Rust/Tauri target. It validates the canonical version, Ruff, backend and portability tests, dependency consistency, Python and npm audits, ESLint, Vitest, the production frontend build, Rust formatting/checks/tests, `cargo audit`, and a full-history Gitleaks scan.
 
 ```powershell
-# Python
-python -m ruff check backend/app backend/run.py scripts tests
-python -m pytest -q
+# backend and portability
+python scripts/version.py check
+python -m ruff check backend/app backend/run.py scripts tests --config backend/pyproject.toml
+python -m pytest backend/tests tests --quiet --tb=short --no-header
+python -m pip check
+python -m pip_audit -r backend/requirements.lock
 
-# Frontend
+# frontend
 cd frontend
-npm run check
-npm run test -- --run
+npm run lint
+npm test
 npm run build
 npm audit --audit-level=high
 
-# Desktop
+# desktop
 cd ..\src-tauri
 cargo fmt -- --check
 cargo check --locked
+cargo check --locked --features updater-release
 cargo test --locked --all-targets
+cargo audit
 ```
 
-Auditorías de dependencias recomendadas:
+Packaging, installer, updater, sidecar, and System Link end-to-end checks have additional workflows or manual prerequisites described in [Building](docs/BUILDING.md) and [Releasing](docs/RELEASING.md). A green CI run reduces known risk; it does not make this alpha production-ready.
 
-```powershell
-python -m pip_audit
-cd frontend
-npm audit --audit-level=high
-```
+## Distribution status
 
-La integración continua ejecuta lint, pruebas, builds, auditorías, Gitleaks, smoke tests del sidecar y validaciones de empaquetado. Un pipeline verde reduce riesgos conocidos, pero no convierte una alpha en software de producción.
+- **Windows x64:** unsigned local NSIS packaging is implemented for developer QA. Every candidate still needs clean-VM install, launch, upgrade, uninstall, and residue checks.
+- **Linux:** a source builder exists; no Linux artifact is currently declared release-ready or recommended for general download.
+- **macOS:** a source builder exists; signing, notarization, and clean-machine validation remain prerequisites for distribution.
+- **Updater:** the signed Tauri flow exists, but end-to-end validation requires protected keys and a controlled public HTTPS endpoint.
 
-System Link incluye además un smoke E2E real contra un clon local de OIHK Evidence Lab:
+Build an unsigned Windows QA installer with `cd frontend; npm run release:local`. Do not redistribute it as an official release.
 
-```powershell
-python scripts/smoke_system_link_e2e.py --evidence-lab C:\path\to\OiHK-evidence-lab
-```
+## Documentation
 
-Ese smoke valida pairing, aprobación, Power On/Off, autenticación mutua, health `READY`, capabilities y rechazo de replay o paquetes alterados.
-
-## Evidencia, reportes y backups
-
-- La vista previa inline se limita a tipos raster considerados seguros; otros archivos se entregan como attachments.
-- Los reportes exportan Markdown, HTML seguro y JSON estructurado. PDF y DOCX no forman parte del producto actual.
-- Cambiar el directorio de almacenamiento requiere backup y reinicio; la relocalización en vivo está bloqueada deliberadamente.
-- Backups, migraciones y recuperación continúan en evolución y no constituyen una garantía absoluta de integridad.
-
-## Seguridad, privacidad y uso responsable
-
-OIHK Basic está destinado al trabajo autorizado con fuentes públicas o datos incorporados legalmente por el usuario. No autoriza acceso a sistemas, cuentas ni datos privados de terceros.
-
-- Usa datos desechables durante la etapa alpha.
-- Conserva backups externos y prueba su restauración.
-- Revisa toda salida de un modelo antes de incorporarla a una investigación o reporte.
-- No expongas el backend sin autenticación mediante port forwarding, proxy inverso o bind público.
-- Reporta vulnerabilidades mediante un advisory privado de GitHub; no adjuntes evidencia real ni secretos.
-
-Consulta [Security Policy](SECURITY.md), [Privacy](PRIVACY.md), [Threat Model](THREAT_MODEL.md) y [Responsible Use](RESPONSIBLE_USE.md).
-
-### Autenticación opcional
-
-OIHK Basic es monousuario y local por defecto. Con `OIHK_AUTH_ENABLED=false`, el backend se niega a iniciar en un bind no-loopback. Los despliegues personalizados pueden activar autenticación con `OIHK_AUTH_ENABLED=true`, pero ese modo también es experimental durante la etapa alpha.
-
-## OIHK System Link
-
-System Link enlaza productos OIHK instalados por separado mediante identidades Ed25519, pairing local con una Link Key temporal y de un solo uso, grants de capacidades, manifests hasheados y estados de lifecycle explícitos.
-
-OIHK Evidence Lab no está embebido en Basic: conserva instalación, proceso, UI, dominio y datos propios. Basic actúa únicamente como host/control plane y continúa funcionando sin módulos vinculados.
-
-System Link no acepta comandos shell ni scripts arbitrarios. Solo puede ejecutar el binario relativo registrado bajo un root de instalación después de verificar su SHA-256. El contrato, las identidades Ed25519, el bridge UI y los límites de capabilities están documentados en [System Link v1](docs/SYSTEM_LINK_V1.md).
-
-## Diferencia frente a OIHK normal
-
-OIHK Basic conserva un flujo local de investigación, evidencia, grafo, modelos y módulos first-party, pero no incluye colaboración multiusuario, organizations, enterprise SSO, sincronización cloud, administración de conectores privados, billing, licensing, Redis, queues, GraphQL ni infraestructura distribuida. OIHK normal y OIHK Basic son productos separados.
-
-## Builds y releases
-
-Build local Windows sin firma ni updater:
-
-```powershell
-cd frontend
-npm run release:local
-```
-
-No distribuyas ese instalador como versión oficial. Los releases alpha firmados requieren secretos de CI y un proceso separado de validación. Consulta [Building](docs/BUILDING.md), [Releasing](docs/RELEASING.md) y [Updates](docs/UPDATES.md).
-
-## Documentación
-
-- [Build por plataforma](docs/BUILDING.md)
-- [Arquitectura](docs/ARCHITECTURE.md)
-- [Limitaciones conocidas](docs/KNOWN_LIMITATIONS.md)
-- [Arquitectura del updater](docs/UPDATES.md)
-- [Proceso de release](docs/RELEASING.md)
-- [System Link v1](docs/SYSTEM_LINK_V1.md)
+- [Building from source](docs/BUILDING.md)
+- [Windows candidate installation](docs/WINDOWS_INSTALL.md)
+- [Linux source-build status](docs/LINUX_INSTALL.md)
+- [macOS source-build status](docs/MACOS_INSTALL.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Known Limitations](docs/KNOWN_LIMITATIONS.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Release process](docs/RELEASING.md)
+- [Updater design](docs/UPDATES.md)
+- [Contributing](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
-- [Privacy](PRIVACY.md)
-- [Threat Model](THREAT_MODEL.md)
-- [Responsible Use](RESPONSIBLE_USE.md)
 - [Changelog](CHANGELOG.md)
 
-## Licencia
+## Responsible use and support
 
-MIT. Consulta [LICENSE](LICENSE).
+Use OIHK Basic only for authorized work with public sources or data you are legally permitted to process. Do not expose its unauthenticated backend through port forwarding, a reverse proxy, or a public bind. Review model output before incorporating it into evidence or a report.
+
+Report vulnerabilities through a private GitHub security advisory and exclude real evidence, personal data, and secrets. For reproducible defects, use the repository issue tracker and include the sanitized diagnostics described in [Troubleshooting](docs/TROUBLESHOOTING.md).
+
+Development is supported independently. If the project is useful, you can [support the maintainer on Ko-fi](https://ko-fi.com/broskigx).
+
+## License
+
+MIT. See [LICENSE](LICENSE).
