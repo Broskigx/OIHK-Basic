@@ -227,6 +227,7 @@ async def _run_e2e(
     if str(REPO_ROOT / "backend") not in sys.path:
         sys.path.insert(0, str(REPO_ROOT / "backend"))
     import httpx
+
     from app.system_link.module_auth import module_request_payload
 
     evidence_lab = evidence_lab.resolve()

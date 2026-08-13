@@ -36,15 +36,27 @@ class HashSetInfo:
     entries: int
 
 
+_DIGEST_LENGTHS = {32: "md5", 40: "sha1", 64: "sha256"}
+# A single import must not schedule unbounded per-line database work.
+_MAX_IMPORT_LINES = 200_000
+
+
 def _infer_algorithm(digest: str) -> str:
-    digest = digest.strip().lower()
-    if len(digest) == 32:
-        return "md5"
-    elif len(digest) == 40:
-        return "sha1"
-    elif len(digest) == 64:
-        return "sha256"
-    return "sha256"
+    return _DIGEST_LENGTHS.get(len(digest.strip().lower()), "sha256")
+
+
+def _classify_digest(value: str) -> tuple[str, str] | None:
+    """Return ``(algorithm, digest)`` for a well-formed hash, else ``None``.
+
+    The previous implementation defaulted any unrecognised length to
+    ``sha256``, so a 10-character hex string was stored as a sha256 entry and
+    could never match a real digest. Length must agree with the algorithm.
+    """
+    digest = value.strip().lower()
+    algorithm = _DIGEST_LENGTHS.get(len(digest))
+    if algorithm is None or not all(character in "0123456789abcdef" for character in digest):
+        return None
+    return algorithm, digest
 
 
 async def import_hash_entries(
@@ -61,7 +73,9 @@ async def import_hash_entries(
     skipped = 0
     invalid = 0
 
-    for line in text.strip().split("\n"):
+    for index, line in enumerate(text.strip().split("\n")):
+        if index >= _MAX_IMPORT_LINES:
+            break
         line = line.strip()
         if not line or line.startswith("#") or line.startswith("//"):
             continue
@@ -71,13 +85,12 @@ async def import_hash_entries(
             invalid += 1
             continue
 
-        digest = parts[0].strip().lower()
         label = " ".join(parts[1:])[:240] if len(parts) > 1 else ""
-        algorithm = _infer_algorithm(digest)
-
-        if algorithm not in ("md5", "sha1", "sha256") or not all(c in "0123456789abcdef" for c in digest):
+        classified = _classify_digest(parts[0])
+        if classified is None:
             invalid += 1
             continue
+        algorithm, digest = classified
 
         existing = await session.execute(
             select(models.ForensicHashEntry.id).where(

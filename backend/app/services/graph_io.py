@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
@@ -23,9 +24,31 @@ class CsvImportSummary:
     errors: list[str]
 
 
+# A single import must not be able to schedule unbounded work: each accepted
+# row costs an INSERT, a flush, and a custody seal.
+_MAX_IMPORT_ROWS = 10_000
+
+
 def _spreadsheet_safe(value: str) -> str:
     """Prevent exported user-controlled cells from being interpreted as formulas."""
     return f"'{value}" if value.startswith(("=", "+", "-", "@", "\t", "\r")) else value
+
+
+def _parse_confidence(raw: str) -> float:
+    """Parse a confidence cell into a finite value in [0, 1].
+
+    ``float()`` accepts ``nan``, ``inf`` and negative numbers. ``min(nan, 1.0)``
+    returns ``nan``, so an unchecked cell put NaN into the database, and NaN
+    serialises to a bare ``NaN`` token that is not valid JSON — corrupting
+    every later response that carries the entity.
+    """
+    try:
+        value = float(raw if raw not in (None, "") else "0.68")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("confidence must be a number") from exc
+    if not math.isfinite(value):
+        raise ValueError("confidence must be a finite number")
+    return max(0.0, min(value, 1.0))
 
 
 async def import_entities_csv(
@@ -48,10 +71,13 @@ async def import_entities_csv(
     errors: list[str] = []
 
     for i, row in enumerate(reader, start=2):
+        if nodes >= _MAX_IMPORT_ROWS:
+            errors.append(f"Import stopped at the {_MAX_IMPORT_ROWS}-row limit; split the file and retry.")
+            break
         try:
             label = row.get("label", "").strip()
             type_ = row.get("type", "").strip().lower().replace(" ", "_")[:40]
-            confidence = min(float(row.get("confidence", "0.68")), 1.0)
+            confidence = _parse_confidence(row.get("confidence", ""))
             connect_to = row.get("connect_to", "").strip()
 
             if not label or not type_:

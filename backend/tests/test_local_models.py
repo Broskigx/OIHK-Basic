@@ -17,7 +17,6 @@ from app.services.local_models import (
     validate_local_endpoint,
 )
 
-
 # Bound before any monkeypatch so the factory below builds a real client
 # instead of recursing into its own replacement.
 _REAL_ASYNC_CLIENT = httpx.AsyncClient

@@ -7,9 +7,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from sqlalchemy.ext.asyncio import create_async_engine
+
 from app.core import update_service
 from app.database_migrations import run_migrations
-from sqlalchemy.ext.asyncio import create_async_engine
 
 
 @pytest.mark.asyncio

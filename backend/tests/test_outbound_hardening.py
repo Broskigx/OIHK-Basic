@@ -227,7 +227,6 @@ async def test_bounded_json_read_returns_none_for_unexpected_status():
 async def test_model_listing_refuses_an_oversized_response(monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", _client_factory(lambda _r: _gzip_bomb(4_000_000)))
     monkeypatch.setenv("OIHK_MAX_MODEL_RESPONSE_BYTES", "65536")
-    local_models.__dict__  # keep the import meaningful for linters
 
     from app.core.config import get_settings
 

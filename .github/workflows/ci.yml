@@ -74,7 +74,7 @@ jobs:
         run: python scripts/version.py check
 
       - name: Ruff
-        run: python -m ruff check backend/app backend/run.py scripts tests --config backend/pyproject.toml
+        run: python -m ruff check backend/app backend/run.py backend/tests scripts tests --config backend/pyproject.toml
 
       - name: Backend and portability tests
         run: python -m pytest backend/tests tests --quiet --tb=short --no-header
