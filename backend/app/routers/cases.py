@@ -1,8 +1,9 @@
 """Local investigation lifecycle routes for OIHK Basic."""
 
+from contextlib import suppress
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +11,7 @@ from app import models
 from app.core.deps import CurrentUser, accessible_cases_statement, get_current_user, require_case_access
 from app.database import get_session
 from app.schemas import CaseCreate, CaseImportDocument, CaseRead, CaseUpdate
+from app.services.managed_evidence import safe_evidence_path
 from app.services.repository import audit, create_case
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -273,7 +275,32 @@ async def delete_case(
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     case = await require_case_access(session, case_id, current)
+
+    # Managed evidence lives outside the database, so the rows that point at it
+    # have to be read before anything is deleted.
+    stored_paths = list(
+        (
+            await session.execute(
+                select(models.EvidenceItem.storage_path).where(models.EvidenceItem.case_id == case_id)
+            )
+        ).scalars()
+    )
+
+    # evidence_items and evidence_seals reference sources with ondelete=RESTRICT
+    # so that an individual source can never be removed out from under a custody
+    # record. Deleting the case cascades to its sources, which means those two
+    # tables have to be cleared first or SQLite refuses the whole delete.
+    await session.execute(delete(models.EvidenceItem).where(models.EvidenceItem.case_id == case_id))
+    await session.execute(delete(models.EvidenceSeal).where(models.EvidenceSeal.case_id == case_id))
     await session.execute(delete(models.AuditEvent).where(models.AuditEvent.case_id == case_id))
     await session.delete(case)
     await session.commit()
+
+    # Only after the transaction commits: a rollback must not leave the database
+    # referring to files that have already been unlinked. safe_evidence_path
+    # re-checks containment, so a stored path that somehow points outside
+    # managed storage is refused rather than followed.
+    for path_value in stored_paths:
+        with suppress(HTTPException, OSError):
+            safe_evidence_path(path_value).unlink(missing_ok=True)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
