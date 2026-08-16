@@ -11,6 +11,17 @@ from app.database import get_session
 router = APIRouter(prefix="/exports", tags=["exports"])
 
 
+def _safe_filename_token(value: str) -> str:
+    """Reduce an identifier to characters that cannot break out of a header.
+
+    Case identifiers are server-generated today, so this is defence in depth:
+    it keeps a quote, newline, or separator from ever reaching a quoted
+    ``Content-Disposition`` filename if that ever stops being true.
+    """
+    cleaned = "".join(character for character in value if character.isalnum() or character in "-_")
+    return cleaned[:120] or "case"
+
+
 @router.get("/cases/{case_id}/json")
 async def export_case_json(
     case_id: str,
@@ -98,5 +109,10 @@ async def export_case_json(
     return Response(
         content=json.dumps(data, default=json_default, indent=2),
         media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="oihk-basic-case-{case_id}.json"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="oihk-basic-case-{_safe_filename_token(case_id)}.json"',
+            # The body is attacker-influenced case data served from loopback;
+            # never let a browser sniff it into an active content type.
+            "X-Content-Type-Options": "nosniff",
+        },
     )

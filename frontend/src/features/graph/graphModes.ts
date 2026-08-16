@@ -38,7 +38,7 @@ function orderedNodeIds(graph: GraphRead): string[] {
     .map((node) => node.id);
 }
 
-export function graphDegree(graph: GraphRead): Map<string, number> {
+function graphDegree(graph: GraphRead): Map<string, number> {
   const degree = new Map(graph.nodes.map((node) => [node.id, 0]));
   graph.edges.forEach((edge) => {
     degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);

@@ -45,14 +45,14 @@ function cellKeyDecode(key: number): { x: number; y: number } {
 }
 
 /** Compute a visual radius for a node based on type + degree */
-export function nodeRadius(type: string, degree: number, maxDegree: number): number {
+function nodeRadius(type: string, degree: number, maxDegree: number): number {
   const base = type === "name" || type === "organization" ? 10 : 8;
   const degreeBoost = maxDegree > 0 ? (degree / maxDegree) * 6 : 0;
   return Math.max(base, Math.min(22, base + degreeBoost));
 }
 
 /** Pure distance helper */
-export function distance(x1: number, y1: number, x2: number, y2: number): number {
+function distance(x1: number, y1: number, x2: number, y2: number): number {
   const dx = x2 - x1;
   const dy = y2 - y1;
   return Math.sqrt(dx * dx + dy * dy);

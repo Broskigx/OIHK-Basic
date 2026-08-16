@@ -5,25 +5,9 @@
 
 import { MIN_ZOOM, MAX_ZOOM, type CameraState } from "./types";
 
-export { MIN_ZOOM, MAX_ZOOM };
-
 /** Create default camera centered at origin with zoom=1 */
 export function createCamera(): CameraState {
   return { x: 0, y: 0, zoom: 1 };
-}
-
-/** Convert world coordinates → screen pixel coordinates */
-export function worldToScreen(
-  wx: number,
-  wy: number,
-  camera: CameraState,
-  canvasW: number,
-  canvasH: number,
-): { x: number; y: number } {
-  return {
-    x: (wx + camera.x) * camera.zoom + canvasW / 2,
-    y: (wy + camera.y) * camera.zoom + canvasH / 2,
-  };
 }
 
 /** Convert screen pixel coordinates → world coordinates */
@@ -61,11 +45,6 @@ export function zoomCamera(
     y: world.y - (screenY - canvasH / 2) / newZoom,
     zoom: newZoom,
   };
-}
-
-/** Simple zoom without focal point (for programmatic zoom) */
-export function setZoom(camera: CameraState, z: number): CameraState {
-  return { ...camera, zoom: clamp(z, MIN_ZOOM, MAX_ZOOM) };
 }
 
 /** Fit all given world points into the viewport */

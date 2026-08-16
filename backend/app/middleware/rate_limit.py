@@ -13,6 +13,12 @@ from app.core.config import get_settings
 
 _WINDOW_SECONDS = 60.0
 _EXEMPT_PATHS = {"/health", "/docs", "/openapi.json", "/redoc"}
+# Upper bound on distinct client keys held between sweeps. On loopback the key
+# space is tiny, but with OIHK_RATE_LIMIT_TRUST_FORWARDED=true the key comes
+# from X-Forwarded-For, which the peer controls: without a ceiling a proxy
+# forwarding spoofed headers would grow this map without limit, turning the
+# limiter itself into a memory-exhaustion vector.
+_MAX_TRACKED_KEYS = 8192
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -32,7 +38,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if direct_ip in trusted:
                 forwarded = request.headers.get("x-forwarded-for")
                 if forwarded:
-                    return forwarded.split(",")[0].strip()
+                    # Bounded: the header is peer-controlled, so an arbitrarily
+                    # long value must not become an arbitrarily long dict key.
+                    return forwarded.split(",")[0].strip()[:64]
         return direct_ip
 
     def _sweep(self, now: float) -> None:
@@ -51,9 +59,23 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         key = self._client_key(request)
         now = time.monotonic()
 
-        if now - self._last_sweep > _WINDOW_SECONDS:
+        if now - self._last_sweep > _WINDOW_SECONDS or len(self._hits) >= _MAX_TRACKED_KEYS:
+            # Sweeping on size as well as on time keeps the map bounded even
+            # when a flood of distinct keys arrives inside a single window.
+            # The comparison matches the one guarding the rejection below: with
+            # a strict ">" here, a map sitting at exactly the ceiling would skip
+            # the sweep and then refuse an unknown key on entries that a sweep
+            # would have released.
             self._sweep(now)
             self._last_sweep = now
+        if key not in self._hits and len(self._hits) >= _MAX_TRACKED_KEYS:
+            # Still saturated after a sweep: every tracked key is live. Refuse
+            # the unknown key rather than growing without bound.
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded. Slow down and retry."},
+                headers={"Retry-After": "60", "X-RateLimit-Limit": str(limit)},
+            )
         bucket = self._hits[key]
 
         cutoff = now - _WINDOW_SECONDS
@@ -72,6 +94,4 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-RateLimit-Limit"] = str(limit)
         response.headers["X-RateLimit-Remaining"] = str(max(0, limit - len(bucket)))
-        if not bucket:
-            self._hits.pop(key, None)
         return response

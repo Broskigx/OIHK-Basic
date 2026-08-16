@@ -149,9 +149,7 @@ async def core_analyze(
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"File exceeds {MAX_UPLOAD_BYTES} bytes")
 
-    report = analyze_file(
-        data, filename=file.filename or "upload", content_type=file.content_type or ""
-    )
+    report = analyze_file(data, filename=file.filename or "upload", content_type=file.content_type or "")
 
     stored = store_evidence_bytes(
         case_id,
@@ -424,7 +422,6 @@ async def carve_file(
         session,
         case_id=case_id,
         parent_sha256=parent_sha256,
-        parent_source_id=None,
         data=data,
         actor=current.username,
         organization_id=current.organization_id,

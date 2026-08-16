@@ -11,25 +11,25 @@ import {
   Trash2,
   Copy,
   RefreshCw,
-  Eye,
   StopCircle,
   Globe,
   Cpu,
   Boxes,
   Database,
+  CheckCircle2,
+  XCircle,
+  Wrench,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createCopilotConversation,
   deleteCopilotConversation,
-  getLocalModelConfiguration,
   listCopilotConversations,
   listCopilotMessages,
   streamCopilotMessage,
   updateCopilotConversation,
 } from "../../api";
-import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
-import type { CopilotConversation, CopilotMessage, LocalModelConfiguration } from "../../types";
+import type { CopilotConversation, CopilotMessage, LocalModelRuntimeStatus } from "../../types";
 
 function timestamp(value: string): string {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
@@ -66,13 +66,16 @@ function clearSession(key: string): void {
   }
 }
 
-export function CopilotWorkspaceView({
+export function CopilotAgentPanel({
   caseId,
+  modelStatus,
   onOpenModels,
+  onDataChanged,
 }: {
   caseId: string | null;
-  targetId: string;
+  modelStatus: LocalModelRuntimeStatus | null;
   onOpenModels: () => void;
+  onDataChanged?: () => void;
 }) {
   const [conversations, setConversations] = useState<CopilotConversation[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -80,7 +83,6 @@ export function CopilotWorkspaceView({
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
-  const [configuration, setConfiguration] = useState<LocalModelConfiguration | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -102,6 +104,7 @@ export function CopilotWorkspaceView({
       try {
         const rows = await listCopilotConversations(caseId, includeArchived);
         if (generation !== generationRef.current) return;
+        setError("");
         setConversations(rows);
         const candidate = preferredId || activeId;
         const nextId = rows.some((row) => row.id === candidate) ? candidate : (rows[0]?.id ?? "");
@@ -124,11 +127,11 @@ export function CopilotWorkspaceView({
     setLoading(true);
     setError("");
     const saved = readSession(storageKey);
-    Promise.all([listCopilotConversations(caseId, includeArchived), getLocalModelConfiguration()])
-      .then(async ([rows, modelConfiguration]) => {
+    listCopilotConversations(caseId, includeArchived)
+      .then(async (rows) => {
         if (cancelled || generation !== generationRef.current) return;
+        setError("");
         setConversations(rows);
-        setConfiguration(modelConfiguration);
         const restored =
           saved && saved.caseId === caseId && rows.some((row) => row.id === saved.activeId)
             ? saved.activeId
@@ -166,7 +169,8 @@ export function CopilotWorkspaceView({
   }, [conversations, query]);
 
   const active = conversations.find((item) => item.id === activeId);
-  const modelReady = Boolean(configuration?.endpoint && configuration?.model);
+  const modelConfigured = Boolean(modelStatus?.configured && modelStatus.endpoint && modelStatus.model);
+  const modelReady = Boolean(modelConfigured && modelStatus?.connected);
 
   async function openConversation(conversationId: string) {
     abortRef.current?.abort();
@@ -203,7 +207,7 @@ export function CopilotWorkspaceView({
           const created = await createCopilotConversation({
             case_id: caseId,
             title: "New conversation",
-            model: configuration?.model ?? "",
+            model: modelStatus?.model ?? "",
           });
           conversationId = created.id;
           intentNewRef.current = false;
@@ -233,7 +237,7 @@ export function CopilotWorkspaceView({
           case_id: caseId,
           role: "assistant",
           content: "",
-          provider: configuration?.provider ?? "local",
+          provider: modelStatus?.provider ?? "local",
           tool_calls: [],
           created_at: new Date().toISOString(),
         },
@@ -260,6 +264,7 @@ export function CopilotWorkspaceView({
         ]);
         await refreshConversations(conversationId);
       }
+      if (reply.assistant_message.tool_calls.some((call) => call.ok)) onDataChanged?.();
     } catch (cause) {
       const detail = cause instanceof Error ? cause.message : "The local model did not respond";
       const userInitiatedAbort =
@@ -321,26 +326,17 @@ export function CopilotWorkspaceView({
   }
 
   return (
-    <div className="platform-view copilot-workspace">
-      <WorkspaceHeader
-        eyebrow="Local Copilot"
-        title="Copilot"
-        description="Durable investigation conversations powered only by the local model endpoint you choose. Model output remains an unverified draft."
-        actions={
-          <button type="button" onClick={startNewConversation} disabled={sending}>
-            <MessageSquarePlus size={14} /> New conversation
-          </button>
-        }
-      />
-
-      <div className="platform-inline-status">
+    <div className="copilot-agent-panel">
+      <div className={`copilot-agent-status ${modelReady ? "connected" : modelConfigured ? "warning" : "offline"}`}>
         <ShieldCheck size={16} />
-        {modelReady
-          ? `${configuration?.provider} · ${configuration?.model} · ${configuration?.endpoint}`
-          : "No local model configured. The rest of OIHK Basic remains available."}
-        {!modelReady && <button type="button" onClick={onOpenModels}><Settings2 size={13} /> Configure</button>}
+        <span>{modelReady
+          ? `${modelStatus?.provider} · ${modelStatus?.model} ready`
+          : modelConfigured
+            ? `${modelStatus?.model} is configured, but its endpoint is offline`
+            : "No local model configured. The rest of OIHK remains available."}</span>
+        {!modelReady && <button type="button" onClick={onOpenModels}><Settings2 size={13} /> {modelConfigured ? "Reconnect" : "Configure"}</button>}
       </div>
-      {error && <div className="platform-inline-error" role="alert">{error}</div>}
+      {error && <div className="copilot-agent-error" role="alert"><span>{error}</span><button type="button" onClick={() => void refreshConversations(activeId)}>Retry</button></div>}
 
       {/* ── 3-Column Layout ── */}
       <div className="copilot-layout">
@@ -383,6 +379,7 @@ export function CopilotWorkspaceView({
               </div>
             </div>
             <div className="copilot-chat-actions">
+              <button type="button" onClick={startNewConversation} disabled={sending} title="New conversation"><MessageSquarePlus size={13} /></button>
               {active && (
                 <>
                   <button type="button" onClick={() => void renameActive()} title="Rename"><Pencil size={13} /></button>
@@ -420,6 +417,16 @@ export function CopilotWorkspaceView({
                     <p className="copilot-message-content">
                       {message.content || (message.id.startsWith("pending-assistant") ? "..." : "")}
                     </p>
+                    {!isUser && message.tool_calls.length > 0 && (
+                      <div className="copilot-tool-results" aria-label="OIHK tool results">
+                        {message.tool_calls.map((call, callIndex) => (
+                          <div key={`${message.id}-${call.tool}-${callIndex}`} className={call.ok ? "ok" : "failed"}>
+                            {call.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+                            <span><strong>{call.tool.replace(/_/g, " ")}</strong> — {call.result_summary}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="copilot-message-footer">
                       <time>{timestamp(message.created_at)}</time>
                       {!isUser && message.content && !message.id.startsWith("pending") && (
@@ -427,11 +434,12 @@ export function CopilotWorkspaceView({
                           <button type="button" title="Copy" onClick={() => navigator.clipboard.writeText(message.content)}>
                             <Copy size={10} />
                           </button>
-                          <button type="button" title="Retry" onClick={() => {}}>
+                          <button type="button" title="Use this request again" onClick={() => {
+                            const messageIndex = messages.findIndex((item) => item.id === message.id);
+                            const previous = messages.slice(0, messageIndex).reverse().find((item) => item.role === "user");
+                            if (previous) setDraft(previous.content);
+                          }}>
                             <RefreshCw size={10} />
-                          </button>
-                          <button type="button" title="View sources">
-                            <Eye size={10} />
                           </button>
                         </div>
                       )}
@@ -453,14 +461,14 @@ export function CopilotWorkspaceView({
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               rows={2}
-              placeholder={modelReady ? "Ask the local model..." : "Configure LM Studio or Ollama to enable Copilot"}
+              placeholder={modelReady ? "Ask the local model..." : modelConfigured ? "Local model offline — reconnect it in Local Models" : "Configure LM Studio or Ollama to enable the agent"}
               disabled={!modelReady || sending}
             />
             <div className="copilot-composer-actions">
               <span className="copilot-composer-hint">Local inference only. No cloud fallback.</span>
               <div className="copilot-composer-buttons">
                 <span className="copilot-composer-status">
-                  {modelReady ? "Connected" : "Disconnected"}
+                  {modelReady ? "Connected" : modelConfigured ? "Offline" : "Not configured"}
                 </span>
                 {sending ? (
                   <button type="button" onClick={() => abortRef.current?.abort()}>
@@ -492,9 +500,14 @@ export function CopilotWorkspaceView({
             <h4><Cpu size={13} /> Tools</h4>
             <div className="copilot-context-tools">
               <span className={modelReady ? "available" : "unavailable"}>Local Model</span>
-              <span className="available">DNS</span>
-              <span className="available">RDAP</span>
-              <span className="available">Certificate Search</span>
+              <span className="available"><Wrench size={8} /> Investigations</span>
+              <span className="available">Graph</span>
+              <span className="available">Sources</span>
+              <span className="available">Evidence</span>
+              <span className="available">OSINT + DNS/RDAP</span>
+              <span className="available">Reports</span>
+              <span className="available">Transforms</span>
+              <span className="available">Audit</span>
             </div>
           </div>
 
@@ -511,4 +524,4 @@ export function CopilotWorkspaceView({
       </div>
     </div>
   );
-}
+}

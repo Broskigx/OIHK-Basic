@@ -1,6 +1,7 @@
 import { ArrowDownLeft, ArrowUpRight, ExternalLink, FileText, Loader2, Network, Tag, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getEntityDossier } from "../../api";
+import { safeExternalHref } from "../../lib/safeUrl";
 import type { EntityDossier, GraphNode } from "../../types";
 
 function dateLabel(value: string | null | undefined): string {
@@ -86,7 +87,7 @@ export function GraphInspector({ node, onClose, onOpenNode, onOpenRecord }: {
             <ul className="graph-inspector-sources">
               {dossier.sources.map((source) => (
                 <li key={source.source_id}>
-                  {source.url ? <a href={source.url} target="_blank" rel="noreferrer">{source.title}</a> : <strong>{source.title}</strong>}
+                  {safeExternalHref(source.url) ? <a href={safeExternalHref(source.url)} target="_blank" rel="noopener noreferrer">{source.title}</a> : <strong>{source.title}</strong>}
                   <span>{source.kind} · reliability {Math.round(source.reliability * 100)}%</span>
                   {source.citation && <small>{source.citation}</small>}
                 </li>

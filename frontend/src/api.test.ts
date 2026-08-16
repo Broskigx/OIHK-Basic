@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { clearToken, createCase, getToken, setToken } from "./api";
+import { clearToken, createCase, getToken, request, setToken } from "./api";
 
 describe("token management", () => {
   beforeEach(() => {
@@ -29,6 +29,10 @@ describe("token management", () => {
 });
 
 describe("authenticated request protection", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("echoes the backend CSRF cookie on mutations", async () => {
     document.cookie = "oihk_basic_csrf_token=csrf-test-token; path=/";
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -47,5 +51,32 @@ describe("authenticated request protection", () => {
 
     const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
     expect(headers.get("X-CSRF-Token")).toBe("csrf-test-token");
+  });
+
+  it("retries one transient fetch failure for a safe read", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new TypeError("Failed to fetch"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+
+    await expect(request<{ ok: boolean }>("/health")).resolves.toEqual({ ok: true });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a mutation after a transport failure", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(createCase({
+      title: "Authorized review",
+      summary: "",
+      legal_basis: "Consent",
+      scope_statement: "Bounded public-source review",
+      priority: "normal",
+      tags: [],
+      notes: "",
+    })).rejects.toThrow("Local service unavailable");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

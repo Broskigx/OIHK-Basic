@@ -74,10 +74,19 @@ jobs:
         run: python scripts/version.py check
 
       - name: Ruff
-        run: python -m ruff check backend/app backend/run.py scripts tests --config backend/pyproject.toml
+        run: python -m ruff check backend/app backend/run.py backend/tests scripts tests --config backend/pyproject.toml
 
       - name: Backend and portability tests
-        run: python -m pytest backend/tests tests --quiet --tb=short --no-header
+        # Coverage runs as part of the normal test step rather than as a second
+        # pass, so the suite is executed once. The floor sits below the current
+        # figure: it is a regression guard against whole routes losing their
+        # tests, not a target to game.
+        run: >-
+          python -m pytest backend/tests tests --quiet --tb=short --no-header
+          --cov=app --cov-report=term-missing --cov-fail-under=70
+        working-directory: ${{ github.workspace }}
+        env:
+          PYTHONPATH: backend
 
       - name: Verify dependency consistency
         run: python -m pip check

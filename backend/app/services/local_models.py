@@ -21,7 +21,7 @@ def validate_local_endpoint(endpoint: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
         raise ValueError("Endpoint must be an HTTP(S) URL without embedded credentials")
-    hostname = parsed.hostname.lower()
+    hostname = parsed.hostname.lower().rstrip(".")
     if hostname == "localhost" or hostname.endswith(".localhost"):
         return value
     try:
@@ -31,6 +31,51 @@ def validate_local_endpoint(endpoint: str) -> str:
     if not (address.is_private or address.is_loopback or address.is_link_local):
         raise ValueError("Only localhost or private IP model endpoints are allowed")
     return value
+
+
+def assert_private_peer(response: httpx.Response) -> None:
+    """Reject a connection that landed outside the private address space.
+
+    ``validate_local_endpoint`` checks the endpoint *string*. For the two
+    hostname forms it accepts (``localhost`` and ``*.localhost``) the actual
+    address is only known once the socket is established, so the peer is
+    re-checked here. A resolver that answers with a public address — whether
+    through a rebinding attack or a misconfigured search domain — is refused
+    before the body is read.
+    """
+    stream = response.extensions.get("network_stream")
+    if stream is None:
+        # No transport introspection available (in-memory test transports);
+        # the endpoint string check already applied.
+        return
+    try:
+        server_addr = stream.get_extra_info("server_addr")
+        address = ipaddress.ip_address(str(server_addr[0]).split("%", 1)[0])
+    except (AttributeError, IndexError, TypeError, ValueError) as exc:
+        raise ValueError("The model endpoint connection address could not be verified") from exc
+    if not (address.is_private or address.is_loopback or address.is_link_local):
+        raise ValueError("The model endpoint resolved to a non-private network address")
+
+
+async def _read_json_bounded(response: httpx.Response) -> dict:
+    """Buffer a model response under the configured decompressed-byte ceiling."""
+    from app.core.config import get_settings
+
+    max_bytes = get_settings().max_model_response_bytes
+    declared = response.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > max_bytes:
+        raise ValueError(f"Model response declares {declared} bytes, over the {max_bytes}-byte limit")
+    buffer = bytearray()
+    async for chunk in response.aiter_bytes():
+        buffer.extend(chunk)
+        if len(buffer) > max_bytes:
+            raise ValueError(f"Model response exceeded the {max_bytes}-byte read limit")
+    if not buffer:
+        return {}
+    try:
+        return json.loads(bytes(buffer))
+    except ValueError as exc:
+        raise ValueError("The model endpoint returned a malformed JSON response") from exc
 
 
 def _openai_base(endpoint: str) -> str:
@@ -85,6 +130,12 @@ class LocalModelProvider(ABC):
         """Yield incremental text deltas. Must be an async iterator."""
         raise NotImplementedError
 
+    @staticmethod
+    def _stream_budget() -> int:
+        from app.core.config import get_settings
+
+        return get_settings().max_model_stream_chars
+
     async def stream_complete(
         self,
         *,
@@ -110,9 +161,10 @@ class LocalModelProvider(ABC):
 class OpenAICompatibleLocalProvider(LocalModelProvider):
     async def list_models(self) -> list[ModelDescriptor]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(f"{_openai_base(self.endpoint)}/models")
-            response.raise_for_status()
-            rows = response.json().get("data", [])
+            async with client.stream("GET", f"{_openai_base(self.endpoint)}/models") as response:
+                assert_private_peer(response)
+                response.raise_for_status()
+                rows = (await _read_json_bounded(response)).get("data", [])
         return [
             ModelDescriptor(id=str(row.get("id", "")), name=str(row.get("id", ""))) for row in rows if row.get("id")
         ]
@@ -136,9 +188,12 @@ class OpenAICompatibleLocalProvider(LocalModelProvider):
         if stop:
             payload["stop"] = stop
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(f"{_openai_base(self.endpoint)}/chat/completions", json=payload)
-            response.raise_for_status()
-            choices = response.json().get("choices") or []
+            async with client.stream(
+                "POST", f"{_openai_base(self.endpoint)}/chat/completions", json=payload
+            ) as response:
+                assert_private_peer(response)
+                response.raise_for_status()
+                choices = (await _read_json_bounded(response)).get("choices") or []
             if not choices:
                 return ""
             return str((choices[0] or {}).get("message", {}).get("content", ""))
@@ -161,10 +216,13 @@ class OpenAICompatibleLocalProvider(LocalModelProvider):
         }
         if stop:
             payload["stop"] = stop
+        budget = self._stream_budget()
+        produced = 0
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream(
                 "POST", f"{_openai_base(self.endpoint)}/chat/completions", json=payload
             ) as response:
+                assert_private_peer(response)
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
@@ -179,6 +237,11 @@ class OpenAICompatibleLocalProvider(LocalModelProvider):
                     choices = chunk.get("choices") or [{}]
                     delta = ((choices[0] or {}).get("delta") or {}).get("content")
                     if delta:
+                        # An endpoint that never emits [DONE] would otherwise
+                        # stream until the read timeout with no size ceiling.
+                        produced += len(delta)
+                        if produced > budget:
+                            return
                         yield delta
 
 
@@ -189,9 +252,10 @@ class LMStudioProvider(OpenAICompatibleLocalProvider):
 class OllamaProvider(LocalModelProvider):
     async def list_models(self) -> list[ModelDescriptor]:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(f"{_ollama_base(self.endpoint)}/api/tags")
-            response.raise_for_status()
-            rows = response.json().get("models", [])
+            async with client.stream("GET", f"{_ollama_base(self.endpoint)}/api/tags") as response:
+                assert_private_peer(response)
+                response.raise_for_status()
+                rows = (await _read_json_bounded(response)).get("models", [])
         return [
             ModelDescriptor(
                 id=str(row.get("name", "")),
@@ -215,12 +279,15 @@ class OllamaProvider(LocalModelProvider):
         if stop:
             options["stop"] = stop
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
+            async with client.stream(
+                "POST",
                 f"{_ollama_base(self.endpoint)}/api/chat",
                 json={"model": model, "messages": messages, "stream": False, "options": options},
-            )
-            response.raise_for_status()
-            return str(response.json().get("message", {}).get("content", ""))
+            ) as response:
+                assert_private_peer(response)
+                response.raise_for_status()
+                payload = await _read_json_bounded(response)
+            return str((payload.get("message") or {}).get("content", ""))
 
     async def stream(
         self,
@@ -234,12 +301,15 @@ class OllamaProvider(LocalModelProvider):
         options: dict = {"temperature": temperature, "num_predict": max_tokens}
         if stop:
             options["stop"] = stop
+        budget = self._stream_budget()
+        produced = 0
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream(
                 "POST",
                 f"{_ollama_base(self.endpoint)}/api/chat",
                 json={"model": model, "messages": messages, "stream": True, "options": options},
             ) as response:
+                assert_private_peer(response)
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.strip():
@@ -250,6 +320,11 @@ class OllamaProvider(LocalModelProvider):
                         continue
                     content = (chunk.get("message") or {}).get("content")
                     if content:
+                        # An endpoint that never sets done=true would otherwise
+                        # stream until the read timeout with no size ceiling.
+                        produced += len(content)
+                        if produced > budget:
+                            return
                         yield content
                     if chunk.get("done"):
                         return

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import httpx
 import pytest
@@ -17,39 +17,38 @@ from app.services.local_models import (
     validate_local_endpoint,
 )
 
-
-class _Response:
-    def __init__(self, payload: dict):
-        self.payload = payload
-
-    def raise_for_status(self) -> None:
-        return None
-
-    def json(self) -> dict:
-        return self.payload
+# Bound before any monkeypatch so the factory below builds a real client
+# instead of recursing into its own replacement.
+_REAL_ASYNC_CLIENT = httpx.AsyncClient
 
 
-class _Client:
-    def __init__(self, *args, **kwargs):
-        self.last_url = ""
+def _adapter_handler(request: httpx.Request) -> httpx.Response:
+    """Answer the four endpoints the local-model adapters actually call."""
+    path = request.url.path
+    if path.endswith("/api/tags"):
+        return httpx.Response(200, json={"models": [{"name": "qwen-local", "size": 1024}]})
+    if path.endswith("/api/chat"):
+        return httpx.Response(200, json={"message": {"content": "ollama ready"}})
+    if path.endswith("/chat/completions"):
+        return httpx.Response(200, json={"choices": [{"message": {"content": "lm studio ready"}}]})
+    return httpx.Response(200, json={"data": [{"id": "lmstudio-local"}]})
 
-    async def __aenter__(self):
-        return self
 
-    async def __aexit__(self, exc_type, exc, traceback):
-        return None
+def _client_factory(handler=_adapter_handler):
+    """Build a drop-in ``httpx.AsyncClient`` replacement backed by a mock transport.
 
-    async def get(self, url: str):
-        self.last_url = url
-        if url.endswith("/api/tags"):
-            return _Response({"models": [{"name": "qwen-local", "size": 1024}]})
-        return _Response({"data": [{"id": "lmstudio-local"}]})
+    Using a real client over ``MockTransport`` rather than a hand-rolled stub
+    keeps the adapters' streaming, status handling, and JSON decoding on the
+    real httpx code path, so the response-size ceilings are genuinely exercised.
+    """
 
-    async def post(self, url: str, json: dict):
-        self.last_url = url
-        if url.endswith("/api/chat"):
-            return _Response({"message": {"content": "ollama ready"}})
-        return _Response({"choices": [{"message": {"content": "lm studio ready"}}]})
+    def _factory(*_args, **kwargs):
+        return _REAL_ASYNC_CLIENT(
+            transport=httpx.MockTransport(handler),
+            timeout=kwargs.get("timeout"),
+        )
+
+    return _factory
 
 
 def test_local_endpoint_policy_accepts_private_and_rejects_public():
@@ -70,7 +69,7 @@ def test_provider_factory_returns_explicit_adapters():
 
 @pytest.mark.asyncio
 async def test_lm_studio_listing_and_inference(monkeypatch):
-    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(httpx, "AsyncClient", _client_factory())
     provider = LMStudioProvider("http://127.0.0.1:1234", 10)
     assert [model.id for model in await provider.list_models()] == ["lmstudio-local"]
     reply = await provider.complete(
@@ -84,7 +83,7 @@ async def test_lm_studio_listing_and_inference(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_ollama_listing_and_inference(monkeypatch):
-    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(httpx, "AsyncClient", _client_factory())
     provider = OllamaProvider("http://127.0.0.1:11434", 10)
     models = await provider.list_models()
     assert models[0].id == "qwen-local"
@@ -127,7 +126,7 @@ async def test_detection_probes_lm_studio_and_ollama_independently(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_saved_model_runtime_status_reports_connected_and_selected_model(monkeypatch, tmp_path):
-    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    monkeypatch.setattr(httpx, "AsyncClient", _client_factory())
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'models.db'}")
     sessions = async_sessionmaker(engine, expire_on_commit=False)
     async with engine.begin() as connection:

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 if TYPE_CHECKING:
@@ -106,7 +106,14 @@ def accessible_cases_statement(user: CurrentUser) -> Select[tuple[str]]:
     statement = select(models.Case.id)
     if user.is_system:
         return statement
-    statement = statement.where(models.Case.organization_id == user.organization_id)
+    # COALESCE, not a bare equality: organization_id is nullable, and the
+    # per-case checks below read a NULL as "default". In SQL a NULL never
+    # equals anything, so a bare comparison would hide a NULL-org case from
+    # every listing while require_case_access still granted it by direct id.
+    # The two rules have to normalise a missing organization the same way.
+    statement = statement.where(
+        func.coalesce(models.Case.organization_id, "default") == user.organization_id
+    )
     if not user.is_admin:
         member_case_ids = select(models.CaseMembership.case_id).where(
             models.CaseMembership.user_id == user.id

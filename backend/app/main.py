@@ -11,7 +11,9 @@ from app.core.deps import get_current_user
 from app.core.logging import configure_logging
 from app.database import SessionLocal, engine, init_db
 from app.middleware.csrf import CSRFMiddleware
+from app.middleware.origin_guard import OriginGuardMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.middleware.update_gate import UpdateGateMiddleware
 from app.routers import (
     assistant,
@@ -94,6 +96,14 @@ def _enforce_hardening() -> None:
         raise RuntimeError("Refusing to start in production with public self-registration enabled.")
     if settings.temporary_basic_login:
         raise RuntimeError("Refusing to start in production with OIHK_TEMPORARY_BASIC_LOGIN=true.")
+    if not settings.binds_to_loopback and not settings.allowed_host_list:
+        # Off loopback the Host allowlist cannot be derived, so the rebinding
+        # guard would silently pass everything. Make the operator name the
+        # hostnames this deployment answers to instead of failing open.
+        raise RuntimeError(
+            "Refusing to start in production on a non-loopback bind without OIHK_ALLOWED_HOSTS. "
+            "List the hostnames this deployment answers to so the Host header can be validated."
+        )
 
 
 async def _ensure_loopback_system_user() -> None:
@@ -104,7 +114,7 @@ async def _ensure_loopback_system_user() -> None:
     conversations store ``user_id`` against the users table, so the row must
     exist or every write fails with a FOREIGN KEY constraint error.
 
-    The password hash is a random, uncrackable value in the expected scrypt
+    The password hash is a random, uncrackable value in the expected PBKDF2
     format so the public login endpoint never trips over an unparsable literal
     (``verify_password`` splits on ``$``), even though this account can never
     authenticate (``is_active=False`` and auth is disabled in this mode).
@@ -216,11 +226,15 @@ async def lifespan(app: FastAPI):
 
 
 settings = get_settings()
+_docs_enabled = settings.docs_are_enabled
 app = FastAPI(
     title=settings.app_name,
     version=PRODUCT_VERSION,
     description="OIHK Basic — Local-first investigation and OSINT platform.",
     lifespan=lifespan,
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 if settings.rate_limit_enabled:
@@ -233,9 +247,19 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    # Enumerated rather than wildcarded: with allow_credentials the browser
+    # already refuses a literal "*", and stating the surface keeps a new verb or
+    # header from being reflected back as permitted without anyone deciding it.
+    allow_methods=["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "Content-Type", "X-CSRF-Token", "X-OIHK-Update-Token"],
+    expose_headers=["X-RateLimit-Limit", "X-RateLimit-Remaining", "Retry-After"],
 )
+
+# Outside CORS so a rebound Host is refused before any other layer interprets
+# the request, and outside everything so a rejection still carries the baseline
+# response headers.
+app.add_middleware(OriginGuardMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Public routers
 app.include_router(health.router)

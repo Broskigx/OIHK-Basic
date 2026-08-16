@@ -147,7 +147,7 @@ export type GraphRead = {
   edges: GraphEdge[];
 };
 
-export type GraphHub = {
+type GraphHub = {
   entity_id: string;
   label: string;
   type: string;
@@ -155,13 +155,13 @@ export type GraphHub = {
   score: number;
 };
 
-export type GraphComponent = {
+type GraphComponent = {
   index: number;
   size: number;
   sample_node_ids: string[];
 };
 
-export type GraphBridge = {
+type GraphBridge = {
   source_id: string;
   target_id: string;
   label: string;
@@ -189,12 +189,6 @@ export type GraphEntityCreate = {
   confidence: number;
   connect_to_id?: string | null;
   relation_label: string;
-};
-
-export type IngestResult = {
-  source: SourceRead;
-  entities: unknown[];
-  relationships: unknown[];
 };
 
 export type TargetProfile = {
@@ -271,8 +265,6 @@ export type TargetIntakeResult = {
   hits: SearchHit[];
 };
 
-export type AppMode = "ai" | "pro";
-
 export type User = {
   id: string;
   email: string;
@@ -289,29 +281,11 @@ export type TokenResponse = {
   user: User;
 };
 
-export type ToolCall = {
+type ToolCall = {
   tool: string;
   arguments: Record<string, unknown>;
   result_summary: string;
   ok: boolean;
-};
-
-export type AssistantChatResponse = {
-  reply: string;
-  provider: string;
-  tool_calls: ToolCall[];
-  case_id: string | null;
-  data_changed: boolean;
-};
-
-export type AssistantMessage = {
-  id: string;
-  case_id: string | null;
-  role: "user" | "assistant";
-  content: string;
-  provider: string;
-  tool_calls: ToolCall[];
-  created_at: string;
 };
 
 export type EvidenceItem = {
@@ -452,61 +426,6 @@ export type LocalModelServiceProbe = {
   error: string;
 };
 
-export type CaseSummary = {
-  case_id: string;
-  headline: string;
-  summary: string;
-  key_findings: string[];
-  risk_notes: string[];
-  provider: string;
-  entity_count: number;
-  source_count: number;
-  confidence: number;
-};
-
-export type AutoInvestigateResult = {
-  case: CaseRead;
-  target: TargetProfile;
-  memory: CaseMemory[];
-  search_run: SearchRun | null;
-  hits: SearchHit[];
-  summary: CaseSummary;
-};
-
-export type AutoStreamEvent = {
-  phase:
-    | "start"
-    | "case"
-    | "planning"
-    | "planned"
-    | "searching"
-    | "results"
-    | "hit"
-    | "search_error"
-    | "reading"
-    | "page"
-    | "read_done"
-    | "summarizing"
-    | "done"
-    | "error";
-  step?: "case" | "plan" | "search" | "ingest" | "read" | "summary" | "done" | "error";
-  label?: string;
-  progress?: number;
-  case_id?: string;
-  target_id?: string;
-  provider?: string;
-  queries?: string[];
-  url?: string;
-  index?: number;
-  total?: number;
-  source_name?: string;
-  entities?: { label: string; type: string }[];
-  entity_total?: number;
-  hit_count?: number;
-  summary?: CaseSummary;
-  message?: string;
-};
-
 export type GraphExpandResult = {
   entity_id: string;
   strategy: string;
@@ -535,22 +454,6 @@ export type TransformCatalog = {
   transforms: TransformSpec[];
 };
 
-export type TransformRun = {
-  id: string;
-  case_id: string;
-  entity_id: string;
-  entity_label: string;
-  entity_type: string;
-  transform_id: string;
-  transform_title: string;
-  status: "completed" | "failed";
-  new_nodes: number;
-  new_edges: number;
-  detail: string;
-  actor: string;
-  created_at: string;
-};
-
 export type CsvImportResult = {
   nodes: number;
   edges: number;
@@ -576,7 +479,7 @@ export type MachineRunResult = {
   new_edges: GraphEdge[];
 };
 
-export type DossierSource = {
+type DossierSource = {
   source_id: string;
   title: string;
   kind: string;
@@ -586,7 +489,7 @@ export type DossierSource = {
   excerpt: string;
 };
 
-export type DossierConnection = {
+type DossierConnection = {
   relationship_id: string;
   relation: string;
   direction: "outgoing" | "incoming";
@@ -602,7 +505,7 @@ export type EntityDossier = {
   connections: DossierConnection[];
 };
 
-export type SealStatus = {
+type SealStatus = {
   sequence: number;
   source_id: string;
   source_title: string;
@@ -624,7 +527,7 @@ export type CustodyReport = {
   entries: SealStatus[];
 };
 
-export type ForensicFinding = {
+type ForensicFinding = {
   severity: "info" | "low" | "medium" | "high";
   code: string;
   detail: string;
@@ -650,7 +553,7 @@ export type ForensicReport = {
   source_id: string | null;
 };
 
-export type ForensicHashResult = {
+type ForensicHashResult = {
   algorithm: string;
   digest: string;
   size_bytes: number;
@@ -658,7 +561,7 @@ export type ForensicHashResult = {
   target: string;
 };
 
-export type ForensicFileAnalysis = {
+type ForensicFileAnalysis = {
   filename: string;
   size_bytes: number;
   extension: string;
@@ -673,20 +576,20 @@ export type ForensicFileAnalysis = {
   discrepancies: string[];
 };
 
-export type ForensicMetadataField = {
+type ForensicMetadataField = {
   key: string;
   value: string;
   category: string;
 };
 
-export type ForensicMetadataReport = {
+type ForensicMetadataReport = {
   format: string;
   fields: ForensicMetadataField[];
   raw: Record<string, unknown>;
   errors: string[];
 };
 
-export type ForensicTextExtraction = {
+type ForensicTextExtraction = {
   format: string;
   text: string;
   char_count: number;
@@ -703,7 +606,7 @@ export type ForensicIocMatch = {
   context: string;
 };
 
-export type ForensicTimelineEvent = {
+type ForensicTimelineEvent = {
   event_id: string;
   source_id: string | null;
   title: string;
@@ -728,7 +631,7 @@ export type ForensicCoreReport = {
   errors: string[];
 };
 
-export type OsintFinding = {
+type OsintFinding = {
   source: string;
   type: string;
   value: string;
@@ -761,7 +664,7 @@ export type OsintQuery = {
   promoted_at: string | null;
 };
 
-export type Provider = {
+type Provider = {
   id: string;
   name: string;
   category: string;
@@ -813,52 +716,12 @@ export type CaseMonitor = {
 
 // --- UI form state shared between App and its view components ---
 
-export type IntakeForm = {
-  first_name: string;
-  last_name: string;
-  aliases: string;
-  notes: string;
-  legal_basis: string;
-  scope_statement: string;
-  consent_basis: string;
-  auto_search: boolean;
-  photos: File[];
-};
-
-export type SourceForm = {
-  mode: string;
-  title: string;
-  body: string;
-  url: string;
-  citation: string;
-  license: string;
-  reliability: number;
-};
-
 export type ManualEntityForm = {
   label: string;
   type: string;
   confidence: number;
   relation_label: string;
 };
-
-// Streaming agent investigation events (POST /assistant/investigate/stream)
-export type InvestigateEvent =
-  | { type: "status"; phase?: string; text: string }
-  | { type: "thought"; text: string }
-  | { type: "tool"; tool: string; args?: unknown; status: "running" | "done"; ok?: boolean; summary?: string }
-  | { type: "finding"; text: string; confidence?: number }
-  | {
-      type: "graph";
-      label: string;
-      node_type: string;
-      description?: string;
-      relation?: string;
-      confidence?: number;
-      case_id?: string;
-    }
-  | { type: "final"; reply: string; provider?: string; case_id?: string | null; data_changed?: boolean }
-  | { type: "error"; message: string };
 
 export type DesktopStatus = {
   mode: string;
@@ -895,7 +758,7 @@ export interface HashSetInfo {
   entries: number;
 }
 
-export interface HashMatch {
+interface HashMatch {
   set_name: string;
   category: string;
   severity: string;
@@ -910,7 +773,7 @@ export interface HashLookupResult {
   matches: HashMatch[];
 }
 
-export interface CorrelationHit {
+interface CorrelationHit {
   case_id: string;
   case_title: string;
   source_id: string | null;
@@ -927,7 +790,7 @@ export interface CorrelationQueryResult {
   hits: CorrelationHit[];
 }
 
-export interface CarvedArtifact {
+interface CarvedArtifact {
   offset: number;
   size: number;
   carved_type: string;

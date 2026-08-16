@@ -8,7 +8,6 @@ export type CorePlatformArea =
   | "osint"
   | "tools"
   | "reports"
-  | "copilot"
   | "models"
   | "sources"
   | "system-link"
@@ -54,12 +53,8 @@ export const CORE_NAVIGATION: NavigationItem[] = [
   { id: "osint", label: "OSINT Workspace", caseScoped: true, group: "more" },
   { id: "tools", label: "Tools", caseScoped: true, group: "more" },
   { id: "sources", label: "Data Sources", caseScoped: true, group: "more" },
-  { id: "copilot", label: "Copilot", caseScoped: true, group: "more" },
   { id: "about", label: "About", caseScoped: false, group: "more" },
 ];
-
-// Compatibility export for callers/tests that still use the original catalog name.
-export const MAIN_NAVIGATION = CORE_NAVIGATION;
 
 const CORE_IDS = new Set(CORE_NAVIGATION.map((item) => item.id));
 const GLOBAL_AREAS = new Set<CorePlatformArea>([

@@ -53,10 +53,11 @@ def main() -> int:
     if args.create_admin:
         print("Creating admin bootstrap account...")
         sys.path.insert(0, str(backend_dir))
+        from sqlalchemy.exc import SQLAlchemyError
+
         from app.core.config import get_settings
         from app.database import SessionLocal
         from app.services.auth_service import register_user
-        from sqlalchemy.exc import SQLAlchemyError
 
         async def _create_admin():
             settings = get_settings()

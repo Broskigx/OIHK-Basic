@@ -13,6 +13,9 @@ from app.core.config import get_settings
 
 _PBKDF2_ROUNDS = 240_000
 _PBKDF2_ALGO = "sha256"
+# Stated once: a token is minted with this issuer and refused unless it carries
+# it, so the two sites must never be able to drift apart.
+_ISSUER = "oihk-basic"
 
 
 def _b64url_encode(raw: bytes) -> str:
@@ -43,7 +46,13 @@ def verify_password(password: str, stored: str) -> bool:
         expected = _b64url_decode(digest_b64)
     except (ValueError, TypeError):
         return False
-    candidate = hashlib.pbkdf2_hmac(algo, password.encode("utf-8"), salt, rounds)
+    # Inside the guard as well: the algorithm name and the round count come out
+    # of the stored record, so a row that was corrupted or hand-edited must
+    # answer "this password does not verify" rather than raise past the caller.
+    try:
+        candidate = hashlib.pbkdf2_hmac(algo, password.encode("utf-8"), salt, rounds)
+    except (ValueError, TypeError):
+        return False
     return hmac.compare_digest(candidate, expected)
 
 
@@ -59,7 +68,7 @@ def create_access_token(subject: str, *, role: str = "analyst", extra: dict | No
         "role": role,
         "iat": now,
         "exp": now + settings.access_token_ttl_minutes * 60,
-        "iss": "oihk-basic",
+        "iss": _ISSUER,
     }
     if extra:
         payload.update(extra)
@@ -69,8 +78,12 @@ def create_access_token(subject: str, *, role: str = "analyst", extra: dict | No
 def decode_access_token(token: str) -> dict:
     settings = get_settings()
     payload = _decode_jwt(token, settings.jwt_secret)
+    # A missing exp reads as 0 and therefore as expired: a token that does not
+    # state its own lifetime is refused rather than treated as eternal.
     if payload.get("exp", 0) < int(time.time()):
         raise TokenError("Token has expired")
+    if payload.get("iss") != _ISSUER:
+        raise TokenError("Token issuer is not accepted")
     return payload
 
 
@@ -99,7 +112,21 @@ def _decode_jwt(token: str, secret: str) -> dict:
         raise TokenError("Token signature is not decodable") from exc
     if not hmac.compare_digest(expected, provided):
         raise TokenError("Token signature does not match")
+    # Only now, with the signature proven, is any attacker-supplied structure
+    # parsed. The header is authenticated by the same HMAC as the payload, so
+    # the classic "alg: none" substitution cannot survive the check above; the
+    # explicit assertion keeps that guarantee from resting on the reader
+    # noticing that this decoder ignores the declared algorithm.
     try:
-        return json.loads(_b64url_decode(payload_b64))
+        header = json.loads(_b64url_decode(header_b64))
+    except Exception as exc:
+        raise TokenError("Token header is not valid JSON") from exc
+    if not isinstance(header, dict) or header.get("alg") != "HS256":
+        raise TokenError("Token algorithm is not accepted")
+    try:
+        payload = json.loads(_b64url_decode(payload_b64))
     except Exception as exc:
         raise TokenError("Token payload is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise TokenError("Token payload is not an object")
+    return payload

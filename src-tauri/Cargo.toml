@@ -1,6 +1,6 @@
 [package]
 name = "oihk-basic-desktop"
-version = "0.1.1-alpha.2"
+version = "0.2.0-beta.1"
 description = "OIHK Basic — Local-first investigation and OSINT platform"
 authors = ["OIHK Basic"]
 edition = "2021"

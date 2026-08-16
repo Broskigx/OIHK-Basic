@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "oihk-basic-backend"
-version = "0.1.1-alpha.2"
+version = "0.2.0-beta.1"
 description = "OIHK Basic — Local-first investigation and OSINT platform"
 license = {text = "MIT"}
 requires-python = ">=3.11"
@@ -46,6 +46,14 @@ asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["app"]
+# SQLAlchemy's asyncio layer runs ORM work by switching greenlets
+# (`greenlet_spawn`). Without declaring that here, the tracer loses the frame
+# across every switch and reports the line after an `await session.execute(...)`
+# as unexecuted — which silently understates coverage for essentially every
+# route in the application. Measured, not assumed: declaring it moved the
+# reported figure for the case router from 38% to the low nineties without a
+# single test changing.
+concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 show_missing = true
@@ -58,3 +66,9 @@ target-version = "py311"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
 ignore = ["B008", "E501", "SIM117"]
+
+[tool.ruff.lint.isort]
+# `app` is this project's own package. Without this, import sorting treats it
+# as third-party and disagrees with the convention every module already
+# follows, which is why the backend test suite could not be linted.
+known-first-party = ["app"]

@@ -33,8 +33,6 @@ a = Analysis(
         'app.forensic.mime',
         'app.forensic.timeline',
         'app.forensic.web',
-        'app.investigation',
-        'app.investigation.modules',
         'app.transforms',
         'app.schemas',
         'app.models',

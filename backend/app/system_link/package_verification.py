@@ -64,6 +64,17 @@ def verify_package(root: str | Path, expected_sha256: str) -> str:
 
 
 def verify_executable(descriptor) -> Path:
+    """Return the registered runtime executable once its hash matches.
+
+    Residual risk, stated because this function reads like a guarantee and is
+    not one: the caller launches the returned *path*, so anyone able to replace
+    that file between this hash and the spawn runs code this check approved.
+    Closing the window means executing the handle that was hashed, which the
+    platforms do not offer portably. It is accepted rather than hidden — an
+    attacker holding write access inside the installation root can also edit
+    the manifest, the package, and this file, so the boundary that matters is
+    the one protecting the install directory, not this comparison.
+    """
     executable = descriptor.resolve_executable()
     digest = hashlib.sha256()
     with executable.open("rb") as source:

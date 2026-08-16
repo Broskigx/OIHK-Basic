@@ -1,8 +1,4 @@
 import type {
-  AssistantChatResponse,
-  AssistantMessage,
-  AutoInvestigateResult,
-  AutoStreamEvent,
   CaseMemory,
   CaseRead,
   CaseMonitor,
@@ -30,8 +26,6 @@ import type {
   GraphRead,
   GraphSnapshot,
   GraphWorkspace,
-  IngestResult,
-  InvestigateEvent,
   MachineRunResult,
   MachineSpec,
   LocalModelConfiguration,
@@ -52,7 +46,6 @@ import type {
   SourceRead,
   StorageStatus,
   TransformCatalog,
-  TransformRun,
   TargetIntakeResult,
   TargetPhoto,
   TargetProfile,
@@ -61,7 +54,7 @@ import type {
   InvestigationDraft,
 } from "./types";
 
-export let API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
+let API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
 
 export function setApiUrl(url: string): void {
   const parsed = new URL(url);
@@ -110,17 +103,27 @@ function csrfSafeMethod(method?: string): boolean {
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method ?? "GET";
   const csrfToken = csrfSafeMethod(method) ? "" : getCsrfToken();
+  const requestInit: RequestInit = {
+    ...init,
+    credentials: "include",
+    headers: authHeaders({
+      "Content-Type": "application/json",
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...(init?.headers ?? {}),
+    }),
+  };
   let response: Response;
   try {
-    response = await fetch(`${API_URL}${path}`, {
-      ...init,
-      credentials: "include",
-      headers: authHeaders({
-        "Content-Type": "application/json",
-        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-        ...(init?.headers ?? {}),
-      }),
-    });
+    try {
+      response = await fetch(`${API_URL}${path}`, requestInit);
+    } catch (firstCause) {
+      const safeToRetry = csrfSafeMethod(method)
+        && firstCause instanceof TypeError
+        && String(firstCause.message).toLowerCase().includes("fetch");
+      if (!safeToRetry) throw firstCause;
+      await new Promise((resolve) => window.setTimeout(resolve, 160));
+      response = await fetch(`${API_URL}${path}`, requestInit);
+    }
   } catch (cause) {
     if (cause instanceof DOMException && cause.name === "AbortError") {
       throw new Error("Operation cancelled");
@@ -191,30 +194,6 @@ export function me(): Promise<User> {
 }
 
 // --- AI assistant ---
-export function assistantChat(payload: {
-  message: string;
-  case_id?: string | null;
-  target_id?: string | null;
-  file?: File | null;
-}): Promise<AssistantChatResponse> {
-  if (payload.file) {
-    const body = new FormData();
-    body.append("message", payload.message);
-    if (payload.case_id) body.append("case_id", payload.case_id);
-    if (payload.target_id) body.append("target_id", payload.target_id);
-    body.append("file", payload.file);
-    return requestForm<AssistantChatResponse>("/assistant/chat/attachment", body);
-  }
-  return request<AssistantChatResponse>("/assistant/chat", {
-    method: "POST",
-    body: JSON.stringify({ message: payload.message, case_id: payload.case_id, target_id: payload.target_id }),
-  });
-}
-
-export function assistantHistory(caseId: string): Promise<AssistantMessage[]> {
-  return request<AssistantMessage[]>(`/assistant/history/${caseId}`);
-}
-
 export function listCopilotConversations(
   caseId?: string | null,
   includeArchived = false,
@@ -251,18 +230,6 @@ export function deleteCopilotConversation(conversationId: string): Promise<void>
 
 export function listCopilotMessages(conversationId: string): Promise<CopilotMessage[]> {
   return request<CopilotMessage[]>(`/assistant/conversations/${conversationId}/messages`);
-}
-
-export function sendCopilotMessage(
-  conversationId: string,
-  content: string,
-  signal?: AbortSignal,
-): Promise<CopilotReply> {
-  return request<CopilotReply>(`/assistant/conversations/${conversationId}/messages`, {
-    method: "POST",
-    body: JSON.stringify({ content }),
-    signal,
-  });
 }
 
 /**
@@ -362,129 +329,6 @@ export async function streamCopilotMessage(
     throw new Error("The local model closed the stream without a complete reply");
   }
   return { user_message: userMessage, assistant_message: assistantMessage };
-}
-
-// Streamed agent investigation: NDJSON events (thought/tool/finding/graph/final).
-export async function investigateStream(
-  payload: { message: string; case_id?: string | null; target_id?: string | null },
-  onEvent: (event: InvestigateEvent) => void,
-): Promise<void> {
-  const csrfToken = getCsrfToken();
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}/assistant/investigate/stream`, {
-      method: "POST",
-      credentials: "include",
-      headers: authHeaders({
-        "Content-Type": "application/json",
-        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-      }),
-      body: JSON.stringify({
-        message: payload.message,
-        case_id: payload.case_id ?? null,
-        target_id: payload.target_id ?? null,
-      }),
-    });
-  } catch (cause) {
-    if (cause instanceof TypeError && String(cause.message).includes("fetch")) {
-      throw new Error("Local service unavailable. OIHK Basic could not connect to its local data service.");
-    }
-    throw new Error("Network error. Please check your connection and try again.");
-  }
-  if (response.status === 401) {
-    clearToken();
-    throw new Error("Session expired. Please sign in again.");
-  }
-  if (!response.ok || !response.body) {
-    const err = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof err.detail === "string" ? err.detail : `Request failed (${response.status})`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const emit = (line: string) => {
-    const trimmed = line.trim();
-    if (trimmed) onEvent(JSON.parse(trimmed) as InvestigateEvent);
-  };
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newline = buffer.indexOf("\n");
-    while (newline >= 0) {
-      emit(buffer.slice(0, newline));
-      buffer = buffer.slice(newline + 1);
-      newline = buffer.indexOf("\n");
-    }
-  }
-  emit(buffer);
-}
-
-// --- OIHK AI one-click investigation ---
-export function autoInvestigate(payload: {
-  first_name: string;
-  last_name: string;
-  aliases: string;
-  notes: string;
-}): Promise<AutoInvestigateResult> {
-  return request<AutoInvestigateResult>("/targets/auto", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-// Streamed one-click: the backend emits NDJSON phase events; onEvent fires per line.
-export async function autoInvestigateStream(
-  payload: { first_name: string; last_name: string; aliases: string; notes: string },
-  onEvent: (event: AutoStreamEvent) => void,
-): Promise<void> {
-  const csrfToken = getCsrfToken();
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}/targets/auto/stream`, {
-      method: "POST",
-      credentials: "include",
-      headers: authHeaders({
-        "Content-Type": "application/json",
-        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-      }),
-      body: JSON.stringify(payload),
-    });
-  } catch (cause) {
-    if (cause instanceof TypeError && String(cause.message).includes("fetch")) {
-      throw new Error("Local service unavailable. OIHK Basic could not connect to its local data service.");
-    }
-    throw new Error("Network error. Please check your connection and try again.");
-  }
-  if (response.status === 401) {
-    clearToken();
-    throw new Error("Session expired. Please sign in again.");
-  }
-  if (!response.ok || !response.body) {
-    const err = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof err.detail === "string" ? err.detail : `Request failed (${response.status})`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  const emit = (line: string) => {
-    const trimmed = line.trim();
-    if (trimmed) onEvent(JSON.parse(trimmed) as AutoStreamEvent);
-  };
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let newline = buffer.indexOf("\n");
-    while (newline >= 0) {
-      emit(buffer.slice(0, newline));
-      buffer = buffer.slice(newline + 1);
-      newline = buffer.indexOf("\n");
-    }
-  }
-  emit(buffer);
 }
 
 // --- Free OSINT enrichment (DNS / RDAP-WHOIS / crt.sh / GeoIP) ---
@@ -608,27 +452,6 @@ export function listSources(caseId: string): Promise<SourceRead[]> {
   return request<SourceRead[]>(`/sources/${caseId}`);
 }
 
-export function ingestText(payload: {
-  case_id: string;
-  title: string;
-  body: string;
-  citation: string;
-  license: string;
-  reliability: number;
-}): Promise<IngestResult> {
-  return request<IngestResult>("/sources/text", { method: "POST", body: JSON.stringify(payload) });
-}
-
-export function ingestUrl(payload: {
-  case_id: string;
-  url: string;
-  title?: string;
-  license: string;
-  reliability: number;
-}): Promise<IngestResult> {
-  return request<IngestResult>("/sources/url", { method: "POST", body: JSON.stringify(payload) });
-}
-
 export function getGraph(caseId: string): Promise<GraphRead> {
   return request<GraphRead>(`/graph/${caseId}`);
 }
@@ -658,13 +481,6 @@ export function runTransform(transformId: string, entityId: string): Promise<Gra
     method: "POST",
     body: JSON.stringify({ entity_id: entityId }),
   });
-}
-
-export function listTransformRuns(caseId?: string, limit = 20): Promise<TransformRun[]> {
-  const params = new URLSearchParams();
-  if (caseId) params.set("case_id", caseId);
-  params.set("limit", String(limit));
-  return request<TransformRun[]>(`/transforms/runs?${params.toString()}`);
 }
 
 // --- Machines (deterministic transform chains) ---
@@ -748,55 +564,6 @@ export function updateEntityDetails(
   });
 }
 
-export function reportUrl(caseId: string): string {
-  return `${API_URL}/reports/${caseId}.md`;
-}
-
-export async function downloadReport(caseId: string): Promise<Blob> {
-  let response: Response;
-  try {
-    response = await fetch(reportUrl(caseId), { headers: authHeaders(), credentials: "include" });
-  } catch (cause) {
-    if (cause instanceof TypeError && String(cause.message).includes("fetch")) {
-      throw new Error("Local service unavailable. OIHK Basic could not connect to its local data service.");
-    }
-    throw new Error("Network error. Please check your connection and try again.");
-  }
-  if (response.status === 401) {
-    clearToken();
-    throw new Error("Session expired. Please sign in again.");
-  }
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof payload.detail === "string" ? payload.detail : `Request failed (${response.status})`);
-  }
-  return response.blob();
-}
-
-export function targetIntake(payload: {
-  first_name: string;
-  last_name: string;
-  aliases: string;
-  notes: string;
-  legal_basis: string;
-  scope_statement: string;
-  consent_basis: string;
-  auto_search: boolean;
-  photos: File[];
-}): Promise<TargetIntakeResult> {
-  const body = new FormData();
-  body.append("first_name", payload.first_name);
-  body.append("last_name", payload.last_name);
-  body.append("aliases", payload.aliases);
-  body.append("notes", payload.notes);
-  body.append("legal_basis", payload.legal_basis);
-  body.append("scope_statement", payload.scope_statement);
-  body.append("consent_basis", payload.consent_basis);
-  body.append("auto_search", String(payload.auto_search));
-  payload.photos.forEach((file) => body.append("photos", file));
-  return requestForm<TargetIntakeResult>("/targets/intake", body);
-}
-
 export function listTargets(caseId: string): Promise<TargetProfile[]> {
   return request<TargetProfile[]>(`/targets/case/${caseId}`);
 }
@@ -807,16 +574,6 @@ export function listTargetMemory(targetId: string): Promise<CaseMemory[]> {
 
 export function listTargetPhotos(targetId: string): Promise<TargetPhoto[]> {
   return request<TargetPhoto[]>(`/targets/${targetId}/photos`);
-}
-
-export function targetPhotoUrl(targetId: string, photoId: string): string {
-  return `${API_URL}/targets/${targetId}/photos/${photoId}/file`;
-}
-
-export function uploadTargetPhotos(targetId: string, photos: File[]): Promise<TargetPhoto[]> {
-  const body = new FormData();
-  photos.forEach((file) => body.append("photos", file));
-  return requestForm<TargetPhoto[]>(`/targets/${targetId}/photos`, body);
 }
 
 export function listSearchRuns(targetId: string): Promise<SearchRun[]> {

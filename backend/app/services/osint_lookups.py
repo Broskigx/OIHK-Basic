@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
-import socket
 from dataclasses import dataclass, field
 
 import httpx
+
+from app.core.config import get_settings
+from app.services.safe_http import (
+    OutboundRequestError,
+    get_json_bounded,
+    require_hostname,
+    require_ipv4,
+    resolve_hostname_a_record,
+)
 
 
 @dataclass
@@ -57,35 +65,48 @@ async def lookup_domain(domain: str) -> LookupResult:
     errors: list[str] = []
     ip_address: str | None = None
 
-    # DNS resolution
+    # Validate before any network use: the value is investigation data and is
+    # about to be interpolated into a third-party URL and passed to a resolver.
     try:
-        ip_address = socket.gethostbyname(domain)
-        findings.append(LookupFinding(source="dns", type="ip", value=ip_address, detail=f"IPv4 address for {domain}"))
-    except socket.gaierror as e:
-        errors.append(f"DNS resolution failed: {e}")
+        domain = require_hostname(domain)
+    except OutboundRequestError as exc:
+        return LookupResult(value=domain, kind="domain", findings=[], errors=[str(exc)])
 
-    # RDAP/WHOIS via crt.sh for certificates
+    max_bytes = get_settings().max_lookup_response_bytes
+
+    # DNS resolution — offloaded to a worker thread so a slow or blackholed
+    # resolver cannot stall the event loop for every other request.
+    try:
+        ip_address = await resolve_hostname_a_record(domain)
+        findings.append(LookupFinding(source="dns", type="ip", value=ip_address, detail=f"IPv4 address for {domain}"))
+    except OutboundRequestError as e:
+        errors.append(str(e))
+
+    # Certificate transparency via crt.sh
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"https://crt.sh/?q=%25.{domain}&output=json")
-            if resp.status_code == 200:
-                data = resp.json()
-                if data:
-                    seen_names: set[str] = set()
-                    for entry in data[:10]:
-                        name = entry.get("name_value", "")
-                        for cn in name.split("\n"):
-                            cn = cn.strip()
-                            if cn and cn not in seen_names and cn.endswith("." + domain):
-                                seen_names.add(cn)
-                                findings.append(
-                                    LookupFinding(
-                                        source="crt.sh",
-                                        type="subdomain",
-                                        value=cn,
-                                        detail="SSL certificate subject alternative name",
-                                    )
+            data = await get_json_bounded(
+                client,
+                "https://crt.sh/",
+                max_bytes=max_bytes,
+                params={"q": f"%.{domain}", "output": "json"},
+            )
+            if data:
+                seen_names: set[str] = set()
+                for entry in data[:10]:
+                    name = entry.get("name_value", "")
+                    for cn in name.split("\n"):
+                        cn = cn.strip()
+                        if cn and cn not in seen_names and cn.endswith("." + domain):
+                            seen_names.add(cn)
+                            findings.append(
+                                LookupFinding(
+                                    source="crt.sh",
+                                    type="subdomain",
+                                    value=cn,
+                                    detail="SSL certificate subject alternative name",
                                 )
+                            )
     except Exception as e:
         errors.append(f"crt.sh lookup failed: {e}")
 
@@ -98,54 +119,65 @@ async def lookup_domain(domain: str) -> LookupResult:
     )
 
 
+def _rdap_org_findings(data: dict, source: str) -> list[LookupFinding]:
+    findings: list[LookupFinding] = []
+    for entity in data.get("entities", []) or []:
+        vcard = entity.get("vcardArray") if isinstance(entity, dict) else None
+        if not isinstance(vcard, list) or len(vcard) < 2 or not isinstance(vcard[1], list):
+            continue
+        for item in vcard[1]:
+            if isinstance(item, list) and len(item) > 3 and item[0] == "fn":
+                findings.append(
+                    LookupFinding(
+                        source=source,
+                        type="org",
+                        value=str(item[3]),
+                        detail=f"Organization registered with {source.split('-')[0].upper()}",
+                    )
+                )
+    return findings
+
+
 async def lookup_ip(ip: str) -> LookupResult:
     findings: list[LookupFinding] = []
     errors: list[str] = []
 
-    # RDAP/WHOIS
+    # Reject anything that is not a literal IPv4 address before it reaches the
+    # RDAP URL path.
+    try:
+        ip = require_ipv4(ip)
+    except OutboundRequestError as exc:
+        return LookupResult(value=ip, kind="ip", findings=[], errors=[str(exc)])
+
+    max_bytes = get_settings().max_lookup_response_bytes
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(f"https://rdap.arin.net/registry/ip/{ip}")
-            if resp.status_code == 200:
-                data = resp.json()
+            data = await get_json_bounded(
+                client,
+                f"https://rdap.arin.net/registry/ip/{ip}",
+                max_bytes=max_bytes,
+            )
+            if isinstance(data, dict):
                 if "name" in data:
                     findings.append(
                         LookupFinding(
                             source="arin-rdap",
                             type="net_name",
-                            value=data["name"],
+                            value=str(data["name"]),
                             detail="Network name registered with ARIN",
                         )
                     )
-                for entity in data.get("entities", []):
-                    if "vcardArray" in entity:
-                        for item in entity["vcardArray"][1]:
-                            if item[0] == "fn":
-                                findings.append(
-                                    LookupFinding(
-                                        source="arin-rdap",
-                                        type="org",
-                                        value=item[3],
-                                        detail="Organization registered with ARIN",
-                                    )
-                                )
-            elif resp.status_code in (404, 422):
-                # Try RDAP from other RIRs
-                resp2 = await client.get(f"https://rdap.db.ripe.net/ip/{ip}")
-                if resp2.status_code == 200:
-                    data = resp2.json()
-                    for entity in data.get("entities", []):
-                        if "vcardArray" in entity:
-                            for item in entity["vcardArray"][1]:
-                                if item[0] == "fn":
-                                    findings.append(
-                                        LookupFinding(
-                                            source="ripe-rdap",
-                                            type="org",
-                                            value=item[3],
-                                            detail="Organization registered with RIPE",
-                                        )
-                                    )
+                findings.extend(_rdap_org_findings(data, "arin-rdap"))
+            else:
+                # ARIN did not serve this range; fall back to the RIPE mirror.
+                fallback = await get_json_bounded(
+                    client,
+                    f"https://rdap.db.ripe.net/ip/{ip}",
+                    max_bytes=max_bytes,
+                )
+                if isinstance(fallback, dict):
+                    findings.extend(_rdap_org_findings(fallback, "ripe-rdap"))
     except Exception as e:
         errors.append(f"RDAP lookup failed: {e}")
 

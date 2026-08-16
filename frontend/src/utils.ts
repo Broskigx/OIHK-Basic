@@ -21,11 +21,6 @@ export function actionLabel(action: string): string {
 }
 
 /** Shorten a hash or UUID for display (e.g. "abc123...xyz789") */
-export function shortHash(id: string): string {
-  if (id.length <= 12) return id;
-  return `${id.slice(0, 8)}...${id.slice(-4)}`;
-}
-
 /** Format a byte count for display (e.g. 1536 → "1.5 KB") */
 export function formatByteSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";

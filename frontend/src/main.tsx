@@ -6,6 +6,7 @@ import { LoginView } from "./LoginView";
 import type { User } from "./types";
 import "./styles.css";
 import "./app/platform.css";
+import "./app/experience.css";
 
 export function Root() {
   const [ready, setReady] = useState(false);

@@ -35,6 +35,7 @@ function renderDashboard(props: { summary: DashboardSummary | null; loading?: bo
     localModelLoading: false,
     onRetry: noOp,
     onRefreshLocalModel: noOp,
+    onOpenCopilot: noOp,
     onNavigate: noOp,
     onOpenCase: noOp,
     onNewCase: noOp,

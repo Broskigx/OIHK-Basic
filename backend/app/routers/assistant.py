@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -23,15 +25,28 @@ from app.schemas import (
     ConversationReply,
     ConversationUpdate,
 )
+from app.services.assistant_tools import agent_tool_catalog, execute_agent_tool, prefers_spanish
 from app.services.local_models import LocalModelProvider, build_local_provider
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 
-_DEFAULT_SYSTEM_PROMPT = """You are the local Copilot inside OIHK Basic.
-Be evidence-first and concise. Never invent sources or claim an action was executed.
-Clearly distinguish confirmed facts, unverified observations and model inference.
-Do not produce commands or modify investigation data. Proposed actions require user confirmation.
-All analysis remains within the local model endpoint selected by the user."""
+_DEFAULT_SYSTEM_PROMPT = """You are OIHK Agent, the friendly and capable local assistant inside OIHK Basic.
+Speak naturally, answer the user's actual message, and use the same language as the user unless asked otherwise.
+A greeting is a greeting: respond warmly and ask how you can help. Never answer casual conversation with
+boilerplate about missing evidence, unchanged observations, or unavailable information.
+
+You can reason about investigations and use the application tools listed below. Use a tool whenever the user asks
+you to read or change OIHK data. Never claim that a tool ran unless its result is supplied by OIHK. Clearly separate
+confirmed investigation data from inference, never invent sources, and keep sensitive data local."""
+
+_DECISION_PROTOCOL = """Return exactly one JSON object and no Markdown.
+For a normal conversational answer:
+{"reply":"your natural answer","tool_calls":[]}
+To use tools:
+{"reply":"","tool_calls":[{"tool":"exact_tool_name","arguments":{"exact_parameter":"value"}}]}
+Use at most four tool calls. Never emit a write tool merely as a suggestion. Select a write tool only when the
+latest user message explicitly asks for that action. If required information is missing, ask a concise question in
+reply instead of inventing it. Ignore generic evidence-status boilerplate from older assistant turns."""
 
 
 async def _conversation(
@@ -67,6 +82,16 @@ async def _configuration(
             detail="No local model is configured. Open Local Models and connect LM Studio or Ollama.",
         )
     return row
+
+
+@router.get("/tools")
+async def list_agent_tools(
+    current: CurrentUser = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> list[dict[str, Any]]:
+    """Expose the effective local tool catalog used by the current agent."""
+    configuration = await _configuration(session, current)
+    return agent_tool_catalog(configuration.tools_enabled)
 
 
 @router.get("/conversations", response_model=list[ConversationRead])
@@ -240,10 +265,6 @@ async def send_message(
     await session.refresh(user_message)
 
     recent = await _recent_messages(session, conversation.id)
-    system_prompt = configuration.system_prompt.strip() or _DEFAULT_SYSTEM_PROMPT
-    messages = [{"role": "system", "content": system_prompt}]
-    messages.extend({"role": row.role, "content": row.content[:16_000]} for row in recent)
-
     provider = build_local_provider(
         configuration.provider,
         configuration.endpoint,
@@ -251,12 +272,14 @@ async def send_message(
     )
     model = conversation.model or configuration.role_models.get("chat") or configuration.model
     try:
-        reply = await _complete_with_retries(
-            provider,
+        reply, tool_calls = await _run_agent_turn(
+            provider=provider,
             model=model,
-            messages=messages,
-            temperature=configuration.temperature,
-            max_tokens=configuration.max_tokens,
+            recent=recent,
+            configuration=configuration,
+            conversation=conversation,
+            current=current,
+            session=session,
         )
     except (httpx.HTTPError, KeyError, TypeError, AttributeError, IndexError) as exc:
         raise HTTPException(
@@ -275,6 +298,7 @@ async def send_message(
         role="assistant",
         content=reply.strip() or "The local model returned an empty response.",
         provider=configuration.provider,
+        tool_calls=tool_calls,
     )
     session.add(assistant_message)
     conversation.updated_at = datetime.now(UTC)
@@ -299,6 +323,278 @@ async def _recent_messages(session: AsyncSession, conversation_id: str) -> list[
     )
     rows.reverse()
     return rows
+
+
+def _decision_messages(
+    *,
+    recent: list[models.AssistantMessage],
+    custom_prompt: str,
+    tools_enabled: list[str],
+    active_case_id: str | None,
+) -> list[dict[str, str]]:
+    catalog = json.dumps(agent_tool_catalog(tools_enabled), ensure_ascii=False, separators=(",", ":"))
+    system_parts = [
+        _DEFAULT_SYSTEM_PROMPT,
+        (
+            "The latest user message is in Spanish. Every user-facing word in your JSON reply must be Spanish."
+            if recent and prefers_spanish(recent[-1].content)
+            else "Reply in the language used by the latest user message."
+        ),
+        f"Active investigation id: {active_case_id or 'none'}.",
+        f"Available OIHK tools: {catalog}",
+        _DECISION_PROTOCOL,
+    ]
+    if custom_prompt.strip():
+        system_parts.append(f"Additional analyst instructions:\n{custom_prompt.strip()}")
+    messages = [{"role": "system", "content": "\n\n".join(system_parts)}]
+    messages.extend({"role": row.role, "content": row.content[:16_000]} for row in recent)
+    return messages
+
+
+def _parse_agent_decision(raw: str) -> tuple[str, list[dict[str, Any]]]:
+    """Accept the documented JSON envelope, with a plain-text fallback for older local models."""
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) >= 3 and lines[-1].strip().startswith("```"):
+            text = "\n".join(lines[1:-1]).strip()
+    payload: dict[str, Any] | None = None
+    decoder = json.JSONDecoder()
+    for index, character in enumerate(text):
+        if character != "{":
+            continue
+        try:
+            candidate, _ = decoder.raw_decode(text[index:])
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(candidate, dict):
+            payload = candidate
+            break
+    if payload is None:
+        return text, []
+
+    reply = str(payload.get("reply") or payload.get("message") or "").strip()
+    raw_calls = payload.get("tool_calls")
+    if not isinstance(raw_calls, list):
+        single = payload.get("tool_call")
+        raw_calls = [single] if isinstance(single, dict) else []
+    calls: list[dict[str, Any]] = []
+    for item in raw_calls[:4]:
+        if not isinstance(item, dict):
+            continue
+        tool_name = str(item.get("tool") or item.get("name") or "").strip()
+        arguments = item.get("arguments") or item.get("args") or {}
+        if tool_name and isinstance(arguments, dict):
+            calls.append({"tool": tool_name, "arguments": arguments})
+    return reply, calls
+
+
+def _fallback_tool_answer(results: list[dict[str, Any]]) -> str:
+    summaries = [str(item.get("result_summary") or "") for item in results if item.get("result_summary")]
+    return "\n".join(summaries) or "The requested OIHK action finished without a result summary."
+
+
+def _greeting_reply(text: str) -> str | None:
+    normalized = " ".join(text.casefold().strip().strip(".!?¡¿").split())
+    if normalized in {"hola", "holaa", "holaaa", "buenas", "buen día", "buen dia", "buenos días", "buenos dias"}:
+        return "¡Hola! Soy OIHK Agent. Puedo conversar contigo, crear investigaciones y trabajar con el grafo, las fuentes, la evidencia, OSINT, reportes, transformaciones y auditoría. ¿Qué hacemos?"
+    if normalized in {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}:
+        return "Hi! I'm OIHK Agent. I can chat with you, create investigations, and work with graphs, sources, evidence, OSINT, reports, transforms, and audit data. What should we do?"
+    return None
+
+
+def _fast_intent(text: str) -> tuple[str, list[dict[str, Any]]] | None:
+    """Guarantee the most common app actions without relying on model-specific tool syntax."""
+    normalized = " ".join(text.strip().split())
+    folded = normalized.casefold()
+    if re.search(r"\b(qué herramientas|que herramientas|todas las tools|what tools|what can you do)\b", folded):
+        tool_count = len(agent_tool_catalog())
+        if prefers_spanish(text):
+            return (
+                f"Tengo {tool_count} herramientas operativas: listar, abrir, crear y actualizar investigaciones; leer el resumen, "
+                "grafo, fuentes, evidencia, custodia, historial OSINT, reportes y auditoría; añadir entidades y "
+                "relaciones; ejecutar consultas OSINT; promover resultados; generar reportes; y listar o ejecutar "
+                "transformaciones. Las acciones quedan registradas y las escrituras solo se ejecutan si las pides.",
+                [],
+            )
+        return (
+            f"I have {tool_count} operational tools for investigations, graphs, sources, evidence, custody, OSINT, reports, "
+            "transforms, and audit data. Writes run only when you explicitly request them and remain auditable.",
+            [],
+        )
+    if re.search(
+        r"\b(lista|listar|muéstrame|muestrame|ver|dime|list|show)\b.*\b(investigaciones|casos|investigations|cases)\b",
+        folded,
+    ):
+        return "", [{"tool": "list_investigations", "arguments": {}}]
+
+    create_match = re.match(
+        r"^(?:por favor[, ]*)?(?:crea|créame|creame|inicia|create|start)\s+"
+        r"(?:una?\s+)?(?:investigación|investigacion|caso|investigation|case)"
+        r"(?:\s+(?:llamada|llamado|titulada|titulado|sobre|de|named|called|about))?\s*[:\-]?\s*(.*)$",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if create_match:
+        title = create_match.group(1).strip().strip("'\"").strip()
+        title = re.sub(r"\s+(?:por favor|please)[.!]*$", "", title, flags=re.IGNORECASE).strip()
+        title = re.sub(
+            r"\s+(?:con prioridad|with priority)\s+(?:baja|normal|alta|crítica|critica|low|high|critical)[.!]*$",
+            "",
+            title,
+            flags=re.IGNORECASE,
+        ).strip()
+        if len(title) < 3:
+            question = (
+                "¿Qué título quieres para la investigación?"
+                if prefers_spanish(text)
+                else "What title should the investigation use?"
+            )
+            return question, []
+        priority = (
+            "critical"
+            if re.search(r"\b(crítica|critica|critical)\b", folded)
+            else "high"
+            if re.search(r"\b(alta|high)\b", folded)
+            else "normal"
+        )
+        return "", [{"tool": "create_investigation", "arguments": {"title": title[:200], "priority": priority}}]
+    return None
+
+
+def _tool_detail(item: dict[str, Any], *, spanish: bool) -> str:
+    tool = item.get("tool")
+    result = item.get("result")
+    if not item.get("ok") or not isinstance(result, (dict, list)):
+        return str(item.get("result_summary") or "")
+    if tool == "list_investigations" and isinstance(result, list):
+        heading = f"Encontré {len(result)} investigaciones:" if spanish else f"I found {len(result)} investigations:"
+        rows = [
+            f"- {row.get('title', 'Untitled')} — {row.get('status', 'unknown')} · {row.get('priority', 'normal')}"
+            for row in result[:20]
+            if isinstance(row, dict)
+        ]
+        return "\n".join([heading, *rows])
+    if tool in {"create_investigation", "update_investigation"} and isinstance(result, dict):
+        verb = "Creé" if tool == "create_investigation" else "Actualicé"
+        if not spanish:
+            verb = "Created" if tool == "create_investigation" else "Updated"
+        return f"{verb} **{result.get('title', 'investigation')}** (`{result.get('id', '')}`), {result.get('status', 'active')} · {result.get('priority', 'normal')}."
+    if tool == "get_investigation" and isinstance(result, dict):
+        label = "Investigación" if spanish else "Investigation"
+        summary = result.get("summary") or ("Sin resumen." if spanish else "No summary.")
+        return f"{label}: **{result.get('title', '')}** — {result.get('status', '')} · {result.get('priority', '')}\n{summary}"
+    if tool == "list_graph" and isinstance(result, dict):
+        nodes = result.get("nodes") if isinstance(result.get("nodes"), list) else []
+        edges = result.get("edges") if isinstance(result.get("edges"), list) else []
+        heading = (
+            f"El grafo tiene {len(nodes)} entidades y {len(edges)} relaciones."
+            if spanish
+            else f"The graph has {len(nodes)} entities and {len(edges)} relationships."
+        )
+        labels = [str(row.get("label")) for row in nodes[:12] if isinstance(row, dict) and row.get("label")]
+        return heading + (("\n- " + "\n- ".join(labels)) if labels else "")
+    if tool == "list_sources" and isinstance(result, list):
+        heading = f"Encontré {len(result)} fuentes:" if spanish else f"I found {len(result)} sources:"
+        rows = [f"- {row.get('title', '')}" for row in result[:15] if isinstance(row, dict)]
+        return "\n".join([heading, *rows])
+    if tool == "list_evidence" and isinstance(result, list):
+        heading = f"Encontré {len(result)} evidencias:" if spanish else f"I found {len(result)} evidence items:"
+        rows = [
+            f"- {row.get('original_name', '')} · SHA-256 `{row.get('sha256', '')}`"
+            for row in result[:15]
+            if isinstance(row, dict)
+        ]
+        return "\n".join([heading, *rows])
+    if tool == "run_osint_lookup" and isinstance(result, dict):
+        heading = str(result.get("summary") or item.get("result_summary") or "")
+        findings = result.get("findings") if isinstance(result.get("findings"), list) else []
+        rows = [
+            f"- {row.get('type', 'finding')}: {row.get('value', '')} — {row.get('detail', '')}"
+            for row in findings[:12]
+            if isinstance(row, dict)
+        ]
+        return "\n".join([heading, *rows])
+    return str(item.get("result_summary") or "")
+
+
+def _direct_tool_answer(results: list[dict[str, Any]], user_text: str) -> str:
+    spanish = prefers_spanish(user_text)
+    successful = [item for item in results if item.get("ok")]
+    failed = [item for item in results if not item.get("ok")]
+    parts = [_tool_detail(item, spanish=spanish) for item in successful]
+    if failed:
+        heading = "No pude completar:" if spanish else "I couldn't complete:"
+        parts.append(
+            heading + "\n" + "\n".join(f"- {item.get('tool')}: {item.get('result_summary')}" for item in failed)
+        )
+    return "\n\n".join(part for part in parts if part).strip() or _fallback_tool_answer(results)
+
+
+async def _run_agent_turn(
+    *,
+    provider: LocalModelProvider,
+    model: str,
+    recent: list[models.AssistantMessage],
+    configuration: models.LocalModelConfiguration,
+    conversation: models.AssistantConversation,
+    current: CurrentUser,
+    session: AsyncSession,
+) -> tuple[str, list[dict[str, Any]]]:
+    latest_text = recent[-1].content if recent else ""
+    greeting = _greeting_reply(latest_text)
+    if greeting:
+        return greeting, []
+    fast = _fast_intent(latest_text)
+    if fast is not None:
+        reply, planned_calls = fast
+    else:
+        messages = _decision_messages(
+            recent=recent,
+            custom_prompt=configuration.system_prompt,
+            tools_enabled=configuration.tools_enabled or [],
+            active_case_id=conversation.case_id,
+        )
+        raw = await _complete_with_retries(
+            provider,
+            model=model,
+            messages=messages,
+            temperature=min(configuration.temperature, 0.3),
+            max_tokens=min(configuration.max_tokens, 1_200),
+        )
+        reply, planned_calls = _parse_agent_decision(raw)
+    if not planned_calls:
+        fallback = (
+            "Estoy aquí. ¿Qué te gustaría investigar?"
+            if prefers_spanish(latest_text)
+            else "I'm here. What would you like to investigate?"
+        )
+        return reply or fallback, []
+
+    user_text = latest_text
+    executed = []
+    for call in planned_calls:
+        result = await execute_agent_tool(
+            tool_name=call["tool"],
+            arguments=call["arguments"],
+            user_text=user_text,
+            active_case_id=conversation.case_id,
+            enabled=configuration.tools_enabled or [],
+            current=current,
+            session=session,
+        )
+        executed.append(result.model_record())
+
+    records = [
+        {
+            "tool": item["tool"],
+            "arguments": item["arguments"],
+            "result_summary": item["result_summary"],
+            "ok": item["ok"],
+        }
+        for item in executed
+    ]
+    return _direct_tool_answer(executed, user_text) or reply, records
 
 
 async def _complete_with_retries(
@@ -388,10 +684,6 @@ async def stream_message(
     await session.refresh(user_message)
 
     recent = await _recent_messages(session, conversation.id)
-    system_prompt = configuration.system_prompt.strip() or _DEFAULT_SYSTEM_PROMPT
-    messages = [{"role": "system", "content": system_prompt}]
-    messages.extend({"role": row.role, "content": row.content[:16_000]} for row in recent)
-
     provider = build_local_provider(
         configuration.provider,
         configuration.endpoint,
@@ -400,39 +692,23 @@ async def stream_message(
     model = conversation.model or configuration.role_models.get("chat") or configuration.model
 
     async def generate() -> AsyncIterator[str]:
-        yield _sse({"type": "message", "message": ConversationMessageRead.model_validate(user_message).model_dump(mode="json")})
-        if not configuration.streaming:
-            try:
-                reply = await _complete_with_retries(
-                    provider,
-                    model=model,
-                    messages=messages,
-                    temperature=configuration.temperature,
-                    max_tokens=configuration.max_tokens,
-                )
-                yield _sse({"type": "delta", "content": reply})
-            except (httpx.HTTPError, KeyError, TypeError, AttributeError, IndexError) as exc:
-                yield _sse({"type": "error", "message": f"The local model did not respond ({type(exc).__name__})."})
-                return
-            final_content = reply
-        else:
-            final_content = ""
-            try:
-                async for chunk in provider.stream(
-                    model=model,
-                    messages=messages,
-                    temperature=configuration.temperature,
-                    max_tokens=configuration.max_tokens,
-                ):
-                    if chunk:
-                        final_content += chunk
-                        yield _sse({"type": "delta", "content": chunk})
-            except (httpx.HTTPError, KeyError, TypeError, AttributeError, IndexError) as exc:
-                yield _sse({"type": "error", "message": f"The local model did not respond ({type(exc).__name__})."})
-                # Do not persist a partial/empty assistant reply on a mid-stream
-                # failure: the user turn is already saved above, and the client
-                # receives the error event instead of a fabricated `done`.
-                return
+        yield _sse(
+            {"type": "message", "message": ConversationMessageRead.model_validate(user_message).model_dump(mode="json")}
+        )
+        try:
+            final_content, tool_calls = await _run_agent_turn(
+                provider=provider,
+                model=model,
+                recent=recent,
+                configuration=configuration,
+                conversation=conversation,
+                current=current,
+                session=session,
+            )
+            yield _sse({"type": "delta", "content": final_content})
+        except (httpx.HTTPError, KeyError, TypeError, AttributeError, IndexError) as exc:
+            yield _sse({"type": "error", "message": f"The local model did not respond ({type(exc).__name__})."})
+            return
 
         assistant_message = models.AssistantMessage(
             conversation_id=conversation.id,
@@ -441,6 +717,7 @@ async def stream_message(
             role="assistant",
             content=final_content.strip() or "The local model returned an empty response.",
             provider=configuration.provider,
+            tool_calls=tool_calls,
         )
         session.add(assistant_message)
         if conversation.model != model:
@@ -448,10 +725,14 @@ async def stream_message(
         conversation.updated_at = datetime.now(UTC)
         await session.commit()
         await session.refresh(assistant_message)
-        yield _sse({
-            "type": "done",
-            "user_message": ConversationMessageRead.model_validate(user_message).model_dump(mode="json"),
-            "assistant_message": ConversationMessageRead.model_validate(assistant_message).model_dump(mode="json"),
-        })
+        yield _sse(
+            {
+                "type": "done",
+                "user_message": ConversationMessageRead.model_validate(user_message).model_dump(mode="json"),
+                "assistant_message": ConversationMessageRead.model_validate(assistant_message).model_dump(mode="json"),
+            }
+        )
 
-    return StreamingResponse(generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(
+        generate(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )

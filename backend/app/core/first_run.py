@@ -29,7 +29,26 @@ def _get_config_dir() -> Path:
 
 
 def _default_database_path() -> Path:
+    """Return the database this process will actually open.
+
+    The guard in :func:`get_or_create_secret` refuses to mint new keys once a
+    database exists, because rotating them silently would leave every custody
+    seal in that database unverifiable. That check is only worth anything if it
+    looks at the right file, so the packaged data directory — handed to the
+    sidecar as ``--data-dir`` and republished as ``OIHK_PACKAGED_DATA_DIR`` —
+    wins over the per-platform default whenever it is set.
+
+    The secrets file itself deliberately does *not* follow that directory: keys
+    belong in the operating system's configuration location, which on Linux is
+    a different root from the data location by convention. Relocating the data
+    directory therefore moves the database and leaves the keys where the OS
+    expects them, and the guard above is what keeps the pair honest.
+    """
     import platform as _platform
+
+    managed = os.environ.get("OIHK_PACKAGED_DATA_DIR", "").strip()
+    if managed:
+        return Path(managed) / "oihk-basic.db"
 
     system = _platform.system()
     if system == "Windows":

@@ -11,7 +11,7 @@ import {
 } from "./timelineModel";
 import "./timeline.css";
 
-export type TimelineViewProps = {
+type TimelineViewProps = {
   auditEvents: readonly AuditEvent[];
   sources: readonly SourceRead[];
   searchRuns: readonly SearchRun[];

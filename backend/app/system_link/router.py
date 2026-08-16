@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -45,6 +46,7 @@ def _http_error(exc: SystemLinkError) -> HTTPException:
 # gated by an allowlist and a per-surface nonce.
 
 _MODULE_UI_MAX_BYTES = 16 * 1024 * 1024
+_MODULE_UI_CHUNK_BYTES = 256 * 1024
 
 _MODULE_UI_MIME_TYPES: dict[str, str] = {
     ".html": "text/html; charset=utf-8",
@@ -79,6 +81,26 @@ _MODULE_UI_CSP = (
     "base-uri 'none'; "
     "form-action 'none'"
 )
+
+
+def _read_module_ui_file(path: Path) -> bytes:
+    """Read one module UI file, refusing to buffer past the host ceiling.
+
+    The limit is enforced inside the loop rather than against a finished
+    buffer. Reading the file whole and measuring afterwards allocates exactly
+    what the ceiling exists to prevent before deciding to refuse it, which
+    makes the check a report rather than a control.
+
+    Reading is blocking I/O, so callers hand this to a worker thread instead of
+    stalling the event loop on it for the length of a large file.
+    """
+    buffer = bytearray()
+    with path.open("rb") as source:
+        while chunk := source.read(_MODULE_UI_CHUNK_BYTES):
+            buffer.extend(chunk)
+            if len(buffer) > _MODULE_UI_MAX_BYTES:
+                raise HTTPException(status_code=413, detail="Module UI file exceeds the host limit")
+    return bytes(buffer)
 
 
 @host_router.get("/modules/{module_id}/ui/{path:path}")
@@ -118,15 +140,10 @@ async def module_ui_file(
     mime_type = _MODULE_UI_MIME_TYPES.get(candidate.suffix.lower())
     if mime_type is None:
         raise HTTPException(status_code=404, detail="Module UI content type is not allowed")
-    # Bounded read: the size check and the actual read are atomic inside the
-    # read loop, so a file cannot grow past the limit between a stat and a
-    # later read_bytes() call.
     try:
-        content = candidate.read_bytes()
+        content = await asyncio.to_thread(_read_module_ui_file, candidate)
     except OSError:
         raise HTTPException(status_code=404, detail="Module UI file could not be read") from None
-    if len(content) > _MODULE_UI_MAX_BYTES:
-        raise HTTPException(status_code=413, detail="Module UI file exceeds the host limit")
     return Response(
         content=content,
         media_type=mime_type,

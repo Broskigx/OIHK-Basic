@@ -1,6 +1,6 @@
 # Threat Model
 
-_Last updated: 2026-07-31 · Applies to OIHK Basic v0.1.x_
+_Last updated: 2026-08-14 · Applies to OIHK Basic v0.2.x_
 
 This document describes the trust boundaries, assets, threat actors and
 mitigations relevant to OIHK Basic. It is intended to help reviewers and
@@ -29,7 +29,10 @@ deployers reason about the security posture of the application.
   with authentication disabled for single-user desktop use. Exposing it
   beyond loopback is unsupported unless authentication is enabled with a
   configured administrator and strong secrets; production mode refuses to
-  start otherwise.
+  start otherwise. Loopback is a boundary against the *network*, not against
+  the *browser*: a page the operator visits can reach 127.0.0.1, so the
+  `Host` and `Origin` controls in T4.11 and T4.12 apply regardless of the
+  authentication mode.
 - **Boundary C — local model endpoints:** endpoints must be localhost,
   private-network or link-local addresses. Public endpoints and embedded
   credentials are rejected.
@@ -151,6 +154,40 @@ Keychain / Linux Secret Service via the `keyring` package) with an explicit
 AES-GCM mode-`0600` fallback only when no keyring backend exists; the active
 provider is reported per installation through `key_storage`.
 
+### T4.11 Cross-origin writes from a page the operator visits
+The browser is inside the trust boundary; a web page it loads is not. CORS
+was never the control that stopped a cross-origin *write*: it withholds the
+response, not the request. The ingestion routes accept `multipart/form-data`,
+a CORS-safelisted content type, so a plain `<form>` submission to the loopback
+port is not preflighted at all — the write lands and the attacker simply never
+reads the reply. For a forensics tool that is the wrong half to protect,
+because planting a file in a case is itself the damage.
+
+Every unsafe method is therefore checked against the origin allowlist before
+routing, before body parsing and before any database work, and independently
+of whether authentication is enabled. Requests carrying no `Origin` are the
+ordinary non-browser callers (the Tauri core, the System Link smoke runner)
+and pass; a browser labelling the request `Sec-Fetch-Site: cross-site` or
+`same-site` is refused even if it omitted `Origin`. The System Link module API
+is exempt because it authenticates each call with a signed, timestamped
+envelope bound to a paired Ed25519 identity.
+
+### T4.12 DNS rebinding against the loopback API
+An origin check cannot address this one. If an attacker's domain re-resolves
+to 127.0.0.1, the browser believes the page and the API share an origin: it
+sends no `Origin`, reports `Sec-Fetch-Site: same-origin` and applies no CORS.
+Reads succeed, which with authentication disabled means the whole case
+database, evidence and conversation history.
+
+The one header that still carries the attacker's own name is `Host`, so the
+authority is validated on **every** method, reads included. A loopback bind
+accepts only loopback authorities; that is derived automatically and needs no
+configuration. A non-loopback deployment sits behind a proxy that rewrites
+`Host` to a name only the operator knows, so it must state the expected names
+in `OIHK_ALLOWED_HOSTS` — and in production the server refuses to start
+without them rather than failing open. The randomly chosen backend port raises
+the cost of finding the service but is not itself a control.
+
 ## 5. Residual risks
 
 - A hostile process with the same OS account can, in principle, read
@@ -160,6 +197,20 @@ provider is reported per installation through `key_storage`.
   it at software they control (LM Studio, Ollama, etc.).
 - Network deployments require careful secret management and are only
   supported with authentication enabled.
+- The browser controls in T4.11 and T4.12 bound what a *web page* can do to
+  the loopback API. They do nothing against a malicious native process on the
+  same account, which can set any header it likes; that case remains covered
+  only by the OS account boundary.
+- `Sec-Fetch-Site` is treated as corroborating evidence, never as the sole
+  basis for accepting a request. A client that omits it is judged by `Origin`
+  and `Host` alone.
+- The System Link runtime executable is hashed and then launched by path, so a
+  writer able to replace that file in between runs code the hash check
+  approved. Closing the window means executing the handle that was verified,
+  which the supported platforms do not offer portably. The boundary that
+  actually holds here is write access to the installation directory, not the
+  comparison — the same actor could rewrite the manifest and the recorded hash
+  along with the binary.
 
 ## 6. Security fixes
 

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit, urlunsplit
 
 from app.core.config import get_settings
+from app.services.safe_http import get_json_bounded
 from app.version import PRODUCT_VERSION
 
 logger = logging.getLogger(__name__)
@@ -34,31 +36,45 @@ async def search_public(query: str, max_results: int = 5) -> list[dict]:
     return results
 
 
+def _searxng_search_url(configured: str) -> str:
+    """Validate the operator-configured SearXNG base URL.
+
+    The value arrives from configuration rather than a request, but an
+    unvalidated base still lets a typo or a stray scheme send the query
+    somewhere unintended, so it is checked before every use.
+    """
+    parsed = urlsplit(configured.strip().rstrip("/"))
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("OIHK_SEARXNG_URL must be an http(s) URL.")
+    if parsed.username or parsed.password:
+        raise ValueError("OIHK_SEARXNG_URL must not embed credentials.")
+    return urlunsplit((parsed.scheme, parsed.netloc, f"{parsed.path}/search", "", ""))
+
+
 async def _search_searxng(query: str, max_results: int) -> list[dict]:
     """Search via SearXNG instance."""
     import httpx
 
     settings = get_settings()
     async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            f"{settings.searxng_url}/search",
+        data = await get_json_bounded(
+            client,
+            _searxng_search_url(settings.searxng_url),
+            max_bytes=settings.max_lookup_response_bytes,
             params={"q": query, "format": "json", "language": "en", "categories": "general"},
             headers={"User-Agent": f"OIHK-Basic/{PRODUCT_VERSION}"},
         )
-        if resp.status_code == 200:
-            data = resp.json()
-            results = []
-            for r in data.get("results", [])[:max_results]:
-                results.append(
-                    {
-                        "title": r.get("title", ""),
-                        "url": r.get("url", ""),
-                        "snippet": r.get("content", ""),
-                        "source_name": r.get("engine", "searxng"),
-                    }
-                )
-            return results
-    return []
+        results = []
+        for r in (data or {}).get("results", [])[:max_results]:
+            results.append(
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("url", ""),
+                    "snippet": r.get("content", ""),
+                    "source_name": r.get("engine", "searxng"),
+                }
+            )
+        return results
 
 
 async def _search_brave(query: str, max_results: int) -> list[dict]:
@@ -67,26 +83,24 @@ async def _search_brave(query: str, max_results: int) -> list[dict]:
 
     settings = get_settings()
     async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
+        data = await get_json_bounded(
+            client,
             "https://api.search.brave.com/res/v1/web/search",
+            max_bytes=settings.max_lookup_response_bytes,
             params={"q": query, "count": max_results},
             headers={
                 "Accept": "application/json",
-                "Accept-Encoding": "gzip",
                 "X-Subscription-Token": settings.brave_api_key,
             },
         )
-        if resp.status_code == 200:
-            data = resp.json()
-            results = []
-            for r in data.get("web", {}).get("results", [])[:max_results]:
-                results.append(
-                    {
-                        "title": r.get("title", ""),
-                        "url": r.get("url", ""),
-                        "snippet": r.get("description", ""),
-                        "source_name": "brave",
-                    }
-                )
-            return results
-    return []
+        results = []
+        for r in (data or {}).get("web", {}).get("results", [])[:max_results]:
+            results.append(
+                {
+                    "title": r.get("title", ""),
+                    "url": r.get("url", ""),
+                    "snippet": r.get("description", ""),
+                    "source_name": "brave",
+                }
+            )
+        return results

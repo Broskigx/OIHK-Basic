@@ -1039,6 +1039,92 @@ async def test_module_ui_surface_serves_only_verified_package_files(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_module_ui_surface_stops_reading_at_the_host_ceiling(
+    tmp_path: Path, system_link_session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ceiling has to stop the read, not report on it afterwards.
+
+    Asserting only that an oversized file answers 413 would also pass against
+    an implementation that reads the file whole and measures the buffer at the
+    end — which is precisely the shape this exists to prevent, because by then
+    the allocation the limit forbids has already happened. Counting the bytes
+    actually pulled off disk is what separates the two.
+    """
+    from fastapi import HTTPException as FastAPIHTTPException
+
+    from app.system_link import router as system_link_router
+    from app.system_link.router import module_ui_file
+
+    manifest, module_key, package_root = _module_fixture(tmp_path)
+    system_link_session.add(
+        models.SystemLinkModule(
+            module_id=manifest.module_id,
+            product_name=manifest.name,
+            module_version=manifest.version,
+            protocol_version=manifest.protocol_version,
+            manifest_schema_version=manifest.schema_version,
+            module_public_key=_public_key(module_key),
+            module_fingerprint="f" * 64,
+            manifest=manifest.model_dump(mode="json"),
+            manifest_sha256="a" * 64,
+            manifest_signature=b64encode(module_key.sign(canonical_json(manifest))),
+            package_root=str(package_root),
+            package_sha256=manifest.package_sha256,
+            lifecycle=manifest.lifecycle.model_dump(mode="json"),
+            state=ModuleState.READY.value,
+            enabled=True,
+        )
+    )
+    system_link_session.add(
+        models.SystemLinkCapabilityGrant(
+            module_id=manifest.module_id,
+            capability="ui.navigation.register",
+            manifest_sha256="a" * 64,
+        )
+    )
+    await system_link_session.commit()
+
+    monkeypatch.setattr(system_link_router, "_MODULE_UI_MAX_BYTES", 4096)
+    monkeypatch.setattr(system_link_router, "_MODULE_UI_CHUNK_BYTES", 1024)
+    oversized = package_root / "ui" / "oversized.js"
+    oversized.write_bytes(b"x" * 200_000)
+
+    read_sizes: list[int] = []
+    real_open = Path.open
+
+    class _CountingHandle:
+        def __init__(self, handle) -> None:
+            self._handle = handle
+
+        def __enter__(self) -> _CountingHandle:
+            return self
+
+        def __exit__(self, *exc_info) -> bool:
+            self._handle.close()
+            return False
+
+        def read(self, size: int = -1) -> bytes:
+            chunk = self._handle.read(size)
+            read_sizes.append(len(chunk))
+            return chunk
+
+    def counting_open(self, *args, **kwargs):
+        return _CountingHandle(real_open(self, *args, **kwargs))
+
+    monkeypatch.setattr(Path, "open", counting_open)
+
+    with pytest.raises(FastAPIHTTPException) as oversize:
+        await module_ui_file(manifest.module_id, "ui/oversized.js", system_link_session)
+    assert oversize.value.status_code == 413
+
+    # One chunk past the ceiling is what proves it was exceeded; anything more
+    # than that means the file was still being buffered after the answer was
+    # already known.
+    assert sum(read_sizes) <= 4096 + 1024
+    assert sum(read_sizes) < oversized.stat().st_size
+
+
+@pytest.mark.asyncio
 async def test_reconcile_existing_runtime_requires_full_verification(
     tmp_path: Path, system_link_session, monkeypatch
 ) -> None:

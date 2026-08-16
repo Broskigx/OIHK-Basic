@@ -109,10 +109,27 @@ export const GraphView = forwardRef<GraphViewHandle, Props>(function GraphView(p
   }, [selectedNodeId, viewMode, visible]);
 
   if (visible.nodes.length === 0) {
-    const emptyLabel = viewMode === "connections"
-      ? "Select an entity to inspect its connections"
-      : typeFilter === "all" ? "Graph ready" : "No entities match this filter";
-    return <div className="empty-state"><Network size={34} /><span>{emptyLabel}</span></div>;
+    const emptyState = viewMode === "connections"
+      ? {
+          title: "Choose an entity",
+          description: "Select an entity to inspect its direct connections.",
+        }
+      : typeFilter === "all"
+        ? {
+            title: "Start with an entity",
+            description: "Add an entity above or import data to begin mapping relationships.",
+          }
+        : {
+            title: "No matching entities",
+            description: "Adjust or clear the active type filter to show entities here.",
+          };
+    return (
+      <div className="platform-empty-state graph-empty-state" role="status">
+        <Network size={34} />
+        <strong>{emptyState.title}</strong>
+        <p>{emptyState.description}</p>
+      </div>
+    );
   }
 
   return (

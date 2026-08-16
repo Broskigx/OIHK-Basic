@@ -1,0 +1,11 @@
+# Root lint configuration.
+#
+# The real settings live in backend/pyproject.toml, next to the package they
+# describe. This file exists so that a bare `ruff check` from the repository
+# root — which is what editors, pre-commit hooks and contributors following the
+# README actually run — resolves the same rules that CI enforces.
+#
+# Without it, ruff falls back to its built-in defaults at the root, loses
+# `known-first-party = ["app"]`, and reports import-order errors on files that
+# CI considers clean. Two lint results for one tree is worse than either.
+extend = "backend/pyproject.toml"

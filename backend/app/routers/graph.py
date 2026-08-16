@@ -44,6 +44,11 @@ from app.services.repository import audit, upsert_entity
 
 router = APIRouter(prefix="/graph", tags=["graph"])
 
+# How many snapshots a case keeps. The list route and the create route share
+# this constant deliberately: a retention limit that does not match the read
+# limit produces rows nobody can see and nobody can delete.
+_SNAPSHOT_RETENTION = 100
+
 
 def _node(entity: models.Entity) -> GraphNode:
     return GraphNode(
@@ -176,8 +181,8 @@ async def list_graph_snapshots(
         await session.execute(
             select(models.GraphSnapshot)
             .where(models.GraphSnapshot.case_id == case_id)
-            .order_by(models.GraphSnapshot.created_at.desc())
-            .limit(100)
+            .order_by(models.GraphSnapshot.created_at.desc(), models.GraphSnapshot.id.desc())
+            .limit(_SNAPSHOT_RETENTION)
         )
     ).scalars()
     return [
@@ -226,6 +231,24 @@ async def create_graph_snapshot(
         edge_count=len(edges),
     )
     session.add(row)
+    await session.flush()
+
+    # Snapshots are listed newest-first with a ceiling of _SNAPSHOT_RETENTION.
+    # Without the matching cap on writes, everything past that ceiling would
+    # keep accumulating in the database while being invisible in the interface —
+    # storage that grows forever and that the operator has no way to reclaim.
+    retained = (
+        select(models.GraphSnapshot.id)
+        .where(models.GraphSnapshot.case_id == case_id)
+        .order_by(models.GraphSnapshot.created_at.desc(), models.GraphSnapshot.id.desc())
+        .limit(_SNAPSHOT_RETENTION)
+    )
+    await session.execute(
+        delete(models.GraphSnapshot).where(
+            models.GraphSnapshot.case_id == case_id,
+            models.GraphSnapshot.id.not_in(retained),
+        )
+    )
     await session.commit()
     await session.refresh(row)
     return GraphSnapshotRead(
@@ -258,7 +281,18 @@ async def restore_graph_snapshot(
     if row is None:
         row = models.GraphWorkspace(case_id=case_id)
         session.add(row)
-    row.positions = {node_id: position.model_dump() for node_id, position in payload.positions.items()}
+    # A snapshot records where entities sat when it was taken; some of them may
+    # since have been deleted. Saving a workspace drops unknown ids, so
+    # restoring one has to as well, or a restore re-seeds the positions map with
+    # entries that can never be cleaned up.
+    valid_ids = set(
+        (await session.execute(select(models.Entity.id).where(models.Entity.case_id == case_id))).scalars().all()
+    )
+    row.positions = {
+        node_id: position.model_dump()
+        for node_id, position in payload.positions.items()
+        if node_id in valid_ids
+    }
     row.camera = payload.camera.model_dump()
     row.view_mode = payload.view_mode
     row.filters = payload.filters
@@ -415,7 +449,7 @@ async def create_graph_entity(
         "graph.entity.created",
         payload.case_id,
         {"entity_id": entity.id, "type": entity.type, "connected_to": payload.connect_to_id},
-        actor="analyst",
+        actor=current.username,
     )
     await session.commit()
     return _node(entity)
@@ -510,7 +544,14 @@ async def update_graph_relationship(
         raise HTTPException(status_code=404, detail="Relationship not found")
     await require_case_access(session, relationship.case_id, current)
     if payload.label is not None:
-        relationship.predicate = payload.label.strip().lower().replace(" ", "_")[:80]
+        # The schema's min_length runs before normalisation, so a label of two
+        # spaces satisfies it and then collapses to nothing. Creation already
+        # refuses that; an edit has to refuse it too or the same rule depends on
+        # which route you came through.
+        predicate = payload.label.strip().lower().replace(" ", "_")[:80]
+        if len(predicate) < 2:
+            raise HTTPException(status_code=400, detail="Relationship label is required")
+        relationship.predicate = predicate
     if payload.confidence is not None:
         relationship.confidence = payload.confidence
     await audit(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 
 
 def test_packaged_desktop_ignores_working_directory_dotenv(tmp_path, monkeypatch) -> None:
@@ -39,3 +39,25 @@ def test_packaged_desktop_accepts_only_internal_managed_data_directory(tmp_path,
         assert settings.storage_dir == str(managed / "storage")
     finally:
         get_settings.cache_clear()
+
+
+def test_packaged_desktop_withdraws_the_schema_explorer(monkeypatch) -> None:
+    """The packaged build never needs /docs, and it maps the API for an attacker."""
+    monkeypatch.setenv("OIHK_DESKTOP_PACKAGED", "1")
+    get_settings.cache_clear()
+    try:
+        assert get_settings().docs_are_enabled is False
+    finally:
+        get_settings.cache_clear()
+
+
+def test_development_keeps_the_schema_explorer() -> None:
+    assert Settings(environment="development").docs_are_enabled is True
+
+
+def test_production_withdraws_the_schema_explorer() -> None:
+    assert Settings(environment="production").docs_are_enabled is False
+
+
+def test_schema_explorer_can_be_forced_back_on() -> None:
+    assert Settings(environment="desktop", docs_enabled=True).docs_are_enabled is True

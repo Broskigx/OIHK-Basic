@@ -28,8 +28,6 @@ export class GraphInteractionController {
   private callbacks: InteractionCallbacks;
   private dragNodeId: string | null = null;
   private panning = false;
-  private dragStart = { x: 0, y: 0 };
-  private cameraStart = { x: 0, y: 0 };
   private wasDragged = false;
   private wheelCommitTimer: number | null = null;
   /** Cached canvas rect captured at gesture start; avoids forcing a sync
@@ -126,21 +124,15 @@ export class GraphInteractionController {
     canvas.focus({ preventScroll: true });
     // Cache the canvas rect once per gesture; reused for every move/up event
     this.rectCache = canvas.getBoundingClientRect();
-    const rect = this.rectCache;
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
 
     if (e.button === 1) {
       // Middle-click pan
       this.panning = true;
-      this.dragStart = { x: sx, y: sy };
-      this.cameraStart = { x: this._camera().x, y: this._camera().y };
       canvas.style.cursor = "grabbing";
       return;
     }
     if (e.button !== 0) return;
 
-    this.dragStart = { x: sx, y: sy };
     this.wasDragged = false;
 
     const hit = this._hitTest(e.clientX, e.clientY);
@@ -151,7 +143,6 @@ export class GraphInteractionController {
       this.callbacks.onSelect(hit.id, e.shiftKey || e.ctrlKey || e.metaKey);
     } else {
       this.panning = true;
-      this.cameraStart = { x: this._camera().x, y: this._camera().y };
       canvas.style.cursor = "grabbing";
       this.callbacks.onSelect(null, false);
     }

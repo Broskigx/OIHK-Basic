@@ -10,6 +10,8 @@ import threading
 from pathlib import Path
 
 import pytest
+from sqlalchemy.ext.asyncio import create_async_engine
+
 from app.core import update_service
 from app.core.update_service import (
     BackupMetadata,
@@ -17,7 +19,6 @@ from app.core.update_service import (
     UpdatePreparationError,
 )
 from app.database_migrations import MIGRATIONS, MigrationError, run_migrations
-from sqlalchemy.ext.asyncio import create_async_engine
 
 
 def test_verified_backup_has_integrity_hash_and_metadata(
