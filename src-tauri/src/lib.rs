@@ -67,6 +67,13 @@ fn read_recovery_status() -> Option<RecoveryStatus> {
 }
 
 /// Find a free TCP port on 127.0.0.1
+///
+/// The probe listener has to be dropped before the backend can bind the port,
+/// which leaves a window in which another local process could take it. The
+/// window cannot be closed from here — the port is handed to a child process
+/// that does its own bind — so it is handled where it actually matters instead:
+/// `wait_for_backend` watches the child while it polls, and refuses to accept a
+/// `/health` answer from a server that is not the backend we started.
 fn find_free_port() -> u16 {
     let listener =
         std::net::TcpListener::bind("127.0.0.1:0").expect("Failed to bind to find free port");
@@ -184,12 +191,46 @@ fn start_backend(port: u16) -> Result<Child, String> {
     }
 } // end #[cfg(not(debug_assertions))] block
 
+/// Report whether the managed backend child has already exited.
+///
+/// Returns `false` when no child is managed at all, which is the development
+/// case where an already-running backend was adopted rather than spawned.
+fn managed_child_exited(state: &BackendProcess) -> bool {
+    match state.0.lock() {
+        Ok(mut guard) => match guard.as_mut() {
+            Some(child) => matches!(child.try_wait(), Ok(Some(_))),
+            None => false,
+        },
+        Err(_) => false,
+    }
+}
+
 /// Wait for the backend health endpoint to respond
-fn wait_for_backend(port: u16, timeout_secs: u64) -> Result<(), String> {
+///
+/// `state` is the managed child to watch while polling. A `/health` answer only
+/// proves *something* is listening on the port, and the port was chosen through
+/// a probe listener that had to be released before the child could bind it. If
+/// another local process won that race our child exits on its failed bind, so
+/// treating its death as a failure is what keeps the app from adopting a
+/// stranger's server as its backend.
+fn wait_for_backend(
+    port: u16,
+    timeout_secs: u64,
+    state: Option<&BackendProcess>,
+) -> Result<(), String> {
     let url = format!("http://127.0.0.1:{}/health", port);
     let start = std::time::Instant::now();
 
     loop {
+        if let Some(state) = state {
+            if managed_child_exited(state) {
+                return Err(
+                    "The managed backend process exited before it became healthy. Its port may \
+                     have been taken by another local process."
+                        .to_string(),
+                );
+            }
+        }
         if start.elapsed().as_secs() > timeout_secs {
             return Err(format!(
                 "Backend did not start within {} seconds",
@@ -341,7 +382,7 @@ fn restart_backend_after_update_failure(state: tauri::State<BackendProcess>) -> 
             .map_err(|_| "The managed backend state is unavailable.".to_string())?;
         *guard = Some(child);
     }
-    wait_for_backend(port, 30)
+    wait_for_backend(port, 30, Some(&state))
 }
 
 #[tauri::command]
@@ -408,7 +449,14 @@ pub fn run() {
                 })?;
 
                 let state: tauri::State<BackendProcess> = app.state();
-                *state.0.lock().unwrap() = Some(child);
+                // Every other lock site reports a poisoned mutex as an error
+                // rather than panicking; setup is where a panic would be worst,
+                // because it leaves the child running with nothing tracking it.
+                let mut guard = state
+                    .0
+                    .lock()
+                    .map_err(|_| "The managed backend state is unavailable.".to_string())?;
+                *guard = Some(child);
             }
 
             // Show main window immediately
@@ -418,12 +466,14 @@ pub fn run() {
             });
 
             // Spawn backend health check in background
+            let health_handle = app.handle().clone();
             std::thread::spawn(move || {
                 let backend_port: u16 = std::env::var("OIHK_PORT")
                     .ok()
                     .and_then(|p| p.parse().ok())
                     .unwrap_or(8001);
-                if let Err(e) = wait_for_backend(backend_port, 30) {
+                let state: tauri::State<BackendProcess> = health_handle.state();
+                if let Err(e) = wait_for_backend(backend_port, 30, Some(&state)) {
                     eprintln!("[OIHK Desktop] Backend health check failed: {}", e);
                 }
             });
