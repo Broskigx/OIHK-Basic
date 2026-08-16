@@ -223,3 +223,47 @@ class TestSecretGeneration:
         # 0o077 masks out group/other permissions
         assert (mode & stat.S_IRWXO) == 0, "Other users should not have access"
         assert (mode & stat.S_IRWXG) == 0, "Group should not have access"
+
+
+class TestManagedDataDirectory:
+    """The refusal to rotate keys is only worth anything if it looks at the
+    database this process will actually open."""
+
+    def test_packaged_data_dir_decides_which_database_the_guard_checks(self, monkeypatch, tmp_path):
+        import app.core.first_run as fr
+
+        managed = tmp_path / "portable-profile"
+        managed.mkdir()
+        monkeypatch.setenv("OIHK_PACKAGED_DATA_DIR", str(managed))
+
+        assert fr._default_database_path() == managed / "oihk-basic.db"
+
+    def test_the_platform_default_still_applies_without_a_managed_directory(self, monkeypatch):
+        import app.core.first_run as fr
+
+        monkeypatch.delenv("OIHK_PACKAGED_DATA_DIR", raising=False)
+
+        assert fr._default_database_path().name == "oihk-basic.db"
+        assert "OIHK-Basic" in fr._default_database_path().parts
+
+    def test_a_relocated_database_still_blocks_silent_key_rotation(self, monkeypatch, tmp_path):
+        """The case the wrong-path check used to miss entirely.
+
+        A database living outside the platform default, with no secrets file
+        beside it, must still refuse to mint new keys: rotating them would
+        leave every custody seal in that database unverifiable.
+        """
+        import app.core.first_run as fr
+
+        managed = tmp_path / "relocated"
+        managed.mkdir()
+        (managed / "oihk-basic.db").write_bytes(b"")
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        monkeypatch.setenv("OIHK_PACKAGED_DATA_DIR", str(managed))
+        monkeypatch.setattr(fr, "_CONFIG_DIR", config_dir)
+        monkeypatch.setattr(fr, "_SECRETS_FILE", config_dir / "secrets.json")
+
+        with pytest.raises(fr.SecretsFileError, match="Automatic key rotation was blocked"):
+            fr.get_or_create_secret("jwt_secret", 32)

@@ -6,6 +6,7 @@ import hashlib
 import os
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import HTTPException
 
@@ -46,7 +47,13 @@ def store_evidence_bytes(
     # Sanitize filename to prevent path traversal
     safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in filename)[:200]
     storage_dir = _ensure_storage(os.path.join(subdir, case_id))
-    stored_path = (storage_dir / f"{sha256[:16]}_{safe_name}").resolve()
+    # A random prefix, not a content-derived one. Naming by digest makes two
+    # ingestions of the same bytes under the same name collide on one path, and
+    # the second one silently replaces the first — after which deleting either
+    # record unlinks the file the other still points at. Managed evidence
+    # already names files this way; the two stores must not disagree about
+    # whether a path is unique to a record.
+    stored_path = (storage_dir / f"{uuid4()}-{safe_name}").resolve()
     try:
         stored_path.relative_to(storage_dir)
     except ValueError as exc:

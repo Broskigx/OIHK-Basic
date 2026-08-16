@@ -95,7 +95,26 @@ def main() -> None:
         data_dir = requested_data_dir.resolve()
         os.environ["OIHK_PACKAGED_DATA_DIR"] = str(data_dir)
 
-    from app.core.config import get_settings
+    # Importing the configuration is what loads — or creates — this
+    # installation's keys, so it is also where the deliberate refusal to rotate
+    # them surfaces. Left uncaught it reaches the operator as a traceback, and
+    # through the desktop shell as nothing but "the backend exited": a
+    # carefully worded fail-closed message delivered as a generic crash. Catch
+    # it here and say what happened and what to do about it.
+    from app.core.first_run import SecretsFileError
+
+    try:
+        from app.core.config import get_settings
+    except SecretsFileError as exc:
+        print(f"OIHK Basic cannot start: {exc}", file=sys.stderr)
+        print(
+            "The keys that seal this installation's custody records are stored "
+            "separately from its database. Restore the secrets file from a "
+            "backup to keep the existing evidence verifiable, or move the "
+            "database aside to start a new profile with new keys.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
 
     if not get_settings().auth_enabled and args.host not in {"127.0.0.1", "localhost", "::1"}:
         parser.error("Authentication is disabled; OIHK Basic may only bind to a loopback address.")
