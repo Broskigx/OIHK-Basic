@@ -59,9 +59,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         key = self._client_key(request)
         now = time.monotonic()
 
-        if now - self._last_sweep > _WINDOW_SECONDS or len(self._hits) > _MAX_TRACKED_KEYS:
+        if now - self._last_sweep > _WINDOW_SECONDS or len(self._hits) >= _MAX_TRACKED_KEYS:
             # Sweeping on size as well as on time keeps the map bounded even
             # when a flood of distinct keys arrives inside a single window.
+            # The comparison matches the one guarding the rejection below: with
+            # a strict ">" here, a map sitting at exactly the ceiling would skip
+            # the sweep and then refuse an unknown key on entries that a sweep
+            # would have released.
             self._sweep(now)
             self._last_sweep = now
         if key not in self._hits and len(self._hits) >= _MAX_TRACKED_KEYS:
@@ -90,6 +94,4 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         response = await call_next(request)
         response.headers["X-RateLimit-Limit"] = str(limit)
         response.headers["X-RateLimit-Remaining"] = str(max(0, limit - len(bucket)))
-        if not bucket:
-            self._hits.pop(key, None)
         return response

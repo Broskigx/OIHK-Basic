@@ -48,6 +48,15 @@ class Settings(BaseSettings):
     api_log_level: str = "INFO"
     storage_dir: Annotated[str, Field(alias="OIHK_STORAGE_DIR")] = ""
     server_bind_host: Annotated[str, Field(alias="OIHK_SERVER_BIND_HOST")] = "127.0.0.1"
+    # Host header allowlist. Empty means "derive from the bind address": a
+    # loopback bind accepts only loopback authorities, which is what defeats DNS
+    # rebinding. A non-loopback deployment sits behind a reverse proxy that
+    # rewrites Host, so the operator must state the expected names explicitly.
+    allowed_hosts: Annotated[str, Field(alias="OIHK_ALLOWED_HOSTS")] = ""
+    # Interactive API docs are a discovery aid for an attacker who reaches the
+    # loopback port. They stay on for development and are withdrawn from the
+    # packaged desktop build, which never needs them.
+    docs_enabled: Annotated[bool | None, Field(alias="OIHK_DOCS_ENABLED")] = None
 
     @property
     def effective_database_url(self) -> str:
@@ -153,6 +162,18 @@ class Settings(BaseSettings):
     @property
     def binds_to_loopback(self) -> bool:
         return self.server_bind_host.strip().lower() in {"127.0.0.1", "::1", "localhost"}
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        """Explicitly configured Host authorities, lowercased and stripped."""
+        return [host.strip().lower() for host in self.allowed_hosts.split(",") if host.strip()]
+
+    @property
+    def docs_are_enabled(self) -> bool:
+        if self.docs_enabled is not None:
+            return self.docs_enabled
+        # Packaged desktop and production both withdraw the schema explorer.
+        return not (self.is_production or self.environment.lower() == "desktop")
 
     @property
     def trusted_proxy_ip_list(self) -> list[str]:
