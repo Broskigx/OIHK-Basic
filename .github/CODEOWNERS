@@ -1,0 +1,29 @@
+# Every path has an owner so no review request has to be routed by hand.
+* @Broskigx
+
+# Listed separately not to change who reviews, but to mark the paths where a
+# mistake is expensive and the diff deserves a slower read: the trust
+# boundaries, the code that decides what a caller may reach, the evidence and
+# custody path, the module runtime that launches a verified binary, and the
+# documents that are read as assurances about all of it.
+
+/backend/app/middleware/          @Broskigx
+/backend/app/core/security.py     @Broskigx
+/backend/app/core/deps.py         @Broskigx
+/backend/app/core/first_run.py    @Broskigx
+/backend/app/system_link/         @Broskigx
+/backend/app/services/managed_evidence.py  @Broskigx
+/backend/app/services/evidence_storage.py  @Broskigx
+/backend/app/services/custody.py           @Broskigx
+/backend/app/services/safe_http.py         @Broskigx
+/backend/app/services/local_models.py      @Broskigx
+/backend/app/services/assistant_tools.py   @Broskigx
+
+/src-tauri/                       @Broskigx
+/.github/workflows/               @Broskigx
+
+/SECURITY.md                      @Broskigx
+/THREAT_MODEL.md                  @Broskigx
+/PRIVACY.md                       @Broskigx
+/RESPONSIBLE_USE.md               @Broskigx
+/docs/KNOWN_LIMITATIONS.md        @Broskigx

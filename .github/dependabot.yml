@@ -1,0 +1,60 @@
+version: 2
+
+# Three runtimes ship in one desktop artifact, so all three are supply-chain
+# surface for the same binary. Patch and minor updates are grouped per
+# ecosystem: a security tool that drowns its maintainer in single-package pull
+# requests gets updated less often, not more.
+#
+# Majors stay ungrouped and arrive one at a time, because those are the ones
+# that need a human to read a changelog. Node is pinned to 22.x by the engines
+# field, so its major updates are deliberately ignored here rather than opened
+# and closed every release.
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "build(actions)"
+
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      backend:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "build(backend)"
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      frontend:
+        update-types: [minor, patch]
+    ignore:
+      # The toolchain targets Node 22 (`>=22 <23`); a major bump here is a
+      # decision about the supported runtime, not a dependency refresh.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+    commit-message:
+      prefix: "build(frontend)"
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      desktop:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "build(desktop)"

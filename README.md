@@ -54,7 +54,7 @@ El canal del updater sigue siendo `alpha` de forma deliberada: cambiarlo mueve e
 
 ## Qué incluye
 
-OIHK Basic reúne once espacios de trabajo principales:
+OIHK Basic reúne once capacidades principales. Diez son espacios de trabajo con su propia ruta; Copilot vive en un dock disponible desde cualquiera de ellos:
 
 1. **Dashboard operativo** con actividad reciente, estado local y accesos rápidos.
 2. **Investigations** para crear, editar, duplicar, archivar, restaurar, importar y exportar casos.
@@ -62,7 +62,7 @@ OIHK Basic reúne once espacios de trabajo principales:
 4. **OSINT Workspace** con consultas explícitas, historial SQLite, cancelación y promoción controlada al grafo.
 5. **Evidence Lab** con carga por streaming, almacenamiento administrado, SHA-256, asociaciones, manifiestos y análisis forense.
 6. **Reports** con secciones, plantillas, Markdown, HTML seguro, JSON, historial y aprobación de borradores.
-7. **Copilot** con conversaciones persistentes y un modelo local elegido por el usuario.
+7. **Copilot** en un dock acoplado a la interfaz, con conversaciones persistentes, un modelo local elegido por el usuario y un conjunto acotado de operaciones que puede invocar por nombre. No puede modificar ni borrar evidencia, ni aprobar reportes, y toda escritura queda auditada.
 8. **Local Models** con detección y configuración de LM Studio, Ollama y endpoints privados OpenAI-compatible.
 9. **Data Sources** para procedencia, citas y confiabilidad.
 10. **Settings** para apariencia, privacidad, rendimiento, backups y diagnósticos sanitizados.
@@ -341,6 +341,7 @@ No distribuyas ese instalador como versión oficial. Los releases firmados requi
 
 ## Documentación
 
+- [Guía de contribución](CONTRIBUTING.md)
 - [Build por plataforma](docs/BUILDING.md)
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Limitaciones conocidas](docs/KNOWN_LIMITATIONS.md)
