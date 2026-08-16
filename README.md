@@ -7,17 +7,18 @@
 # OIHK Basic
 
 [![CI](https://github.com/Broskigx/OIHK-Basic/actions/workflows/ci.yml/badge.svg)](https://github.com/Broskigx/OIHK-Basic/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.1.1--alpha.2-e8c84a)](VERSION)
+[![Version](https://img.shields.io/badge/version-0.2.0--beta.1-6bb5e8)](VERSION)
 [![License: MIT](https://img.shields.io/badge/license-MIT-66d347.svg)](LICENSE)
 [![Local first](https://img.shields.io/badge/architecture-local--first-6bb5e8)](PRIVACY.md)
 
 Plataforma de investigación local-first para organizar casos autorizados, evidencia, fuentes, relaciones, reportes y flujos de IA local desde una aplicación de escritorio Tauri.
 
-> [!WARNING]
-> **OIHK Basic es software alpha experimental para revisión técnica y pruebas controladas.** No existe una versión estable ni un instalador recomendado para producción. Puede contener fallos, funciones incompletas y cambios incompatibles. No lo uses como única copia de evidencia, datos importantes o investigaciones reales.
+> [!IMPORTANT]
+> **OIHK Basic es software beta.** El código está probado y auditado, pero la distribución todavía no. Conserva backups externos verificados y no lo uses como única copia de evidencia o de una investigación real.
 
 ## Contenido
 
+- [Estado del proyecto](#estado-del-proyecto)
 - [Qué incluye](#qué-incluye)
 - [Inicio rápido desde un clon](#inicio-rápido-desde-un-clon)
 - [Primera apertura y modelos locales](#primera-apertura-y-modelos-locales)
@@ -30,16 +31,26 @@ Plataforma de investigación local-first para organizar casos autorizados, evide
 
 ## Estado del proyecto
 
-La versión actual es `0.1.1-alpha.2`. El repositorio se publica para revisión de código y para testers que acepten trabajar con datos desechables y backups externos verificados.
+La versión actual es `0.2.0-beta.1`.
 
-- No hay una versión estable disponible.
-- Los candidatos `0.1.1-alpha.x` son prereleases experimentales, no un canal de distribución general.
-- El empaquetado Windows x64/NSIS existe, pero requiere validación en entornos limpios antes de considerarse release-ready.
-- Linux y macOS tienen soporte de build en desarrollo, pero todavía no se declaran release-ready.
-- No se garantiza compatibilidad de datos entre commits, soporte ni funcionamiento completo.
-- Los artefactos de GitHub Actions no deben tratarse como instaladores oficiales.
+### Qué está validado
 
-Publicar una candidata alpha no significa que la aplicación esté lanzada ni lista para producción.
+- **326 pruebas automatizadas** en verde: backend, portabilidad, frontend y desktop. La superficie REST tiene pruebas de integración sobre HTTP real, atravesando el stack de middleware completo y con claves foráneas activas.
+- **71 % de cobertura** medida correctamente. Esa cifra es nueva: hasta esta versión el instrumental perdía el rastro en cada `await` contra la base de datos y subestimaba la cobertura de prácticamente todas las rutas.
+- **Auditorías de dependencias sin vulnerabilidades conocidas**: `pip-audit` y `npm audit` limpios; `cargo audit` pasa con 17 avisos permitidos por crates transitivos sin mantenimiento del stack GTK/Tauri, ninguno de ellos una vulnerabilidad. Gitleaks escanea el historial completo.
+- **El límite del navegador está cerrado**: validación de `Host` y de `Origin` en el API de loopback, con pruebas dedicadas. Consulta [Threat Model](THREAT_MODEL.md) T4.11 y T4.12.
+
+### Qué falta por validar
+
+Estos gates dependen de infraestructura y hardware, no del código, y son la razón por la que esto es `beta.1` y no una estable:
+
+- Instalación, actualización y desinstalación en una **VM Windows limpia**.
+- El **updater firmado** con las claves de producción, contra un endpoint HTTPS controlado.
+- Los artefactos de **macOS y Linux**: compilan, pero no se declaran release-ready.
+
+Hasta que esos tres se cierren, los artefactos de GitHub Actions no deben tratarse como instaladores oficiales, y no se garantiza compatibilidad de datos entre versiones.
+
+El canal del updater sigue siendo `alpha` de forma deliberada: cambiarlo mueve el punto donde las instalaciones existentes buscan actualizaciones, y esa es una decisión de release, no de código.
 
 ## Qué incluye
 
@@ -209,8 +220,8 @@ Desde la raíz del repositorio:
 
 ```powershell
 # Python
-python -m ruff check backend/app backend/run.py scripts tests
-python -m pytest -q
+python -m ruff check backend/app backend/run.py backend/tests scripts tests
+python -m pytest backend/tests tests -q
 
 # Frontend
 cd frontend
@@ -234,7 +245,26 @@ cd frontend
 npm audit --audit-level=high
 ```
 
-La integración continua ejecuta lint, pruebas, builds, auditorías, Gitleaks, smoke tests del sidecar y validaciones de empaquetado. Un pipeline verde reduce riesgos conocidos, pero no convierte una alpha en software de producción.
+### Cobertura
+
+```powershell
+python -m pytest backend/tests tests -q --cov=app --cov-report=term-missing
+```
+
+CI ejecuta la cobertura dentro del mismo paso de pruebas, con un suelo del 70 %. Es una protección contra regresiones —que una ruta entera pierda sus pruebas—, no un objetivo que perseguir.
+
+Dos detalles de configuración que hacen que estas cifras sean fiables, y que conviene no deshacer:
+
+- **`concurrency = ["greenlet", "thread"]`** en `[tool.coverage.run]`. La capa asyncio de SQLAlchemy conmuta greenlets, y sin declararlo el tracer pierde el marco tras cada `await session.execute(...)` y reporta la línea siguiente como no ejecutada. Medido: declararlo llevó el router de casos de un 38 % reportado a un 91 % real sin cambiar una sola prueba.
+- **`ruff.toml` en la raíz** extiende `backend/pyproject.toml`, de modo que ruff aplica las mismas reglas desde la raíz, desde el editor y en CI. Sin él, una ejecución desde la raíz perdía `known-first-party = ["app"]` y reportaba errores de orden de imports que CI consideraba limpios.
+
+### Cómo están escritas las pruebas del backend
+
+Las pruebas de integración usan las fixtures compartidas de `backend/tests/conftest.py`: cada una recibe una base de datos SQLite propia con `foreign_keys=ON` y atraviesa el stack de middleware real sobre HTTP. Solo se sustituyen la factoría de sesiones y la identidad autenticada.
+
+El esquema se construye una vez por sesión y se copia por prueba; emitir todo el DDL en cada una dominaba el tiempo de ejecución. La suite completa tarda alrededor de dos minutos.
+
+La integración continua ejecuta lint, pruebas con cobertura, builds, auditorías, Gitleaks, smoke tests del sidecar y validaciones de empaquetado. Un pipeline verde reduce riesgos conocidos, pero no sustituye la validación de distribución que sigue pendiente.
 
 System Link incluye además un smoke E2E real contra un clon local de OIHK Evidence Lab:
 
@@ -255,7 +285,7 @@ Ese smoke valida pairing, aprobación, Power On/Off, autenticación mutua, healt
 
 OIHK Basic está destinado al trabajo autorizado con fuentes públicas o datos incorporados legalmente por el usuario. No autoriza acceso a sistemas, cuentas ni datos privados de terceros.
 
-- Usa datos desechables durante la etapa alpha.
+- Usa datos desechables mientras la validación de distribución siga abierta.
 - Conserva backups externos y prueba su restauración.
 - Revisa toda salida de un modelo antes de incorporarla a una investigación o reporte.
 - No expongas el backend sin autenticación mediante port forwarding, proxy inverso o bind público.
@@ -263,9 +293,28 @@ OIHK Basic está destinado al trabajo autorizado con fuentes públicas o datos i
 
 Consulta [Security Policy](SECURITY.md), [Privacy](PRIVACY.md), [Threat Model](THREAT_MODEL.md) y [Responsible Use](RESPONSIBLE_USE.md).
 
+### El navegador también está dentro del límite de confianza
+
+Escuchar solo en loopback protege frente a un atacante *de red*, no frente a una página web que abra la persona usuaria. El navegador puede hacer peticiones a `127.0.0.1`, así que dos controles se aplican en toda petición sin importar el modo de autenticación:
+
+- **Validación de `Host`.** Se comprueba en todos los métodos, incluidas las lecturas. Un bind loopback acepta únicamente autoridades loopback, que es lo que rechaza una respuesta de DNS rebinding apuntando un dominio del atacante al puerto local.
+- **Validación de `Origin`.** Los métodos que modifican estado se contrastan con la lista de orígenes permitidos antes del enrutado y antes de leer el cuerpo. CORS nunca impidió una *escritura* cross-origin: las rutas de ingesta aceptan `multipart/form-data`, un content-type de la CORS safelist que no dispara preflight, así que una página hostil podría plantar un archivo en un caso y limitarse a no leer la respuesta.
+
+Las peticiones sin `Origin` son clientes que no son navegadores —el core de Tauri, el runner de smoke de System Link— y pasan con normalidad.
+
+### Variables de configuración relevantes
+
+| Variable | Efecto |
+| --- | --- |
+| `OIHK_CORS_ORIGINS` | Orígenes permitidos. Es también la lista contra la que se validan los cambios de estado cross-origin. |
+| `OIHK_ALLOWED_HOSTS` | Autoridades `Host` aceptadas. Vacío es correcto en loopback: se deriva solo. Una entrada sin puerto acepta cualquier puerto. |
+| `OIHK_DOCS_ENABLED` | Fuerza `/docs`, `/redoc` y `/openapi.json`. Activos en desarrollo, retirados en el build de escritorio y en producción. |
+
 ### Autenticación opcional
 
-OIHK Basic es monousuario y local por defecto. Con `OIHK_AUTH_ENABLED=false`, el backend se niega a iniciar en un bind no-loopback. Los despliegues personalizados pueden activar autenticación con `OIHK_AUTH_ENABLED=true`, pero ese modo también es experimental durante la etapa alpha.
+OIHK Basic es monousuario y local por defecto. Con `OIHK_AUTH_ENABLED=false`, el backend se niega a iniciar en un bind no-loopback. Los despliegues personalizados pueden activar autenticación con `OIHK_AUTH_ENABLED=true`, pero ese modo recibe menos ejercicio que el monousuario y conviene tratarlo como menos maduro.
+
+Un despliegue fuera de loopback no puede derivar su lista de `Host`, así que en producción el servidor se niega a arrancar sin `OIHK_ALLOWED_HOSTS` en lugar de dejar el control abierto.
 
 ## OIHK System Link
 
@@ -288,7 +337,7 @@ cd frontend
 npm run release:local
 ```
 
-No distribuyas ese instalador como versión oficial. Los releases alpha firmados requieren secretos de CI y un proceso separado de validación. Consulta [Building](docs/BUILDING.md), [Releasing](docs/RELEASING.md) y [Updates](docs/UPDATES.md).
+No distribuyas ese instalador como versión oficial. Los releases firmados requieren secretos de CI y un proceso separado de validación que todavía no se ha cerrado. Consulta [Building](docs/BUILDING.md), [Releasing](docs/RELEASING.md) y [Updates](docs/UPDATES.md).
 
 ## Documentación
 

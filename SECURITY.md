@@ -2,11 +2,20 @@
 
 ## Supported version
 
-Security fixes target the current `0.1.x` line until a newer release policy is published.
+Security fixes target the current `0.2.x` beta line until a newer release policy is published.
 
 ## Local trust boundary
 
 OIHK Basic is a single-user desktop application. Authentication is disabled by default and the backend is therefore restricted to loopback. Do not expose that mode through port forwarding, a reverse proxy or a non-loopback bind. Custom network deployments must enable authentication and configure an administrator and strong environment-specific secrets.
+
+Loopback bounds the *network*, not the *browser*. A web page the operator visits can issue requests to 127.0.0.1, so two controls apply on every request regardless of the authentication mode:
+
+- **Host validation.** The `Host` authority is checked on every method, reads included. A loopback bind accepts only loopback authorities, which is what refuses a DNS-rebinding answer that points an attacker-controlled name at the local port. Non-loopback deployments must list their hostnames in `OIHK_ALLOWED_HOSTS`; in production the server refuses to start without them rather than failing open.
+- **Origin validation.** Unsafe methods are checked against the origin allowlist before routing and before body parsing. This exists because CORS does not stop cross-origin *writes*: the ingestion routes accept `multipart/form-data`, a CORS-safelisted content type that is never preflighted, so a hostile page could otherwise plant a file in a case and simply not read the reply. Requests with no `Origin` are ordinary non-browser callers and pass; a browser reporting `Sec-Fetch-Site: cross-site` is refused even without one.
+
+Interactive API documentation (`/docs`, `/redoc`, `/openapi.json`) is served in development only. The packaged desktop build and production withdraw it, since it maps the API for anyone who does reach the port. Set `OIHK_DOCS_ENABLED=true` to override.
+
+Every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: same-origin`, a restrictive `Permissions-Policy`, `Cache-Control: no-store` and `X-Frame-Options: DENY`. A route that sets one of these itself keeps its own value, so the evidence preview sandbox and the System Link module surface remain the authority on their own content. `no-store` is deliberate: a response body here can be evidence, and the webview cache would be an unmanaged copy of it that no custody record accounts for.
 
 ## Data and evidence
 
@@ -45,15 +54,17 @@ Release workflows pin third-party actions to immutable commits, run Gitleaks and
 
 ## Residual risks
 
-These are known and accepted for the current alpha; they are not claims of completeness.
+These are known and accepted for the current beta; they are not claims of completeness.
 
-- **Loopback is the boundary.** With authentication disabled, any local process running as the same user can reach the API. Basic refuses to start on a non-loopback bind in that mode, but it does not attempt to authenticate local callers.
+- **Loopback is the boundary.** With authentication disabled, any local process running as the same user can reach the API. Basic refuses to start on a non-loopback bind in that mode, but it does not attempt to authenticate local callers. The `Host` and `Origin` controls bound what a *browser* can be made to do; a native process on the same account can set any header it likes and is out of their reach.
+- **Session tokens are validated, not revocable.** With authentication enabled, a token is checked for signature, declared algorithm, issuer and expiry, and the account must still be active. There is no server-side revocation list, so a leaked token stays usable until it expires.
 - **Third-party lookup content is not verified.** Bounding a response prevents resource exhaustion; it does not make RDAP, crt.sh or model output trustworthy. Findings remain unpromoted until a user acts on them.
 - **DNS rebinding on model endpoints is mitigated, not eliminated.** The connected peer is checked when the transport exposes it. A transport that does not expose the peer address falls back to the endpoint-string check alone.
 - **Rate limiting is in-process and best-effort.** It bounds its own memory, but it is not a substitute for a network control in a shared deployment.
 - **Import ceilings are fixed, not adaptive.** CSV and hash-set imports stop at a row limit rather than sizing to available resources.
 - **Sidecar resolution is path-pinned, not signature-verified.** The packaged backend is loaded from the installation directory; it is not hash-checked before launch the way System Link module executables are.
-- **`backend/tests` entered lint coverage in this pass.** It had never been linted, so previously unreported issues in that tree may still surface.
+- **`backend/tests` entered lint coverage in a recent pass.** It had never been linted, so previously unreported issues in that tree may still surface.
+- **The backend port is chosen by probe, not reserved.** The probe listener must be released before the sidecar can bind, so a local process could take the port in between. The desktop core detects this by watching its own child while polling `/health` and refusing a reply once that child has exited, rather than adopting whatever answers on the port. The race itself is not eliminated.
 
 ## Reporting a vulnerability
 

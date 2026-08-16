@@ -30,9 +30,16 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 - macOS releases require an Apple Developer identity for signing and notarization.
 - Windows executables may need code signing to avoid SmartScreen reputation warnings.
 - The signed Tauri updater is implemented but cannot serve installed clients anonymously while its GitHub repository and release assets are private.
-- A valid end-to-end updater test requires the protected production/test signing key and a controlled public HTTPS alpha endpoint; neither is stored in this repository.
+- A valid end-to-end updater test requires the protected production/test signing key and a controlled public HTTPS endpoint; neither is stored in this repository.
 - Cancellation during an active updater HTTP transfer is best-effort, although cancellation prevents installation.
-- Linux and macOS builders exist, but this alpha readiness review targets Windows x64 and does not declare those artifacts release-ready.
+- Linux and macOS builders exist, but the current readiness review targets Windows x64 and does not declare those artifacts release-ready.
+
+## Local API access
+
+- The backend answers only on loopback authorities. A request whose `Host` header names anything else is refused, which is what stops a DNS-rebinding page — but it also means a custom deployment reached under a real hostname must list it in `OIHK_ALLOWED_HOSTS`.
+- Cross-origin state changes are refused against the `OIHK_CORS_ORIGINS` allowlist. A separately hosted frontend, or a dev server on an unlisted port, must be added there or its writes will fail with `origin_not_allowed`.
+- Interactive API docs are unavailable in the packaged desktop build. Use a development run, or set `OIHK_DOCS_ENABLED=true`.
+- Responses are sent with `Cache-Control: no-store`, so evidence previews and other assets are re-fetched rather than cached by the webview.
 
 ## Edition boundary
 
