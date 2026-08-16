@@ -418,3 +418,36 @@ async def test_stream_endpoint_persists_and_emits_deltas(tmp_path, monkeypatch):
         assert row.model == "local-test-model"
 
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_a_mutating_tool_without_a_registered_intent_pattern_is_refused(tmp_path, monkeypatch):
+    """The write gate has to fail closed when its own registry is incomplete.
+
+    The realistic mistake is adding a tool to AGENT_TOOLS and forgetting its
+    entry in _WRITE_INTENT. Reading "no pattern registered" as "no restriction"
+    would hand that tool unconditional write access, and it would do so
+    silently — every other refusal in this codebase fails closed, so this one
+    must too.
+    """
+    from app.services import assistant_tools
+
+    engine, sessions, current = await _sessions(tmp_path, "agent-write-gate-registry.db")
+    monkeypatch.setattr(assistant_tools, "_WRITE_INTENT", {})
+
+    async with sessions() as session:
+        result = await assistant_tools.execute_agent_tool(
+            tool_name="create_investigation",
+            arguments={"title": "Investigation the registry gap would have allowed"},
+            # Wording the removed pattern would have matched, so the refusal
+            # can only be coming from the missing registration.
+            user_text="crea una investigación sobre esto",
+            active_case_id=None,
+            enabled=None,
+            current=current,
+            session=session,
+        )
+        assert result.ok is False
+        assert (await session.execute(select(models.Case))).scalars().all() == []
+
+    await engine.dispose()
