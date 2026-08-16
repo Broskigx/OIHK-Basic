@@ -107,15 +107,22 @@ it.
 Both look like noise and are not. Removing either produces a build that still
 passes while reporting something untrue.
 
-- **`concurrency = ["greenlet", "thread"]`** under `[tool.coverage.run]` in
-  `backend/pyproject.toml`. SQLAlchemy's asyncio layer switches greenlets, and
-  without declaring that, the tracer loses the frame after every
-  `await session.execute(...)` and reports the following line as unexecuted.
-  Declaring it moved the case router from a reported 38% to 91% without a
-  single test changing.
 - **`ruff.toml` at the repository root**, which extends
   `backend/pyproject.toml`. Without it, a run from the root loses
   `known-first-party` and reports import-order errors that CI considers clean.
+  Verified: removing it makes a root-level `ruff check` disagree with CI.
+- **`concurrency = ["greenlet", "thread"]`** under `[tool.coverage.run]` in
+  `backend/pyproject.toml`. It tells the tracer that SQLAlchemy's asyncio layer
+  switches greenlets, so it does not lose the frame after an
+  `await session.execute(...)`.
+
+  Treat the *size* of its effect as unmeasured. `CHANGELOG.md` records that
+  declaring it moved the case router from 38% to 91% when it was introduced,
+  and that no longer reproduces: the router reads 47% with the setting and 47%
+  without it, and the suite total moves 73% to 74% — slightly the wrong way.
+  The setting is still correct for a greenlet-based async stack and is left in
+  place; what is not safe is repeating the old figure as if it were current.
+  Re-measure before citing a number.
 
 ## Standards
 
