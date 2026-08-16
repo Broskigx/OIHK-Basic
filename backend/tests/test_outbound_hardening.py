@@ -154,11 +154,27 @@ async def test_hostname_resolution_does_not_block_the_event_loop(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_hostname_resolution_times_out_instead_of_hanging(monkeypatch):
-    import time
+    import threading
 
-    monkeypatch.setattr("socket.gethostbyname", lambda _h: time.sleep(30))
-    with pytest.raises(OutboundRequestError):
-        await resolve_hostname_a_record("example.com", timeout=0.25)
+    # Stand-in for a blackholed name: the resolver blocks until released.
+    #
+    # The release matters. `asyncio.wait_for` stops *waiting* on the worker
+    # thread but cannot cancel it, and a thread still blocked when the loop
+    # shuts down is joined by the default executor — so an unreleased sleep
+    # here is paid in full on every run of the suite, long after the assertion
+    # it supports has already passed.
+    blocked = threading.Event()
+
+    def _blocking_resolver(_hostname: str) -> str:
+        blocked.wait(30)
+        return "203.0.113.10"
+
+    monkeypatch.setattr("socket.gethostbyname", _blocking_resolver)
+    try:
+        with pytest.raises(OutboundRequestError):
+            await resolve_hostname_a_record("example.com", timeout=0.25)
+    finally:
+        blocked.set()
 
 
 # --------------------------------------------------------------------------
