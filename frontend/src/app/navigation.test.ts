@@ -30,6 +30,14 @@ describe("platform navigation", () => {
     expect(parsePlatformHash("#/investigations/case-123/tools")).toEqual({ area: "tools", caseId: "case-123" });
   });
 
+  it("keeps the agent out of page navigation and safely retires legacy Copilot links", () => {
+    expect(MAIN_NAVIGATION.some((item) => String(item.id) === "copilot")).toBe(false);
+    expect(parsePlatformHash("#/investigations/case-123/copilot")).toEqual({
+      area: "investigations",
+      caseId: "case-123",
+    });
+  });
+
   it("round-trips only a registered namespaced module route", () => {
     const route = createModuleRouteId("oihk.evidence-lab", "overview");
     const navigation: NavigationItem[] = [{ id: route, label: "Evidence Lab", caseScoped: true }];

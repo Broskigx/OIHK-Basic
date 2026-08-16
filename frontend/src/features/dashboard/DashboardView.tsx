@@ -1,9 +1,11 @@
 import {
   Activity,
   ArrowRight,
+  ArrowUpRight,
   Bot,
   CheckCircle2,
   CircleAlert,
+  Clock3,
   ClipboardList,
   Cpu,
   Database,
@@ -13,8 +15,11 @@ import {
   Link2,
   Loader2,
   Plus,
+  Radar,
   RefreshCw,
   ServerOff,
+  ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { getDashboardSummary } from "../../api";
@@ -78,7 +83,7 @@ function Panel({
   return (
     <section className={`dashboard-panel ${className}`.trim()}>
       <header className="dashboard-panel-header">
-        <div>{Icon && <Icon size={15} aria-hidden="true" />}<h2>{title}</h2></div>
+        <div>{Icon && <span className="dashboard-panel-icon"><Icon size={15} aria-hidden="true" /></span>}<h2>{title}</h2></div>
         {action}
       </header>
       <div className="dashboard-panel-body">{children}</div>
@@ -96,6 +101,7 @@ function MetricCard({ metric }: { metric: DashboardMetric }) {
         <strong>{metric.value}</strong>
         <small>{metric.detail}</small>
       </div>
+      <span className="dashboard-metric-trace" aria-hidden="true"><i /><i /><i /><i /><i /></span>
     </article>
   );
 }
@@ -123,6 +129,7 @@ export function DashboardContent({
   localModelLoading,
   onRetry,
   onRefreshLocalModel,
+  onOpenCopilot,
   onNavigate,
   onOpenCase,
   onNewCase,
@@ -135,26 +142,53 @@ export function DashboardContent({
   localModelLoading: boolean;
   onRetry: () => void;
   onRefreshLocalModel: () => void;
+  onOpenCopilot: () => void;
   onNavigate: (area: PlatformArea) => void;
   onOpenCase: (caseId: string) => void;
   onNewCase: () => void;
 }) {
   const metrics = useMemo(() => (summary ? buildDashboardMetrics(summary) : []), [summary]);
+  const connectedModules = summary?.counts.connected_modules ?? 0;
+  const workspaceProtected = Boolean(storageStatus?.writable);
 
   return (
     <div className="platform-dashboard">
-      <header className="dashboard-heading">
-        <div>
+      <header className="dashboard-hero">
+        <div className="dashboard-hero-copy">
+          <span className="dashboard-live-chip"><i /> Local intelligence command center</span>
           <h1>Dashboard</h1>
-          <p>Local investigation overview.</p>
+          <p>One private workspace for investigations, evidence, relationships, and local AI.</p>
+          <div className="dashboard-heading-actions">
+            <button type="button" className="platform-primary-btn dashboard-new-case" onClick={onNewCase}>
+              <Plus size={15} /> New investigation <ArrowUpRight size={14} />
+            </button>
+            <button type="button" className="platform-ghost-btn" onClick={onRetry} disabled={loading}>
+              <RefreshCw size={14} className={loading ? "spin" : ""} /> Refresh overview
+            </button>
+          </div>
+          <nav className="dashboard-quick-actions" aria-label="Quick workspace actions">
+            <button type="button" onClick={() => onNavigate("graph")}><Radar size={13} /> Intelligence graph</button>
+            <button type="button" onClick={() => onNavigate("evidence")}><ShieldCheck size={13} /> Evidence vault</button>
+            <button type="button" onClick={onOpenCopilot}><Sparkles size={13} /> Open Copilot</button>
+          </nav>
         </div>
-        <div className="dashboard-heading-actions">
-          <button type="button" className="platform-ghost-btn" onClick={onRetry} disabled={loading}>
-            <RefreshCw size={14} className={loading ? "spin" : ""} /> Refresh
-          </button>
-          <button type="button" className="platform-primary-btn" onClick={onNewCase}>
-            <Plus size={15} /> New investigation
-          </button>
+
+        <div className={`dashboard-posture ${workspaceProtected ? "protected" : "attention"}`}>
+          <div className="dashboard-radar" aria-hidden="true">
+            <span /><span /><span />
+            <Radar size={28} />
+          </div>
+          <div className="dashboard-posture-copy">
+            <span>Operational posture</span>
+            <strong>{workspaceProtected ? "Workspace protected" : "Workspace initializing"}</strong>
+            <p>{workspaceProtected ? "SQLite is writable and evidence remains under local custody." : "Local services are still reporting their status."}</p>
+          </div>
+          <div className="dashboard-signal-grid">
+            <span><ShieldCheck size={13} /><small>Storage</small><strong>{storageStatus?.writable ? "Ready" : "Checking"}</strong></span>
+            <span><Cpu size={13} /><small>Local AI</small><strong>{localModelStatus?.connected ? "Online" : "Offline"}</strong></span>
+            <span><Link2 size={13} /><small>Modules</small><strong>{connectedModules} linked</strong></span>
+            <span><Clock3 size={13} /><small>Mode</small><strong>Local</strong></span>
+          </div>
         </div>
       </header>
 
@@ -278,7 +312,7 @@ export function DashboardContent({
           <div className="dashboard-capability-note">
             <CheckCircle2 size={14} />
             <span>All counts come from authorized local records. {summary.counts.tasks_available ? "Task metrics are backed by the local task registry." : "Task metrics remain unavailable until OIHK exposes a task registry."}</span>
-            <button type="button" onClick={() => onNavigate("copilot")}><Bot size={13} /> Open Copilot</button>
+            <button type="button" onClick={onOpenCopilot}><Bot size={13} /> Open Copilot</button>
           </div>
         </>
       )}
@@ -292,6 +326,7 @@ export function DashboardView({
   localModelStatus,
   localModelLoading,
   onRefreshLocalModel,
+  onOpenCopilot,
   onNavigate,
   onOpenCase,
   onNewCase,
@@ -301,6 +336,7 @@ export function DashboardView({
   localModelStatus: LocalModelRuntimeStatus | null;
   localModelLoading: boolean;
   onRefreshLocalModel: () => void;
+  onOpenCopilot: () => void;
   onNavigate: (area: PlatformArea) => void;
   onOpenCase: (caseId: string) => void;
   onNewCase: () => void;
@@ -331,6 +367,7 @@ export function DashboardView({
       localModelLoading={localModelLoading}
       onRetry={() => setReloadVersion((value) => value + 1)}
       onRefreshLocalModel={onRefreshLocalModel}
+      onOpenCopilot={onOpenCopilot}
       onNavigate={onNavigate}
       onOpenCase={onOpenCase}
       onNewCase={onNewCase}

@@ -1,67 +1,56 @@
-import { ArrowRight, Bot, ChevronLeft, ChevronRight, MessageSquareText, X } from "lucide-react";
+import { Bot, ChevronLeft, ChevronRight, MessageSquareText, X } from "lucide-react";
+import { CopilotAgentPanel } from "../features/copilot/CopilotWorkspaceView";
 import type { LocalModelRuntimeStatus } from "../types";
-import type { PlatformArea } from "./navigation";
-
-function suggestionFor(area: PlatformArea) {
-  if (area === "dashboard") return { title: "Summarize activity", detail: "Review recorded local events and recent investigations." };
-  if (area === "investigations") return { title: "Summarize case", detail: "Work from the active investigation context." };
-  if (area === "graph") return { title: "Explain relationships", detail: "Reason over evidence-backed graph connections." };
-  if (area === "evidence") return { title: "Analyze selection", detail: "Use the active investigation evidence context." };
-  if (area === "reports") return { title: "Draft report outline", detail: "Prepare a structured local report workflow." };
-  return { title: "Open Copilot", detail: "Continue in the private local conversation workspace." };
-}
 
 export function CopilotDock({
-  area,
   open,
   collapsed,
+  caseId,
   modelStatus,
   onOpen,
   onClose,
   onToggleCollapsed,
-  onNavigate,
+  onOpenModels,
+  onDataChanged,
 }: {
-  area: PlatformArea;
   open: boolean;
   collapsed: boolean;
+  caseId: string | null;
   modelStatus: LocalModelRuntimeStatus | null;
   onOpen: () => void;
   onClose: () => void;
   onToggleCollapsed: () => void;
-  onNavigate: (area: PlatformArea) => void;
+  onOpenModels: () => void;
+  onDataChanged: () => void;
 }) {
-  const suggestion = suggestionFor(area);
   if (!open) {
-    return <button type="button" className="copilot-launcher" onClick={onOpen} aria-label="Open Copilot"><Bot size={18} /></button>;
+    return <button type="button" className="copilot-launcher" onClick={onOpen} aria-label="Open OIHK Agent"><Bot size={18} /></button>;
   }
 
+  const modelLabel = modelStatus?.connected
+    ? `${modelStatus.model || "Local model"} ready`
+    : modelStatus?.configured
+      ? "Model endpoint offline"
+      : "Model setup required";
+
   return (
-    <aside className={collapsed ? "copilot-dock collapsed" : "copilot-dock"} aria-label="Local Copilot">
+    <aside className={collapsed ? "copilot-dock collapsed" : "copilot-dock"} aria-label="OIHK Agent">
       <header>
-        <div><Bot size={17} /><span>Copilot</span></div>
+        <div className="copilot-dock-title">
+          <span className={modelStatus?.connected ? "connected" : "offline"}><Bot size={17} /></span>
+          <span><strong>OIHK Agent</strong><small>{modelLabel}</small></span>
+        </div>
         <div>
-          <button type="button" onClick={onToggleCollapsed} aria-label={collapsed ? "Expand Copilot" : "Collapse Copilot"} title={collapsed ? "Expand" : "Collapse"}>
+          <button type="button" onClick={onToggleCollapsed} aria-label={collapsed ? "Expand OIHK Agent" : "Collapse OIHK Agent"} title={collapsed ? "Expand" : "Collapse"}>
             {collapsed ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
           </button>
-          <button type="button" onClick={onClose} aria-label="Close Copilot" title="Close"><X size={15} /></button>
+          <button type="button" onClick={onClose} aria-label="Close OIHK Agent" title="Close"><X size={15} /></button>
         </div>
       </header>
       {collapsed ? (
-        <button type="button" className="copilot-collapsed-action" onClick={() => onNavigate("copilot")} title={suggestion.title}><MessageSquareText size={17} /></button>
+        <button type="button" className="copilot-collapsed-action" onClick={onToggleCollapsed} title="Expand OIHK Agent"><MessageSquareText size={17} /></button>
       ) : (
-        <div className="copilot-dock-body">
-          <div className="copilot-identity">
-            <span><Bot size={26} /></span>
-            <strong>Local Copilot</strong>
-            <small>{modelStatus?.connected ? `${modelStatus.model || "Model"} ready` : modelStatus?.configured ? "Model endpoint offline" : "No local model configured"}</small>
-          </div>
-          <button type="button" className="copilot-suggestion" onClick={() => onNavigate("copilot")}>
-            <MessageSquareText size={16} />
-            <span><strong>{suggestion.title}</strong><small>{suggestion.detail}</small></span>
-            <ArrowRight size={14} />
-          </button>
-          <p>Copilot opens the existing case-scoped conversation workspace. It does not generate answers until you submit a request.</p>
-        </div>
+        <CopilotAgentPanel caseId={caseId} modelStatus={modelStatus} onOpenModels={onOpenModels} onDataChanged={onDataChanged} />
       )}
     </aside>
   );

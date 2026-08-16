@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { createCase, deleteCase, downloadCaseExport, duplicateCase, getApplicationSettings, getLocalModelRuntimeStatus, getStorageStatus, importCaseDocument, rerunTargetSearch, saveApplicationSettings, updateCase } from "./api";
 import { isCaseScopedArea, isModuleRouteId, type PlatformArea } from "./app/navigation";
 import { PlatformShell } from "./app/PlatformShell";
+import { useAdaptiveUiScale } from "./app/useAdaptiveUiScale";
 import { usePlatformRoute } from "./app/usePlatformRoute";
 import { DashboardView } from "./features/dashboard/DashboardView";
 import { EntityManagerView } from "./features/entities/EntityManagerView";
 import { EvidenceVaultView } from "./features/evidence/EvidenceVaultView";
-import { CopilotWorkspaceView } from "./features/copilot/CopilotWorkspaceView";
 import { GraphWorkspaceView } from "./features/graph/GraphWorkspaceView";
 import { InvestigationsView } from "./features/investigations/InvestigationsView";
 import { NewInvestigationDialog } from "./features/investigations/NewInvestigationDialog";
@@ -41,6 +41,10 @@ export function App({ currentUser }: { currentUser: User }) {
   const [localModelStatus, setLocalModelStatus] = useState<LocalModelRuntimeStatus | null>(null);
   const [localModelLoading, setLocalModelLoading] = useState(true);
   const [settingsError, setSettingsError] = useState("");
+  const [copilotOpen, setCopilotOpen] = useState(() => window.localStorage.getItem("oihk.copilot.open") !== "false");
+  const [copilotCollapsed, setCopilotCollapsed] = useState(() => window.localStorage.getItem("oihk.copilot.collapsed") === "true");
+
+  useAdaptiveUiScale(applicationSettings?.appearance.text_scale ?? 1);
 
   const systemLink = useSystemLinkRegistry();
   const { route, navigate, navigateCase } = usePlatformRoute(systemLink.moduleNavigation);
@@ -152,10 +156,15 @@ export function App({ currentUser }: { currentUser: User }) {
 
   useEffect(() => {
     if (!applicationSettings) return;
-    document.documentElement.style.fontSize = `${applicationSettings.appearance.text_scale * 100}%`;
+    document.documentElement.style.fontSize = "100%";
     document.documentElement.dataset.density = applicationSettings.appearance.density;
     document.documentElement.classList.toggle("reduce-motion", applicationSettings.appearance.reduce_motion);
   }, [applicationSettings]);
+
+  useEffect(() => {
+    window.localStorage.setItem("oihk.copilot.open", String(copilotOpen));
+    window.localStorage.setItem("oihk.copilot.collapsed", String(copilotCollapsed));
+  }, [copilotCollapsed, copilotOpen]);
 
   const openCase = useCallback((caseId: string) => {
     if (caseId) navigateCase(caseId);
@@ -383,6 +392,7 @@ export function App({ currentUser }: { currentUser: User }) {
             localModelStatus={localModelStatus}
             localModelLoading={localModelLoading}
             onRefreshLocalModel={() => void refreshLocalModelStatus()}
+            onOpenCopilot={() => { setCopilotOpen(true); setCopilotCollapsed(false); }}
             onNavigate={handleNavigate}
             onOpenCase={(caseId) => void openCase(caseId)}
             onNewCase={openNewCaseDialog}
@@ -512,15 +522,6 @@ export function App({ currentUser }: { currentUser: User }) {
           />
         ) : null;
         break;
-      case "copilot":
-        content = (
-          <CopilotWorkspaceView
-            caseId={caseMgr.activeCaseId}
-            targetId={caseMgr.activeTargetId}
-            onOpenModels={() => handleNavigate("models")}
-          />
-        );
-        break;
       case "osint":
         content = (
           <OsintWorkspaceView
@@ -587,14 +588,20 @@ export function App({ currentUser }: { currentUser: User }) {
         storageStatus={storageStatus}
         localModelStatus={localModelStatus}
         localModelLoading={localModelLoading}
+        activeCaseId={caseMgr.activeCaseId}
         systemLinkStatus={systemLink.status}
         moduleNavigation={systemLink.moduleNavigation}
         loading={loading}
         error={error}
         onNavigate={handleNavigate}
+        copilotOpen={copilotOpen}
+        copilotCollapsed={copilotCollapsed}
+        onCopilotOpenChange={setCopilotOpen}
+        onCopilotCollapsedChange={setCopilotCollapsed}
         onOpenCase={(caseId) => void openCase(caseId)}
         onNewCase={openNewCaseDialog}
         onDismissError={() => setError("")}
+        onAgentDataChanged={() => void caseMgr.refresh(caseMgr.activeCaseId || undefined)}
       >
         {content}
       </PlatformShell>

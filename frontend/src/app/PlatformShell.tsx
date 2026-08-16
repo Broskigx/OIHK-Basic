@@ -41,6 +41,7 @@ import {
   type PlatformArea,
 } from "./navigation";
 import { CopilotDock } from "./CopilotDock";
+import { useInterfaceMotion } from "./useInterfaceMotion";
 
 const NAV_ICONS: Record<CorePlatformArea, LucideIcon> = {
   dashboard: CircleGauge,
@@ -52,7 +53,6 @@ const NAV_ICONS: Record<CorePlatformArea, LucideIcon> = {
   osint: ScanSearch,
   tools: Microscope,
   reports: FileText,
-  copilot: Bot,
   models: HardDrive,
   sources: Database,
   "system-link": Cable,
@@ -69,14 +69,20 @@ export function PlatformShell({
   storageStatus,
   localModelStatus,
   localModelLoading,
+  activeCaseId,
   systemLinkStatus,
   moduleNavigation,
   loading,
   error,
   onNavigate,
+  copilotOpen,
+  copilotCollapsed,
+  onCopilotOpenChange,
+  onCopilotCollapsedChange,
   onOpenCase,
   onNewCase,
   onDismissError,
+  onAgentDataChanged,
   children,
 }: {
   area: PlatformArea;
@@ -87,32 +93,34 @@ export function PlatformShell({
   storageStatus: StorageStatus | null;
   localModelStatus: LocalModelRuntimeStatus | null;
   localModelLoading: boolean;
+  activeCaseId: string | null;
   systemLinkStatus: SystemLinkStatus | null;
   moduleNavigation: readonly NavigationItem[];
   loading: boolean;
   error: string;
   onNavigate: (area: PlatformArea) => void;
+  copilotOpen: boolean;
+  copilotCollapsed: boolean;
+  onCopilotOpenChange: (open: boolean) => void;
+  onCopilotCollapsedChange: (collapsed: boolean) => void;
   onOpenCase: (caseId: string) => void;
   onNewCase: () => void;
   onDismissError: () => void;
+  onAgentDataChanged: () => void;
   children: React.ReactNode;
 }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.localStorage.getItem("oihk.sidebar.collapsed") === "true");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [copilotOpen, setCopilotOpen] = useState(() => window.localStorage.getItem("oihk.copilot.open") !== "false");
-  const [copilotCollapsed, setCopilotCollapsed] = useState(() => window.localStorage.getItem("oihk.copilot.collapsed") === "true");
   const searchRef = useRef<HTMLInputElement>(null);
+  const shellRef = useRef<HTMLElement>(null);
+
+  useInterfaceMotion(area, shellRef);
 
   useEffect(() => {
     window.localStorage.setItem("oihk.sidebar.collapsed", String(sidebarCollapsed));
   }, [sidebarCollapsed]);
-
-  useEffect(() => {
-    window.localStorage.setItem("oihk.copilot.open", String(copilotOpen));
-    window.localStorage.setItem("oihk.copilot.collapsed", String(copilotCollapsed));
-  }, [copilotCollapsed, copilotOpen]);
 
   // Global search shortcut: Ctrl+K
   useEffect(() => {
@@ -184,7 +192,7 @@ export function PlatformShell({
         : "Model not configured";
 
   return (
-    <main className={`platform-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${copilotOpen ? " copilot-open" : ""}${copilotCollapsed ? " copilot-collapsed" : ""}`}>
+    <main ref={shellRef} data-area={area} className={`platform-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}${copilotOpen ? " copilot-open" : ""}${copilotCollapsed ? " copilot-collapsed" : ""}`}>
       {/* ── Sidebar ── */}
       <aside className={mobileSidebarOpen ? "platform-sidebar mobile-open" : "platform-sidebar"}>
         {/* Brand */}
@@ -216,6 +224,7 @@ export function PlatformShell({
                       className={area === item.id ? "platform-nav-item active" : "platform-nav-item"}
                       onClick={() => { onNavigate(item.id); setMobileSidebarOpen(false); }}
                       title={item.label}
+                      aria-current={area === item.id ? "page" : undefined}
                     >
                       <Icon size={16} aria-hidden="true" />
                       <span>{item.label}</span>
@@ -358,7 +367,7 @@ export function PlatformShell({
             <Settings size={15} />
           </button>
 
-          {!copilotOpen && <button type="button" className="platform-icon-btn" onClick={() => setCopilotOpen(true)} title="Open Copilot" aria-label="Open Copilot"><Bot size={15} /></button>}
+          {!copilotOpen && <button type="button" className="platform-icon-btn" onClick={() => { onCopilotOpenChange(true); onCopilotCollapsedChange(false); }} title="Open Copilot" aria-label="Open Copilot"><Bot size={15} /></button>}
 
           {/* User chip */}
           <div className="platform-user-chip">
@@ -374,7 +383,7 @@ export function PlatformShell({
       </header>
 
       {/* ── Content ── */}
-      <section className="platform-main">
+      <section className="platform-main" aria-live="polite">
         {error && (
           <div className="platform-error" role="alert">
             <div className="platform-error-content">
@@ -394,14 +403,15 @@ export function PlatformShell({
         {children}
       </section>
       <CopilotDock
-        area={area}
         open={copilotOpen}
         collapsed={copilotCollapsed}
         modelStatus={localModelStatus}
-        onOpen={() => setCopilotOpen(true)}
-        onClose={() => setCopilotOpen(false)}
-        onToggleCollapsed={() => setCopilotCollapsed((value) => !value)}
-        onNavigate={onNavigate}
+        caseId={activeCaseId}
+        onOpen={() => { onCopilotOpenChange(true); onCopilotCollapsedChange(false); }}
+        onClose={() => onCopilotOpenChange(false)}
+        onToggleCollapsed={() => onCopilotCollapsedChange(!copilotCollapsed)}
+        onOpenModels={() => onNavigate("models")}
+        onDataChanged={onAgentDataChanged}
       />
     </main>
   );

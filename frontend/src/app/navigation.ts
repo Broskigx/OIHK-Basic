@@ -8,7 +8,6 @@ export type CorePlatformArea =
   | "osint"
   | "tools"
   | "reports"
-  | "copilot"
   | "models"
   | "sources"
   | "system-link"
@@ -54,7 +53,6 @@ export const CORE_NAVIGATION: NavigationItem[] = [
   { id: "osint", label: "OSINT Workspace", caseScoped: true, group: "more" },
   { id: "tools", label: "Tools", caseScoped: true, group: "more" },
   { id: "sources", label: "Data Sources", caseScoped: true, group: "more" },
-  { id: "copilot", label: "Copilot", caseScoped: true, group: "more" },
   { id: "about", label: "About", caseScoped: false, group: "more" },
 ];
 
