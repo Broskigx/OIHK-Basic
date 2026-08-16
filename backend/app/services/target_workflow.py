@@ -52,11 +52,17 @@ async def create_target_case(
     owner_id: str,
     organization_id: str = "default",
 ) -> tuple[models.Case, models.TargetProfile, list[models.CaseMemory]]:
+    # Stripped here as well as on the profile below. Intake is a free-text box,
+    # and the two were reading the same fields differently: the profile stored
+    # "Ada" while the case it belongs to was titled "  Ada  ", which then leads
+    # every list, export and report that shows a case title.
+    display_name = f"{first_name.strip()} {last_name.strip()}".strip()
+
     case = models.Case(
         owner_id=owner_id,
         organization_id=organization_id,
-        title=f"{first_name} {last_name}",
-        summary=f"Investigation: {first_name} {last_name}",
+        title=display_name,
+        summary=f"Investigation: {display_name}",
         legal_basis=legal_basis,
         scope_statement=scope_statement,
     )
@@ -114,11 +120,13 @@ async def run_target_search(
     hits: list[models.SearchHit] = []
     all_results: list[dict] = []
 
+    failed_queries = 0
     for query in queries:
         try:
             results = await search_public(query, max_results=5)
             all_results.extend(results)
         except Exception:
+            failed_queries += 1
             logger.warning("Public search failed for query %r; continuing with other queries", query, exc_info=True)
             continue
 
@@ -143,7 +151,12 @@ async def run_target_search(
         session.add(hit)
         hits.append(hit)
 
-    search_run.status = "completed" if not all_results else "completed"
+    # "Completed with no hits" is a finding: it records that the sources were
+    # searched and held nothing. If every query errored instead, no such search
+    # happened, and storing the same status would put a conclusion in the case
+    # file that was never reached. A run that partly succeeded stays completed —
+    # the queries that did run produced real results.
+    search_run.status = "failed" if failed_queries == len(queries) else "completed"
     search_run.hit_count = len(hits)
     search_run.query_count = len(queries)
     search_run.completed_at = models.utcnow()
