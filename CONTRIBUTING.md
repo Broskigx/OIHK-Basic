@@ -91,6 +91,17 @@ That floor is a regression guard against a whole route silently losing its
 tests. It is not a target to chase, and padding it with tests that execute
 lines without pinning behaviour makes the signal worse.
 
+Optional, and the same checks in the same configuration:
+
+```bash
+python -m pip install pre-commit
+pre-commit install
+```
+
+`.pre-commit-config.yaml` deliberately runs nothing CI does not. A hook that
+disagrees with the pipeline is worse than no hook — it teaches you to bypass
+it.
+
 ## Two configuration details that are load-bearing
 
 Both look like noise and are not. Removing either produces a build that still

@@ -142,6 +142,32 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      # The Python and Node jobs cache their dependencies through their setup
+      # actions; this job had none, so every run re-downloaded the crate
+      # registry, rebuilt every dependency, and compiled cargo-audit from
+      # source before it could audit anything.
+      #
+      # The key is the lockfile: a dependency change invalidates it, which is
+      # exactly when a stale build directory would be wrong. `restore-keys`
+      # lets a lockfile bump start from the previous build rather than from
+      # nothing, since most crates are unchanged across one.
+      #
+      # `~/.cargo/bin` is included on purpose — it is where cargo-audit lands,
+      # and reinstalling a pinned version on every run is the single most
+      # expensive step in this job.
+      - name: Cache Rust toolchain artifacts
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Rust formatting
         working-directory: src-tauri
         run: cargo fmt -- --check
@@ -156,8 +182,17 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked --all-targets
 
+      # Skipped entirely when the cache already holds the pinned build. The
+      # version stays pinned so a restored binary and a fresh install are the
+      # same tool.
       - name: Install cargo-audit
-        run: cargo install cargo-audit --version 0.22.2 --locked
+        shell: bash
+        run: |
+          if cargo audit --version 2>/dev/null | grep -q "0.22.2"; then
+            echo "cargo-audit 0.22.2 restored from cache"
+          else
+            cargo install cargo-audit --version 0.22.2 --locked
+          fi
 
       - name: Audit Rust dependencies
         working-directory: src-tauri
