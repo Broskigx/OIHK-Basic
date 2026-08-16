@@ -73,6 +73,7 @@ export function InvestigationsView({
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [sort, setSort] = useState<"updated" | "name" | "priority">("updated");
   const [editing, setEditing] = useState<CaseRead | null>(null);
+  const [importError, setImportError] = useState("");
   const importRef = useRef<HTMLInputElement>(null);
 
   const filteredCases = useMemo(() => {
@@ -90,14 +91,15 @@ export function InvestigationsView({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    setImportError("");
     if (file.size > 10 * 1024 * 1024) {
-      window.alert("Investigation imports are limited to 10 MB.");
+      setImportError("Investigation imports are limited to 10 MB.");
       return;
     }
     try {
       await onImport(JSON.parse(await file.text()) as unknown);
     } catch (cause) {
-      window.alert(cause instanceof Error ? cause.message : "The selected file is not valid JSON.");
+      setImportError(cause instanceof Error ? cause.message : "The selected file is not valid JSON.");
     }
   }
 
@@ -113,6 +115,8 @@ export function InvestigationsView({
           <button type="button" className="platform-primary-btn" onClick={onNewCase} disabled={loading}><Plus size={14} /> New investigation</button>
         </>}
       />
+
+      {importError && <div className="platform-inline-error" role="alert">{importError}</div>}
 
       {cases.length === 0 ? (
         <div className="platform-investigations-empty">
@@ -150,12 +154,12 @@ export function InvestigationsView({
                   <td className="platform-numeric-cell">{item.relationship_count} / {item.source_count}</td>
                   <td><span className="platform-date"><Clock3 size={12} /> {formatDate(item.updated_at)}</span></td>
                   <td><div className="investigation-row-actions">
-                    <button type="button" title="Open" onClick={(event) => { event.stopPropagation(); onOpenCase(item.id); }}><ArrowRight size={12} /></button>
-                    <button type="button" title="Edit" onClick={(event) => { event.stopPropagation(); setEditing(item); }}><Pencil size={12} /></button>
-                    <button type="button" title="Duplicate" onClick={(event) => { event.stopPropagation(); void onDuplicate(item.id); }}><Copy size={12} /></button>
-                    <button type="button" title="Export" onClick={(event) => { event.stopPropagation(); void onExport(item.id, item.title); }}><Download size={12} /></button>
-                    <button type="button" title={item.status === "archived" ? "Restore" : "Archive"} onClick={(event) => { event.stopPropagation(); void onSetStatus(item.id, item.status === "archived" ? "active" : "archived"); }}>{item.status === "archived" ? <RotateCcw size={12} /> : <Archive size={12} />}</button>
-                    <button type="button" className="danger" title="Delete" onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete “${item.title}” and all of its local data? This cannot be undone.`)) void onDelete(item.id); }}><Trash2 size={12} /></button>
+                    <button type="button" title="Open" aria-label={`Open ${item.title}`} onClick={(event) => { event.stopPropagation(); onOpenCase(item.id); }}><ArrowRight size={12} /></button>
+                    <button type="button" title="Edit" aria-label={`Edit ${item.title}`} onClick={(event) => { event.stopPropagation(); setEditing(item); }}><Pencil size={12} /></button>
+                    <button type="button" title="Duplicate" aria-label={`Duplicate ${item.title}`} onClick={(event) => { event.stopPropagation(); void onDuplicate(item.id); }}><Copy size={12} /></button>
+                    <button type="button" title="Export" aria-label={`Export ${item.title}`} onClick={(event) => { event.stopPropagation(); void onExport(item.id, item.title); }}><Download size={12} /></button>
+                    <button type="button" title={item.status === "archived" ? "Restore" : "Archive"} aria-label={`${item.status === "archived" ? "Restore" : "Archive"} ${item.title}`} onClick={(event) => { event.stopPropagation(); void onSetStatus(item.id, item.status === "archived" ? "active" : "archived"); }}>{item.status === "archived" ? <RotateCcw size={12} /> : <Archive size={12} />}</button>
+                    <button type="button" className="danger" title="Delete" aria-label={`Delete ${item.title}`} onClick={(event) => { event.stopPropagation(); if (window.confirm(`Delete “${item.title}” and all of its local data? This cannot be undone.`)) void onDelete(item.id); }}><Trash2 size={12} /></button>
                   </div></td>
                 </tr>
               ))}</tbody>

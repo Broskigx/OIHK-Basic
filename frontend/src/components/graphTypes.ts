@@ -20,7 +20,7 @@ export interface NodeTypeConfig {
   icon?: string;
 }
 
-export const NODE_TYPE_CONFIGS: Record<string, NodeTypeConfig> = {
+const NODE_TYPE_CONFIGS: Record<string, NodeTypeConfig> = {
   name:         { type: "name",         label: "Persona",         category: "person",   color: "#4ade80", borderColor: "#166534", shape: "circle" },
   handle:       { type: "handle",       label: "Handle/Alias",    category: "person",   color: "#c084fc", borderColor: "#7c3aed", shape: "circle" },
   friend:       { type: "friend",       label: "Amigo/Familiar",  category: "person",   color: "#f472b6", borderColor: "#be185d", shape: "circle" },

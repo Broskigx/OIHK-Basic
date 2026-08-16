@@ -1,4 +1,4 @@
-export type UpdatePhase =
+type UpdatePhase =
   | "idle"
   | "checking"
   | "current"

@@ -2369,6 +2369,7 @@ textarea:focus-visible,
 .graph-node-search-results { border-color: var(--border-strong); background: var(--bg-panel-elevated); }
 .graph-node-search-results button.active { background: var(--accent-soft); }
 .graph-stage { min-height: 510px !important; background: var(--bg-root); }
+.graph-stage > .graph-empty-state { flex: 1; min-width: 0; min-height: 100%; }
 .graph-legend,
 .graph-metrics { border-color: var(--border-subtle); background: rgba(13, 19, 23, .9); }
 .graph-metrics { top: 10px; right: 10px; }

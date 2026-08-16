@@ -422,7 +422,7 @@ export function CopilotAgentPanel({
                         {message.tool_calls.map((call, callIndex) => (
                           <div key={`${message.id}-${call.tool}-${callIndex}`} className={call.ok ? "ok" : "failed"}>
                             {call.ok ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
-                            <span><strong>{call.tool.split("_").join(" ")}</strong> — {call.result_summary}</span>
+                            <span><strong>{call.tool.replace(/_/g, " ")}</strong> — {call.result_summary}</span>
                           </div>
                         ))}
                       </div>

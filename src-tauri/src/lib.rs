@@ -121,10 +121,10 @@ fn start_backend(port: u16) -> Result<Child, String> {
             }
         }
 
-        return Err(
+        Err(
             "Could not find backend/run.py. Please run from the OIHK-Basic project root."
                 .to_string(),
-        );
+        )
     }
 
     #[cfg(not(debug_assertions))]

@@ -136,9 +136,9 @@ class Settings(BaseSettings):
     # anchors. Development publisher signatures are accepted ONLY when this
     # flag is explicitly enabled (development/CI/E2E). Production installs
     # must keep it off so unknown publisher keys are rejected fail-closed.
-    system_link_allow_development_publishers: Annotated[
-        bool, Field(alias="OIHK_SYSTEM_LINK_ALLOW_DEV_PUBLISHERS")
-    ] = False
+    system_link_allow_development_publishers: Annotated[bool, Field(alias="OIHK_SYSTEM_LINK_ALLOW_DEV_PUBLISHERS")] = (
+        False
+    )
 
     # --- Rate limiting ---
     rate_limit_enabled: Annotated[bool, Field(alias="OIHK_RATE_LIMIT_ENABLED")] = True
@@ -222,6 +222,9 @@ class _PackagedDesktopSettings(Settings):
         dotenv_settings,
         file_secret_settings,
     ):
+        # Pydantic calls this hook with a fixed signature; packaged desktop
+        # mode intentionally accepts constructor values only.
+        del settings_cls, env_settings, dotenv_settings, file_secret_settings
         return (init_settings,)
 
 

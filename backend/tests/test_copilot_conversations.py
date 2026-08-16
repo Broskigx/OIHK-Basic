@@ -24,6 +24,35 @@ class _Provider:
             yield chunk
 
 
+class _FriendlyProvider:
+    async def complete(self, **kwargs) -> str:
+        assert "A greeting is a greeting" in kwargs["messages"][0]["content"]
+        return '{"reply":"¡Hola! ¿Qué quieres investigar hoy?","tool_calls":[]}'
+
+    async def stream(self, **kwargs):
+        yield "unused"
+
+
+class _CreateInvestigationProvider:
+    def __init__(self, *, force_write: bool = False):
+        self.calls = 0
+        self.force_write = force_write
+
+    async def complete(self, **kwargs) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return (
+                '{"reply":"","tool_calls":[{"tool":"create_investigation","arguments":'
+                '{"title":"Caso creado por Agente","summary":"Prueba del agente",'
+                '"legal_basis":"Authorized research","scope_statement":'
+                '"Bounded authorized test investigation.","priority":"high","tags":["agent"]}}]}'
+            )
+        return "Listo, creé la investigación y quedó activa."
+
+    async def stream(self, **kwargs):
+        yield "unused"
+
+
 async def _sessions(tmp_path, db_name: str = "copilot.db", seed: bool = True):
     """Create an engine over a SQLite file, optionally seeding the local user."""
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / db_name}")
@@ -44,9 +73,7 @@ async def _sessions(tmp_path, db_name: str = "copilot.db", seed: bool = True):
         ).scalar_one_or_none()
         existing_config = (
             await session.execute(
-                select(models.LocalModelConfiguration).where(
-                    models.LocalModelConfiguration.user_id == user_id
-                )
+                select(models.LocalModelConfiguration).where(models.LocalModelConfiguration.user_id == user_id)
             )
         ).scalar_one_or_none()
         if existing_user is None:
@@ -112,6 +139,115 @@ async def test_create_save_and_open_chat(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_greeting_gets_a_natural_reply_instead_of_evidence_boilerplate(tmp_path, monkeypatch):
+    monkeypatch.setattr(assistant, "build_local_provider", lambda *args, **kwargs: _FriendlyProvider())
+    engine, sessions, current = await _sessions(tmp_path, "friendly.db")
+
+    async with sessions() as session:
+        conversation = await assistant.create_conversation(
+            ConversationCreate(title="New conversation"), current, session
+        )
+        reply = await assistant.send_message(
+            conversation.id,
+            ConversationMessageCreate(content="hola"),
+            current,
+            session,
+        )
+        assert reply.assistant_message.content.startswith("¡Hola! Soy OIHK Agent.")
+        assert reply.assistant_message.tool_calls == []
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_agent_can_create_an_investigation_with_an_audited_tool_call(tmp_path, monkeypatch):
+    provider = _CreateInvestigationProvider()
+    monkeypatch.setattr(assistant, "build_local_provider", lambda *args, **kwargs: provider)
+    engine, sessions, current = await _sessions(tmp_path, "agent-tools.db")
+
+    async with sessions() as session:
+        conversation = await assistant.create_conversation(
+            ConversationCreate(title="New conversation"), current, session
+        )
+        reply = await assistant.send_message(
+            conversation.id,
+            ConversationMessageCreate(
+                content="Crea una investigación llamada Caso creado por Agente con prioridad alta"
+            ),
+            current,
+            session,
+        )
+        created = (await session.execute(select(models.Case))).scalar_one()
+        assert created.title == "Caso creado por Agente"
+        assert created.priority == "high"
+        assert "Creé **Caso creado por Agente**" in reply.assistant_message.content
+        assert reply.assistant_message.tool_calls[0]["tool"] == "create_investigation"
+        assert reply.assistant_message.tool_calls[0]["ok"] is True
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_common_list_intent_uses_the_tool_without_waiting_for_model_planning(tmp_path, monkeypatch):
+    class _ShouldNotRun:
+        async def complete(self, **kwargs):
+            raise AssertionError("common investigation listing should not invoke the model")
+
+    monkeypatch.setattr(assistant, "build_local_provider", lambda *args, **kwargs: _ShouldNotRun())
+    engine, sessions, current = await _sessions(tmp_path, "agent-fast-list.db")
+
+    async with sessions() as session:
+        session.add(
+            models.Case(
+                owner_id=current.id,
+                organization_id=current.organization_id,
+                title="Fast case",
+                summary="",
+                legal_basis="Authorized research",
+                scope_statement="Bounded authorized test investigation.",
+            )
+        )
+        await session.commit()
+        conversation = await assistant.create_conversation(
+            ConversationCreate(title="New conversation"), current, session
+        )
+        reply = await assistant.send_message(
+            conversation.id,
+            ConversationMessageCreate(content="Lista mis investigaciones"),
+            current,
+            session,
+        )
+        assert "Encontré 1 investigaciones" in reply.assistant_message.content
+        assert "Fast case" in reply.assistant_message.content
+        assert reply.assistant_message.tool_calls[0]["tool"] == "list_investigations"
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_agent_refuses_unrequested_model_write(tmp_path, monkeypatch):
+    provider = _CreateInvestigationProvider(force_write=True)
+    monkeypatch.setattr(assistant, "build_local_provider", lambda *args, **kwargs: provider)
+    engine, sessions, current = await _sessions(tmp_path, "agent-write-gate.db")
+
+    async with sessions() as session:
+        conversation = await assistant.create_conversation(
+            ConversationCreate(title="New conversation"), current, session
+        )
+        reply = await assistant.send_message(
+            conversation.id,
+            ConversationMessageCreate(content="Cuéntame un chiste"),
+            current,
+            session,
+        )
+        assert (await session.execute(select(models.Case))).scalars().all() == []
+        assert reply.assistant_message.tool_calls[0]["ok"] is False
+        assert "did not explicitly request" in reply.assistant_message.tool_calls[0]["result_summary"]
+
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_switch_between_chats_keeps_messages_isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(assistant, "build_local_provider", lambda *args, **kwargs: _Provider())
     engine, sessions, current = await _sessions(tmp_path)
@@ -119,9 +255,15 @@ async def test_switch_between_chats_keeps_messages_isolated(tmp_path, monkeypatc
     async with sessions() as session:
         first = await assistant.create_conversation(ConversationCreate(title="Alpha"), current, session)
         second = await assistant.create_conversation(ConversationCreate(title="Beta"), current, session)
-        await assistant.send_message(first.id, ConversationMessageCreate(content="Summarize this evidence"), current, session)
-        await assistant.send_message(first.id, ConversationMessageCreate(content="Summarize this evidence"), current, session)
-        await assistant.send_message(second.id, ConversationMessageCreate(content="Summarize this evidence"), current, session)
+        await assistant.send_message(
+            first.id, ConversationMessageCreate(content="Summarize this evidence"), current, session
+        )
+        await assistant.send_message(
+            first.id, ConversationMessageCreate(content="Summarize this evidence"), current, session
+        )
+        await assistant.send_message(
+            second.id, ConversationMessageCreate(content="Summarize this evidence"), current, session
+        )
 
         first_messages = await assistant.list_messages(first.id, current, session)
         second_messages = await assistant.list_messages(second.id, current, session)
@@ -176,7 +318,9 @@ async def test_delete_chat_removes_messages(tmp_path, monkeypatch):
 
     async with sessions() as session:
         conversation = await assistant.create_conversation(ConversationCreate(title="Doomed"), current, session)
-        await assistant.send_message(conversation.id, ConversationMessageCreate(content="Summarize this evidence"), current, session)
+        await assistant.send_message(
+            conversation.id, ConversationMessageCreate(content="Summarize this evidence"), current, session
+        )
         assert len(await assistant.list_messages(conversation.id, current, session)) == 2
 
         await assistant.delete_conversation(conversation.id, current, session)

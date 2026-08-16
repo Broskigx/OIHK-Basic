@@ -154,7 +154,6 @@ async def carve_and_seal(
     *,
     case_id: str,
     parent_sha256: str,
-    parent_source_id: str | None,
     data: bytes,
     actor: str = "analyst",
     organization_id: str = "default",

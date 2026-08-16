@@ -12,10 +12,10 @@ type TimelineEventBase<TType extends TimelineEventType, TRecord> = {
   record: TRecord;
 };
 
-export type TimelineAuditEvent = TimelineEventBase<"audit", AuditEvent>;
-export type TimelineSourceEvent = TimelineEventBase<"source", SourceRead>;
-export type TimelineSearchRunEvent = TimelineEventBase<"search_run", SearchRun>;
-export type TimelineTargetPhotoEvent = TimelineEventBase<"target_photo", TargetPhoto>;
+type TimelineAuditEvent = TimelineEventBase<"audit", AuditEvent>;
+type TimelineSourceEvent = TimelineEventBase<"source", SourceRead>;
+type TimelineSearchRunEvent = TimelineEventBase<"search_run", SearchRun>;
+type TimelineTargetPhotoEvent = TimelineEventBase<"target_photo", TargetPhoto>;
 
 export type TimelineEvent =
   | TimelineAuditEvent

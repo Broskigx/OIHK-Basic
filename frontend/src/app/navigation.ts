@@ -56,9 +56,6 @@ export const CORE_NAVIGATION: NavigationItem[] = [
   { id: "about", label: "About", caseScoped: false, group: "more" },
 ];
 
-// Compatibility export for callers/tests that still use the original catalog name.
-export const MAIN_NAVIGATION = CORE_NAVIGATION;
-
 const CORE_IDS = new Set(CORE_NAVIGATION.map((item) => item.id));
 const GLOBAL_AREAS = new Set<CorePlatformArea>([
   "dashboard",

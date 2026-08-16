@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAIN_NAVIGATION,
+  CORE_NAVIGATION,
   createModuleRouteId,
   parsePlatformHash,
   platformHash,
@@ -26,12 +26,12 @@ describe("platform navigation", () => {
   });
 
   it("presents the compatible tools route", () => {
-    expect(MAIN_NAVIGATION.find((item) => item.id === "tools")?.label).toBe("Tools");
+    expect(CORE_NAVIGATION.find((item) => item.id === "tools")?.label).toBe("Tools");
     expect(parsePlatformHash("#/investigations/case-123/tools")).toEqual({ area: "tools", caseId: "case-123" });
   });
 
   it("keeps the agent out of page navigation and safely retires legacy Copilot links", () => {
-    expect(MAIN_NAVIGATION.some((item) => String(item.id) === "copilot")).toBe(false);
+    expect(CORE_NAVIGATION.some((item) => String(item.id) === "copilot")).toBe(false);
     expect(parsePlatformHash("#/investigations/case-123/copilot")).toEqual({
       area: "investigations",
       caseId: "case-123",

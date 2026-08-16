@@ -38,25 +38,11 @@ export interface DirtyFlags {
   minimap: boolean;
 }
 
-export interface GraphScene {
-  nodes: LayoutNode[];
-  edgeCount: number;
-  camera: CameraState;
-  selectedId: string | null;
-  hoveredId: string | null;
-}
-
 export interface ViewportBounds {
   x1: number;
   y1: number;
   x2: number;
   y2: number;
-}
-
-export interface HitResult {
-  type: "node" | "edge" | "background";
-  id?: string;
-  distance?: number;
 }
 
 export interface SpatialItem {
