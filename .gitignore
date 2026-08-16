@@ -47,6 +47,12 @@ src-tauri/tauri.release.test.conf.json
 .vscode/
 *.sublime-*
 
+# Coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
 # Logs
 *.log
 logs/
