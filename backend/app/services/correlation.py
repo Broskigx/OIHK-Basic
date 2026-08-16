@@ -5,8 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app import models
 
@@ -87,13 +88,28 @@ async def correlate(
         statement = statement.where(models.CorrelationAttribute.case_id != exclude_case_id)
 
     rows = (await session.execute(statement)).scalars().all()
+    if not rows:
+        return []
+
+    # Titles in one load. A selector seen across many cases is the interesting
+    # result, not the rare one, so paying a query per hit charged most for the
+    # answer the analyst most wanted.
+    titles = dict(
+        (
+            await session.execute(
+                select(models.Case.id, models.Case.title).where(
+                    models.Case.id.in_({row.case_id for row in rows})
+                )
+            )
+        ).all()
+    )
+
     hits = []
     for row in rows:
-        case = await session.get(models.Case, row.case_id)
         hits.append(
             CorrelationHit(
                 case_id=row.case_id,
-                case_title=case.title if case else "Unknown",
+                case_title=titles.get(row.case_id, "Unknown"),
                 source_id=row.source_id,
                 attr_type=row.attr_type,
                 attr_value=row.attr_value,
@@ -127,30 +143,52 @@ async def case_overlaps(
     if not selectors:
         return []
 
-    # For each selector, find other cases with the same value
-    overlaps: dict[str, set[str]] = {}
-    for sel in selectors:
-        others = await session.execute(
-            select(models.CorrelationAttribute.case_id).where(
-                models.CorrelationAttribute.organization_id == organization_id,
-                models.CorrelationAttribute.attr_type == sel.attr_type,
-                models.CorrelationAttribute.attr_value == sel.attr_value,
-                models.CorrelationAttribute.case_id != case_id,
-            )
+    # One self-join instead of a query per selector. Matching in the database
+    # is what this shape is for: the previous loop asked "who else holds this
+    # value?" once per selector, so the cost of the overlap report grew with
+    # how much a case had been worked on — the cases most worth correlating
+    # were the slowest to correlate. Measured on a seeded organization: 250
+    # selectors across 20 overlapping cases issued 271 SELECTs in 411 ms.
+    mine = aliased(models.CorrelationAttribute)
+    theirs = aliased(models.CorrelationAttribute)
+    matches = await session.execute(
+        select(theirs.case_id, theirs.attr_type, theirs.attr_value)
+        .join(
+            mine,
+            and_(mine.attr_type == theirs.attr_type, mine.attr_value == theirs.attr_value),
         )
-        for other_case_id in others.scalars().all():
-            if other_case_id not in overlaps:
-                overlaps[other_case_id] = set()
-            overlaps[other_case_id].add(f"{sel.attr_type}:{sel.attr_value}")
+        .where(
+            mine.organization_id == organization_id,
+            mine.case_id == case_id,
+            theirs.organization_id == organization_id,
+            theirs.case_id != case_id,
+        )
+        .distinct()
+    )
+
+    overlaps: dict[str, set[str]] = {}
+    for other_case_id, attr_type, attr_value in matches.all():
+        overlaps.setdefault(other_case_id, set()).add(f"{attr_type}:{attr_value}")
+
+    if not overlaps:
+        return []
+
+    # And one load for the titles, rather than one per overlapping case.
+    titles = dict(
+        (
+            await session.execute(
+                select(models.Case.id, models.Case.title).where(models.Case.id.in_(overlaps))
+            )
+        ).all()
+    )
 
     result = []
     for other_case_id, shared in overlaps.items():
-        other_case = await session.get(models.Case, other_case_id)
         samples = list(shared)[:5]
         result.append(
             CaseOverlap(
                 case_id=other_case_id,
-                case_title=other_case.title if other_case else "Unknown",
+                case_title=titles.get(other_case_id, "Unknown"),
                 shared_count=len(shared),
                 samples=[(s.split(":")[0], s.split(":")[1]) for s in samples],
             )
