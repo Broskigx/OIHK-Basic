@@ -15,6 +15,7 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 - No model weights or inference server are bundled.
 - Copilot and assisted report drafts require a local or private compatible endpoint configured by the user. LM Studio is the currently validated backend; Ollama and other OpenAI-compatible endpoints exist in code but are not guaranteed in this preview.
 - Model output is unverified and cannot approve or mutate evidence automatically.
+- The Agent can invoke application operations by name, and eight of them write: creating or updating an investigation, adding a graph entity or relationship, running an OSINT lookup, promoting an OSINT result, generating a report, and running a transform. Writes are additionally gated on a keyword match against your own message, which bounds an over-eager model but does not understand negation and is not a security boundary. Every write is audited under your name; review the audit trail rather than assuming a write was requested.
 - Model responses are bounded (`OIHK_MAX_MODEL_RESPONSE_BYTES`, default 8 MB) and streamed completions stop at `OIHK_MAX_MODEL_STREAM_CHARS` (default 1,000,000 characters). A long generation is truncated at that ceiling rather than allowed to run unbounded.
 
 ## Evidence and reports
