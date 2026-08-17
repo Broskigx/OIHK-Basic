@@ -51,15 +51,14 @@ Automatic rollback is intentionally unavailable: choosing a backup is a custody-
 
 There is no updater telemetry. Sanitized local events are rotated in `%APPDATA%\OIHK-Basic\logs\updater.log`. Logged fields are limited to stage, source version, target version, and a stable error code. Paths, investigation content, evidence names, tokens, signatures, and credentials are not logged.
 
-## Endpoint and private-repository limitation
+## Endpoint reachability
 
 The configured alpha endpoint is:
 
 `https://github.com/Broskigx/OIHK-Basic/releases/download/basic-alpha/latest-alpha.json`
 
-Installed clients have no GitHub token. Because `Broskigx/OIHK-Basic` is currently private, GitHub release metadata and assets are not anonymously downloadable. Do not promote a channel until one of these conditions is true:
+Installed clients have no GitHub token, so the metadata and every artifact it references must be downloadable anonymously. `Broskigx/OIHK-Basic` is public, which satisfies that: this was previously the blocking condition and no longer is. Serving `latest-alpha.json` and the signed artifacts from a public HTTPS static host remains an equally valid alternative.
 
-- the repository/releases are intentionally public; or
-- `latest-alpha.json` and the referenced signed artifacts are served by a public HTTPS static host.
+The application must never embed a repository token to work around this boundary. If the repository is ever made private again, promotion has to stop until the artifacts are served from somewhere anonymous — a client that cannot read the metadata cannot distinguish "no update" from "cannot reach the channel".
 
-The application must never embed a repository token to work around this boundary.
+What blocks promotion today is simpler: no release has been published, so no channel metadata exists to point at.
