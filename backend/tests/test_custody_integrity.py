@@ -72,3 +72,74 @@ async def test_file_seal_rehashes_managed_content_and_detects_truncation(tmp_pat
             assert truncated.first_broken_sequence == 1
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_verifying_a_chain_costs_the_same_number_of_queries_at_any_size(tmp_path):
+    """The custody report must not issue one query per sealed item.
+
+    Verification walks the whole chain by construction — stopping early cannot
+    prove the chain is intact — so a per-seal lookup made the cost of the
+    report grow with the size of the case, and this is the report an analyst
+    opens to decide whether the evidence still stands. Measured before the
+    fix: 250 seals issued 252 SELECTs in 241 ms.
+
+    Asserting a constant rather than a threshold is deliberate. A time budget
+    would be flaky on shared runners, and a generous bound would still pass
+    against a reintroduced N+1 at small N; the query count would not.
+
+    What this does *not* catch, stated so nobody trusts it further than it
+    goes: a `session.get` put back inside the loop while the batch load still
+    runs above it costs nothing, because the identity map already holds every
+    row and no SQL is emitted. The property under test is that the batch load
+    exists at all — remove it and this goes red.
+    """
+    from sqlalchemy import event
+
+    async def count_selects_for(seal_count: int) -> int:
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / f'chain-{seal_count}.db'}")
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+        async with sessions() as session:
+            case = models.Case(
+                id=f"chain-{seal_count}",
+                title="Chain",
+                legal_basis="Authorized test",
+                scope_statement="Bounded scope for the custody query-count test.",
+            )
+            session.add(case)
+            await session.flush()
+            for index in range(seal_count):
+                source = models.Source(
+                    case_id=case.id,
+                    title=f"Source {index}",
+                    kind="note",
+                    body=f"body {index}",
+                    citation=f"cite-{index}",
+                )
+                session.add(source)
+                await session.flush()
+                await custody.seal_source(session, source)
+            await session.commit()
+
+        selects: list[str] = []
+
+        @event.listens_for(engine.sync_engine, "before_cursor_execute")
+        def _record(conn, cursor, statement, parameters, context, executemany):
+            if statement.lstrip().upper().startswith("SELECT"):
+                selects.append(statement)
+
+        async with sessions() as session:
+            report = await custody.verify_case_custody(session, f"chain-{seal_count}")
+
+        assert report.sealed_count == seal_count
+        assert report.intact, "a freshly sealed chain must verify"
+        await engine.dispose()
+        return len(selects)
+
+    small = await count_selects_for(3)
+    large = await count_selects_for(40)
+
+    assert small == large, f"query count grew with the chain: {small} -> {large}"

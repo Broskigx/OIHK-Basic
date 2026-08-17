@@ -73,10 +73,34 @@ execution. A restrictive CSP constrains scripts, objects, base URLs,
 connections and images.
 
 ### T4.2 Model output executing commands or exfiltrating data
-Generated text is treated as **data, never as instructions**. Prompts require
-evidence-backed answers without invented sources. Sensitive actions require
-explicit user confirmation and always show exactly what will run. Model
-output is labeled unverified and must be promoted manually into a graph.
+The local Agent selects operations by name from a fixed allowlist
+(`app/services/assistant_tools.py`). The model never reaches the database, the
+filesystem or the network itself: it emits a JSON envelope naming a tool, and
+the corresponding application route runs it as the real authenticated user, so
+every access-control rule is inherited rather than reimplemented. The allowlist
+deliberately excludes evidence mutation, deletion of anything, report approval,
+settings and System Link control — the model can draft, it cannot destroy or
+attest.
+
+**Injected instructions inside investigation data.** Sources, OSINT answers and
+ingested pages are third-party text and must be assumed hostile. The property
+that contains them is structural: a turn is one model call, at most four tool
+calls, and tool *results are never fed back to the model* — the reply the user
+sees is assembled deterministically from the tool summaries. Nothing an
+attacker writes into a page or a registry response re-enters the model's
+context through this path, so it cannot steer a following call.
+
+**The write gate is not a security control.** Mutating tools additionally
+require a keyword match against the user's own message. That bounds an
+over-eager model; it is not a boundary. It does not understand negation, and
+its patterns share ordinary verbs, so an innocuous message can satisfy one. It
+fails closed for a tool with no registered pattern.
+
+Residual: the model chooses the *arguments*. A wrong or manipulated call inside
+the allowlist can create an investigation, add a graph entity or relationship,
+run an OSINT lookup, or generate a draft report. Every such write goes through
+the audited route and is recorded against the acting user, which is what makes
+it reviewable after the fact. Model output remains labeled unverified.
 
 ### T4.3 Path traversal / arbitrary file access
 Evidence uploads are streamed, size-limited, sanitized, copied atomically

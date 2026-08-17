@@ -1,0 +1,84 @@
+name: Bug report
+description: Something behaves differently from what the documentation says it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        **Do not report a security vulnerability here.** Open a private
+        security advisory instead, and do not attach real investigation data,
+        secrets or evidence files to this issue. Sanitize any log you paste —
+        diagnostics can contain file paths and case metadata.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The contents of the `VERSION` file, or the version shown in About.
+      placeholder: 0.2.0-beta.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: How are you running it?
+      options:
+        - Packaged desktop build (Tauri)
+        - Development (npm run dev + python run.py)
+        - Development desktop (npm run desktop:dev)
+        - Backend only
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: Windows 11 24H2 / macOS 15.2 / Ubuntu 24.04
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: >-
+        Where possible, point at the documentation or behaviour that led you to
+        expect it. Several absent behaviours are deliberate — see
+        docs/KNOWN_LIMITATIONS.md.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include the exact error text or status code if there was one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        Use disposable test data, never real case material. If the bug depends
+        on a specific state (a case with managed evidence, a paired System Link
+        module, a configured local model), say so — that is often the whole
+        reproduction.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Sanitized. Paths and case titles count as sensitive.
+      render: text
+    validations:
+      required: false

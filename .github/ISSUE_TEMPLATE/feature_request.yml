@@ -1,0 +1,68 @@
+name: Feature request
+description: Propose a capability, or argue that a documented boundary should move.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        OIHK Basic is deliberately bounded. It has no multi-user collaboration,
+        no cloud sync, no telemetry, no billing and no silent cloud fallback for
+        the model — those are edition boundaries, not gaps. Proposing that one
+        of them move is legitimate, but it is a product decision, so make the
+        case explicitly rather than filing it as a missing feature.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: >-
+        Describe the investigative work that is currently hard, not the
+        implementation you have in mind. The problem is what gets evaluated.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: What do you do today instead?
+      description: >-
+        Including "nothing, I use another tool for this step". A workaround that
+        already exists is useful information either way.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+      description: Optional. A rough shape is fine; it does not have to be a design.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: boundaries
+    attributes:
+      label: Boundaries this would touch
+      description: >-
+        Tick anything that applies. Nothing ticked is a perfectly normal answer
+        — this exists so a proposal that crosses one of these gets the review it
+        needs rather than being merged as routine.
+      options:
+        - label: Sends data off the machine, or adds a network destination
+        - label: Lets a model write, approve or delete something
+        - label: Touches evidence, hashing or chain of custody
+        - label: Adds a runtime dependency to the desktop bundle
+        - label: Changes an authorization or trust boundary
+    validations:
+      required: false
+
+  - type: textarea
+    id: authorized_use
+    attributes:
+      label: Does this stay inside authorized use?
+      description: >-
+        The project is for authorized work with public sources or data the user
+        lawfully holds (see RESPONSIBLE_USE.md). If the proposal touches
+        collection or third-party data, say how it stays inside that.
+    validations:
+      required: false

@@ -182,10 +182,36 @@ async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVer
     first_broken: int | None = None
     prev_seal_hash = "0" * 64
 
+    # One load for every source the chain references, rather than a lookup per
+    # seal. Verification has to walk the entire chain — stopping early cannot
+    # prove the chain is intact — so the query count grew with the number of
+    # sealed items in the case, and this is the report an analyst opens to
+    # decide whether the evidence still stands. Measured on a seeded case:
+    # 250 seals issued 252 SELECTs in 241 ms; this makes it 3 regardless of N.
+    #
+    # The ids come from a subquery rather than a bound list because a case may
+    # hold more seals than SQLite accepts host parameters in one statement.
+    sources_by_id = {
+        source.id: source
+        for source in (
+            await session.execute(
+                select(models.Source).where(
+                    models.Source.id.in_(
+                        select(models.EvidenceSeal.source_id).where(
+                            models.EvidenceSeal.case_id == case_id
+                        )
+                    )
+                )
+            )
+        )
+        .scalars()
+        .all()
+    }
+
     for seal in seals:
+        source = sources_by_id.get(seal.source_id)
         content_ok = True
         if seal.content_ref == "body":
-            source = await session.get(models.Source, seal.source_id)
             content_ok = source is not None and (
                 hashlib.sha256((source.body or "").encode("utf-8")).hexdigest() == seal.content_sha256
             )
@@ -207,10 +233,7 @@ async def verify_case_custody(session: AsyncSession, case_id: str) -> CustodyVer
         if not ok and first_broken is None:
             first_broken = seal.sequence
 
-        source_title = ""
-        source = await session.get(models.Source, seal.source_id)
-        if source is not None:
-            source_title = source.title
+        source_title = source.title if source is not None else ""
 
         entries.append(
             SealEntryResult(

@@ -1,0 +1,40 @@
+# Only checks that CI also enforces, configured the way CI configures them.
+#
+# A hook that disagrees with CI is worse than no hook: it either blocks a
+# commit the pipeline would have accepted, or passes one the pipeline will
+# reject, and in both cases the developer learns to bypass it. Everything here
+# is fast enough for every commit — the test suites are not, and belong in CI,
+# where they already run.
+#
+# Install with:
+#   python -m pip install pre-commit && pre-commit install
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # backend/pyproject.toml floors ruff at >=0.15.0 rather than pinning it, so
+    # this cannot mirror an exact version. It pins a release above that floor;
+    # if a future ruff reports findings CI does not, raise the floor and this
+    # rev together rather than only one of them.
+    rev: v0.16.3
+    hooks:
+      - id: ruff-check
+        # The same explicit --config CI passes. Without it ruff resolves
+        # configuration per directory, which is the discrepancy the root
+        # ruff.toml exists to prevent.
+        args: [--config, backend/pyproject.toml]
+        files: ^(backend/app|backend/run\.py|backend/tests|scripts|tests)/
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-toml
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        # Evidence belongs in managed storage, never in the repository. The
+        # accident this catches is a test fixture built from a real case file.
+        args: [--maxkb=512]

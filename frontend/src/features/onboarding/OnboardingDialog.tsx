@@ -15,7 +15,8 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "../../app/useDialogFocus";
 import {
   detectLocalModelServices,
   getStorageStatus,
@@ -68,6 +69,13 @@ export function OnboardingDialog({
   const [name, setName] = useState("");
   const [scope, setScope] = useState("");
   const [error, setError] = useState("");
+  const dialogRef = useRef<HTMLElement>(null);
+
+  // Trap and restore focus, but no onDismiss. The only way out of first run is
+  // "Skip setup", which completes it permanently. Escape conventionally
+  // cancels, so binding it to something that commits would be worse than
+  // leaving it inert.
+  useDialogFocus(dialogRef);
 
   const onlineServices = services.filter((service) => service.status === "online");
 
@@ -178,7 +186,7 @@ export function OnboardingDialog({
 
   return (
     <div className="onboarding-backdrop" role="presentation">
-      <section className="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-heading">
+      <section ref={dialogRef} tabIndex={-1} className="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-heading">
         <aside>
           <div className="onboarding-brand"><ShieldCheck size={21} /><strong>OIHK Basic</strong></div>
           <ol>{STEPS.map((label, index) => <li key={label} className={index === step ? "active" : index < step ? "complete" : ""}><span>{index < step ? <CheckCircle2 size={13} /> : index + 1}</span>{label}</li>)}</ol>

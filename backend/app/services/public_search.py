@@ -43,12 +43,19 @@ def _searxng_search_url(configured: str) -> str:
     unvalidated base still lets a typo or a stray scheme send the query
     somewhere unintended, so it is checked before every use.
     """
-    parsed = urlsplit(configured.strip().rstrip("/"))
+    parsed = urlsplit(configured.strip())
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("OIHK_SEARXNG_URL must be an http(s) URL.")
     if parsed.username or parsed.password:
         raise ValueError("OIHK_SEARXNG_URL must not embed credentials.")
-    return urlunsplit((parsed.scheme, parsed.netloc, f"{parsed.path}/search", "", ""))
+    # Trim the trailing slash from the *path*, not from the configured string.
+    # A value carrying a query or fragment does not end in "/" no matter how
+    # it was written, so trimming the whole string left the path as "/" and
+    # produced "//search". Any query and fragment are dropped here as well:
+    # only the base belongs in the URL this builds, and a configured query
+    # string would otherwise merge with the search parameters set below.
+    path = parsed.path.rstrip("/")
+    return urlunsplit((parsed.scheme, parsed.netloc, f"{path}/search", "", ""))
 
 
 async def _search_searxng(query: str, max_results: int) -> list[dict]:

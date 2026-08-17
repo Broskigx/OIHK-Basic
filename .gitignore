@@ -62,4 +62,9 @@ logs/
 
 # Local debugging artifacts and case data
 docs/ui-references/
-investigations/
+# Anchored to the repository root on purpose. Without the leading slash this
+# matches a directory named "investigations" at any depth, which silently
+# included frontend/src/features/investigations/ — the two files already there
+# survived only because they were tracked before the rule existed, and any new
+# file added beside them would have been ignored without a word.
+/investigations/

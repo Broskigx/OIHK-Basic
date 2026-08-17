@@ -15,6 +15,7 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 - No model weights or inference server are bundled.
 - Copilot and assisted report drafts require a local or private compatible endpoint configured by the user. LM Studio is the currently validated backend; Ollama and other OpenAI-compatible endpoints exist in code but are not guaranteed in this preview.
 - Model output is unverified and cannot approve or mutate evidence automatically.
+- The Agent can invoke application operations by name, and eight of them write: creating or updating an investigation, adding a graph entity or relationship, running an OSINT lookup, promoting an OSINT result, generating a report, and running a transform. Writes are additionally gated on a keyword match against your own message, which bounds an over-eager model but does not understand negation and is not a security boundary. Every write is audited under your name; review the audit trail rather than assuming a write was requested.
 - Model responses are bounded (`OIHK_MAX_MODEL_RESPONSE_BYTES`, default 8 MB) and streamed completions stop at `OIHK_MAX_MODEL_STREAM_CHARS` (default 1,000,000 characters). A long generation is truncated at that ceiling rather than allowed to run unbounded.
 
 ## Evidence and reports
@@ -29,7 +30,7 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 - Windows NSIS packaging is implemented for x64. Every release candidate still requires installation, upgrade and uninstall validation on a clean Windows VM.
 - macOS releases require an Apple Developer identity for signing and notarization.
 - Windows executables may need code signing to avoid SmartScreen reputation warnings.
-- The signed Tauri updater is implemented but cannot serve installed clients anonymously while its GitHub repository and release assets are private.
+- The signed Tauri updater is implemented but has never served a client, because no release has been published yet. The repository is public, so anonymous reachability is no longer what blocks it; what remains is a signed release built with the production keys, which are deliberately not stored here. Until one exists there is nothing for the `alpha`, `beta` or `stable` channel metadata to point at, and the promotion workflow refuses to run without a published non-draft `basic-v*` tag.
 - A valid end-to-end updater test requires the protected production/test signing key and a controlled public HTTPS endpoint; neither is stored in this repository.
 - Cancellation during an active updater HTTP transfer is best-effort, although cancellation prevents installation.
 - Linux and macOS builders exist, but the current readiness review targets Windows x64 and does not declare those artifacts release-ready.

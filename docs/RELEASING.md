@@ -40,9 +40,17 @@ Required candidate assets:
 
 ## Manual validation before publication
 
-Use a disposable Windows Sandbox or clean VM:
+Use a disposable Windows Sandbox or clean VM.
 
-1. Install the previous signed `0.1.1-alpha.1` candidate without Python, Node, Rust, or the repository.
+**For the first published release there is no predecessor to upgrade from**, so
+steps 1 and 3 have nothing to install or point at. Validate what that release
+can actually demonstrate — clean install without Python, Node, Rust or the
+repository; the fixture in step 2; startup; uninstall preserving
+`%APPDATA%\OIHK-Basic` — and record the upgrade path as untested. The full
+sequence below applies from the second signed candidate onward, which is the
+first one that has something to upgrade *from*.
+
+1. Install the previous signed candidate without Python, Node, Rust, or the repository.
 2. Create the representative fixture: cases, entities, relationships, reports, managed evidence, Copilot conversations/messages, settings, audit history, sources, and an older backup.
 3. Point the test build at a controlled HTTPS alpha endpoint containing the signed `0.1.1-alpha.2` candidate.
 4. Confirm startup only reports availability.
@@ -63,4 +71,14 @@ After all manual checks are recorded:
 2. Run **Promote tested update channel** manually with the published tag, channel, and confirmation `PROMOTE`.
 3. That workflow re-downloads and validates the assets before updating the rolling `basic-alpha` metadata release.
 
-Promotion is blocked operationally while the repository/assets remain private, as explained in `docs/UPDATES.md`.
+The repository is public, so channel metadata is anonymously reachable and
+that is no longer what blocks promotion; see `docs/UPDATES.md`. What blocks it
+is having no published release to promote.
+
+## Key handling
+
+`TAURI_SIGNING_PRIVATE_KEY` and its password belong in **Actions secrets**.
+Never place either in an Actions *variable*: variables are readable by anyone
+with read access to the repository — everyone, on a public repo — and they are
+not masked in workflow logs. Only `TAURI_UPDATER_PUBLIC_KEY` belongs in a
+variable. This is written down because it already happened once.

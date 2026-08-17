@@ -414,12 +414,14 @@ def _fast_intent(text: str) -> tuple[str, list[dict[str, Any]]] | None:
                 f"Tengo {tool_count} herramientas operativas: listar, abrir, crear y actualizar investigaciones; leer el resumen, "
                 "grafo, fuentes, evidencia, custodia, historial OSINT, reportes y auditoría; añadir entidades y "
                 "relaciones; ejecutar consultas OSINT; promover resultados; generar reportes; y listar o ejecutar "
-                "transformaciones. Las acciones quedan registradas y las escrituras solo se ejecutan si las pides.",
+                "transformaciones. No puedo modificar ni borrar evidencia, ni aprobar reportes. Toda escritura "
+                "queda en la auditoría a tu nombre, así que revisa el registro si algo no era lo que pediste.",
                 [],
             )
         return (
             f"I have {tool_count} operational tools for investigations, graphs, sources, evidence, custody, OSINT, reports, "
-            "transforms, and audit data. Writes run only when you explicitly request them and remain auditable.",
+            "transforms, and audit data. I cannot alter or delete evidence, and I cannot approve a report. Every write "
+            "is recorded in the audit trail under your name, so check it if something was not what you asked for.",
             [],
         )
     if re.search(

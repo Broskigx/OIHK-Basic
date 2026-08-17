@@ -242,8 +242,26 @@ def agent_tool_catalog(configured: list[str] | None = None) -> list[dict[str, An
 
 
 def _explicit_write_requested(tool_name: str, user_text: str) -> bool:
-    pattern = _WRITE_INTENT.get(tool_name)
-    return pattern is None or re.search(pattern, user_text, flags=re.IGNORECASE) is not None
+    """Best-effort check that the user's own words asked for a change.
+
+    This bounds an over-eager model, and it is deliberately not a security
+    boundary — say so plainly rather than let a reader infer more from it than
+    it delivers. It is keyword matching over natural language: it does not
+    understand negation, so "no agregues nada al grafo" contains "agrega" and
+    passes, and several patterns share ordinary verbs, so one message can
+    satisfy more than one write. What actually contains a wrong call is the
+    layer underneath — the tool allowlist excludes evidence mutation, deletion
+    and report approval, every call runs as the real authenticated user through
+    the normal route, and each write lands in the audit trail.
+
+    A mutating tool with no pattern registered is refused rather than allowed.
+    The rest of this codebase fails closed, and the alternative here is that
+    adding a tool to AGENT_TOOLS while forgetting _WRITE_INTENT silently grants
+    it unconditional write access.
+    """
+    if not (pattern := _WRITE_INTENT.get(tool_name)):
+        return False
+    return re.search(pattern, user_text, flags=re.IGNORECASE) is not None
 
 
 def _jsonable(value: Any) -> Any:

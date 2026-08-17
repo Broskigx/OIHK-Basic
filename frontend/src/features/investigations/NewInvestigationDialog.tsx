@@ -1,6 +1,7 @@
 import { CheckCircle2, ShieldCheck, X, ArrowLeft, ArrowRight, FolderLock, Search, Target } from "lucide-react";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import type { InvestigationDraft } from "../../types";
+import { useDialogFocus } from "../../app/useDialogFocus";
 
 const EMPTY_DRAFT: InvestigationDraft = {
   title: "",
@@ -38,6 +39,9 @@ export function NewInvestigationDialog({
   const [tags, setTags] = useState((initial?.tags ?? []).join(", "));
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const dialogRef = useRef<HTMLElement>(null);
+
+  useDialogFocus(dialogRef, { onDismiss: onClose });
 
   useEffect(() => {
     if (!open) return;
@@ -82,7 +86,7 @@ export function NewInvestigationDialog({
 
   return (
     <div className="platform-dialog-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="platform-dialog platform-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="investigation-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section ref={dialogRef} tabIndex={-1} className="platform-dialog platform-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="investigation-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
         {/* Header */}
         <header className="platform-dialog-header">
           <div className="platform-dialog-header-info">
@@ -267,4 +271,4 @@ export function NewInvestigationDialog({
       </section>
     </div>
   );
-}
+}

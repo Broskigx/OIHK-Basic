@@ -7,15 +7,32 @@ OIHK Basic is a local-first, single-user desktop product. It owns its repository
 ```text
 Tauri 2 desktop lifecycle
   └─ React + TypeScript + Vite
-       ├─ product shell and 11 workspaces
+       ├─ product shell, workspace routes and the Copilot dock
        ├─ Canvas 2D graph engine
        └─ typed REST client
             └─ FastAPI sidecar on dynamic 127.0.0.1 port
                  ├─ SQLAlchemy async + SQLite
                  ├─ managed evidence storage
                  ├─ deterministic OSINT/forensic services
+                 ├─ agent tool dispatch over the existing routes
                  └─ optional private/local model adapters
 ```
+
+## Trust boundaries
+
+Four, and they are not the same line:
+
+1. **The OS account.** Everything below it is inside. A hostile process running
+   as the same user is out of scope and covered only by the account boundary.
+2. **The loopback port.** A network attacker cannot reach it. A *browser* can,
+   which is why `Host` and `Origin` are validated on every request rather than
+   left to CORS — see `THREAT_MODEL.md` T4.11 and T4.12.
+3. **Third-party data.** Sources, OSINT answers and ingested pages are hostile
+   text. They are size-bounded on the way in, never executed, and never fed
+   back into the model.
+4. **The module process.** A System Link module is a separate installation with
+   its own data. It authenticates per call with a signed, timestamped envelope
+   bound to a paired Ed25519 identity.
 
 ## Desktop lifecycle
 
@@ -46,6 +63,27 @@ Core routes remain a closed union. Verified module categories use `module:<modul
 - `app/database.py`: SQLite initialization, FK enforcement, additive migration and backup.
 - `app/system_link/`: System Link v1 protocol, installation identity, pairing, registry, grants, package/runtime verification, lifecycle and module APIs.
 - `app/core/first_run.py`: atomic OS-managed secret generation.
+- `app/services/assistant_tools.py`: the operations the local Agent may invoke.
+
+## Local Agent
+
+The model does not reach the database, the filesystem or the network. It
+returns a JSON envelope naming a tool from a fixed allowlist, and the dispatcher
+calls the *existing route* with the real authenticated user — so every
+authorization rule is inherited rather than reimplemented, and a route that
+gains a new check gains it for the Agent at the same moment.
+
+The allowlist is the boundary that matters. It excludes evidence mutation,
+deletion of anything, and report approval: the Agent can draft, it cannot
+destroy or attest. A turn is one model call and at most four tool calls, and
+tool results are never fed back into the model — the reply is assembled
+deterministically from tool summaries. That is what keeps text ingested from a
+hostile page or registry response from steering a following call.
+
+Mutating tools additionally require a keyword match against the user's own
+message. That bounds an over-eager model and is not a security control; it does
+not understand negation. What contains a wrong call is the allowlist, the
+inherited authorization, and the audit record written under the acting user.
 
 ## Persistence
 
