@@ -30,7 +30,7 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 - Windows NSIS packaging is implemented for x64. Every release candidate still requires installation, upgrade and uninstall validation on a clean Windows VM.
 - macOS releases require an Apple Developer identity for signing and notarization.
 - Windows executables may need code signing to avoid SmartScreen reputation warnings.
-- The signed Tauri updater is implemented but cannot serve installed clients anonymously while its GitHub repository and release assets are private.
+- The signed Tauri updater is implemented but has never served a client, because no release has been published yet. The repository is public, so anonymous reachability is no longer what blocks it; what remains is a signed release built with the production keys, which are deliberately not stored here. Until one exists there is nothing for the `alpha`, `beta` or `stable` channel metadata to point at, and the promotion workflow refuses to run without a published non-draft `basic-v*` tag.
 - A valid end-to-end updater test requires the protected production/test signing key and a controlled public HTTPS endpoint; neither is stored in this repository.
 - Cancellation during an active updater HTTP transfer is best-effort, although cancellation prevents installation.
 - Linux and macOS builders exist, but the current readiness review targets Windows x64 and does not declare those artifacts release-ready.
