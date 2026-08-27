@@ -35,8 +35,8 @@ La versión actual es `0.2.0-beta.1`.
 
 ### Qué está validado
 
-- **326 pruebas automatizadas** en verde: backend, portabilidad, frontend y desktop. La superficie REST tiene pruebas de integración sobre HTTP real, atravesando el stack de middleware completo y con claves foráneas activas.
-- **71 % de cobertura** medida correctamente. Esa cifra es nueva: hasta esta versión el instrumental perdía el rastro en cada `await` contra la base de datos y subestimaba la cobertura de prácticamente todas las rutas.
+- **487 pruebas automatizadas** en verde: 379 de backend y 108 de frontend, más el desktop. La superficie REST tiene pruebas de integración sobre HTTP real, atravesando el stack de middleware completo y con claves foráneas activas. El API de módulo de System Link se ejercita con sobres firmados de verdad, y cada capacidad tiene un caso de denegación junto al de éxito.
+- **78 % de cobertura** medida correctamente. El instrumental declara la concurrencia de greenlet que usa la capa asyncio de SQLAlchemy; sin eso perdía el rastro en cada `await` contra la base de datos y subestimaba la cobertura de prácticamente todas las rutas.
 - **Auditorías de dependencias sin vulnerabilidades conocidas**: `pip-audit` y `npm audit` limpios; `cargo audit` pasa con 17 avisos permitidos por crates transitivos sin mantenimiento del stack GTK/Tauri, ninguno de ellos una vulnerabilidad. Gitleaks escanea el historial completo.
 - **El límite del navegador está cerrado**: validación de `Host` y de `Origin` en el API de loopback, con pruebas dedicadas. Consulta [Threat Model](THREAT_MODEL.md) T4.11 y T4.12.
 
@@ -54,19 +54,21 @@ El canal del updater sigue siendo `alpha` de forma deliberada: cambiarlo mueve e
 
 ## Qué incluye
 
-OIHK Basic reúne once capacidades principales. Diez son espacios de trabajo con su propia ruta; Copilot vive en un dock disponible desde cualquiera de ellos:
+OIHK Basic reúne once capacidades principales. Nueve son espacios de trabajo con su propia ruta, la custodia de evidencia es parte de la columna del caso sin pantalla propia, y Copilot vive en un dock disponible desde cualquiera de ellas.
+
+El análisis forense ya no está aquí. La adquisición, el hashing, el carving y el análisis viven en **OIHK Evidence Lab**, que se instala por separado, carga desde su propia carpeta y se vincula por System Link; Basic renderiza su superficie y conserva la cadena de custodia.
 
 1. **Dashboard operativo** con actividad reciente, estado local y accesos rápidos.
 2. **Investigations** para crear, editar, duplicar, archivar, restaurar, importar y exportar casos.
 3. **Intelligence Graph** sobre Canvas 2D con cámara, minimapa, layouts, filtros, pinning, selección múltiple, undo/redo y snapshots persistentes.
 4. **OSINT Workspace** con consultas explícitas, historial SQLite, cancelación y promoción controlada al grafo.
-5. **Evidence Lab** con carga por streaming, almacenamiento administrado, SHA-256, asociaciones, manifiestos y análisis forense.
+5. **Custodia de evidencia** como registro, no como laboratorio: Basic guarda los items que un módulo vinculado le entrega, los sella en la cadena de custodia, verifica que un fichero que conserva sigue coincidiendo con su sello y exporta el manifiesto. La adquisición y el análisis los hace Evidence Lab.
 6. **Reports** con secciones, plantillas, Markdown, HTML seguro, JSON, historial y aprobación de borradores.
 7. **Copilot** en un dock acoplado a la interfaz, con conversaciones persistentes, un modelo local elegido por el usuario y un conjunto acotado de operaciones que puede invocar por nombre. No puede modificar ni borrar evidencia, ni aprobar reportes, y toda escritura queda auditada.
 8. **Local Models** con detección y configuración de LM Studio, Ollama y endpoints privados OpenAI-compatible.
 9. **Data Sources** para procedencia, citas y confiabilidad.
 10. **Settings** para apariencia, privacidad, rendimiento, backups y diagnósticos sanitizados.
-11. **OIHK System Link** para vincular módulos OIHK instalados de forma separada mediante identidades y capacidades verificadas.
+11. **OIHK System Link** para vincular módulos OIHK instalados de forma separada mediante identidades y capacidades verificadas. Las quince capacidades que se pueden conceder tienen un endpoint que las exige: conceder y permitir son lo mismo, y un test falla si alguna vez dejan de serlo.
 
 Varias capacidades siguen en desarrollo o validación. Consulta [las limitaciones conocidas](docs/KNOWN_LIMITATIONS.md) antes de probar el proyecto.
 
