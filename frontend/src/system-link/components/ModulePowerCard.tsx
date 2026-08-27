@@ -41,6 +41,22 @@ const ACTION_LABELS: Record<ModulePowerAction, string> = {
   open: "Open module",
 };
 
+/** Initials for a module with no brand of its own: "OIHK Triage Suite" -> "TS". */
+function ModuleBrand({ module }: { module: LinkedSystemModule }) {
+  const initials = module.product_name
+    .split(/\s+/)
+    .filter((word) => word && word.toUpperCase() !== "OIHK")
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? "")
+    .join("");
+  return (
+    <div className="evidence-lab-brand" aria-label={module.product_name}>
+      <span>OIHK</span>
+      <strong>{initials || "M"}</strong>
+    </div>
+  );
+}
+
 export function ModulePowerCard({
   module,
   brand,
@@ -48,7 +64,9 @@ export function ModulePowerCard({
   onAction,
 }: {
   module: LinkedSystemModule;
-  brand: React.ReactNode;
+  // Optional: a module that ships no brand of its own gets initials rather
+  // than the host having to know about it by name.
+  brand?: React.ReactNode;
   busy: boolean;
   onAction: (action: ModulePowerAction) => void;
 }) {
@@ -58,7 +76,7 @@ export function ModulePowerCard({
   return (
     <article className={`system-link-power-card state-${module.state.toLowerCase()}`}>
       <header>
-        {brand}
+        {brand ?? <ModuleBrand module={module} />}
         <div>
           <span className="platform-eyebrow">First-party OIHK product</span>
           <h2>{module.product_name}</h2>

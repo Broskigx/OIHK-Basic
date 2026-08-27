@@ -2,11 +2,9 @@ export type CorePlatformArea =
   | "dashboard"
   | "investigations"
   | "entities"
-  | "evidence"
   | "timeline"
   | "graph"
   | "osint"
-  | "tools"
   | "reports"
   | "models"
   | "sources"
@@ -43,7 +41,6 @@ export const CORE_NAVIGATION: NavigationItem[] = [
   { id: "dashboard", label: "Dashboard", caseScoped: false, group: "primary" },
   { id: "investigations", label: "Investigations", caseScoped: false, group: "primary" },
   { id: "graph", label: "Graph", caseScoped: true, group: "primary" },
-  { id: "evidence", label: "Evidence", caseScoped: true, group: "primary" },
   { id: "reports", label: "Reports", caseScoped: true, group: "primary" },
   { id: "models", label: "Local Models", caseScoped: false, group: "primary" },
   { id: "system-link", label: "System Link", caseScoped: false, group: "primary" },
@@ -51,7 +48,6 @@ export const CORE_NAVIGATION: NavigationItem[] = [
   { id: "entities", label: "Entities", caseScoped: true, group: "more" },
   { id: "timeline", label: "Timeline", caseScoped: true, group: "more" },
   { id: "osint", label: "OSINT Workspace", caseScoped: true, group: "more" },
-  { id: "tools", label: "Tools", caseScoped: true, group: "more" },
   { id: "sources", label: "Data Sources", caseScoped: true, group: "more" },
   { id: "about", label: "About", caseScoped: false, group: "more" },
 ];

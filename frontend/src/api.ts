@@ -5,19 +5,10 @@ import type {
   CopilotConversation,
   CopilotMessage,
   CopilotReply,
-  CarveResult,
-  CorrelationQueryResult,
   CustodyReport,
   DashboardSummary,
-  HashLookupResult,
-  HashSetImportResult,
-  HashSetInfo,
-  InterestingRule,
   EntityDossier,
   EvidenceItem,
-  EvidenceVerification,
-  ForensicCoreReport,
-  ForensicReport,
   GraphAnalytics,
   GraphEntityCreate,
   GraphExpandResult,
@@ -145,36 +136,6 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function requestForm<T>(path: string, body: FormData, signal?: AbortSignal): Promise<T> {
-  const csrfToken = getCsrfToken();
-  let response: Response;
-  try {
-    response = await fetch(`${API_URL}${path}`, {
-      method: "POST",
-      body,
-      credentials: "include",
-      signal,
-      headers: authHeaders({
-        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-      }),
-    });
-  } catch (cause) {
-    if (cause instanceof DOMException && cause.name === "AbortError") throw new Error("Operation cancelled");
-    if (cause instanceof TypeError && String(cause.message).includes("fetch")) {
-      throw new Error("Local service unavailable. OIHK Basic could not connect to its local data service.");
-    }
-    throw new Error("Network error. Please check your connection and try again.");
-  }
-  if (response.status === 401) {
-    clearToken();
-    throw new Error("Session expired. Please sign in again.");
-  }
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({ detail: response.statusText }));
-    throw new Error(typeof payload.detail === "string" ? payload.detail : `Request failed (${response.status})`);
-  }
-  return response.json() as Promise<T>;
-}
 
 // --- Authentication ---
 export function register(payload: {
@@ -353,20 +314,6 @@ export function getCustody(caseId: string): Promise<CustodyReport> {
 }
 
 // --- Forensic media analysis / steganalysis ---
-export function analyzeForensics(caseId: string, file: File): Promise<ForensicReport> {
-  const body = new FormData();
-  body.append("case_id", caseId);
-  body.append("file", file);
-  return requestForm<ForensicReport>("/forensics/analyze", body);
-}
-
-export function analyzeForensicCore(caseId: string, file: File): Promise<ForensicCoreReport> {
-  const body = new FormData();
-  body.append("case_id", caseId);
-  body.append("file", file);
-  return requestForm<ForensicCoreReport>("/forensic-core/analyze", body);
-}
-
 export function listCases(): Promise<CaseRead[]> {
   return request<CaseRead[]>("/cases");
 }
@@ -634,37 +581,6 @@ export function listEvidence(caseId: string): Promise<EvidenceItem[]> {
   return request<EvidenceItem[]>(`/evidence/${encodeURIComponent(caseId)}`);
 }
 
-export function uploadEvidence(caseId: string, file: File, notes = "", tags = "", signal?: AbortSignal): Promise<EvidenceItem> {
-  const body = new FormData();
-  body.append("case_id", caseId);
-  body.append("notes", notes);
-  body.append("tags", tags);
-  body.append("file", file);
-  return requestForm<EvidenceItem>("/evidence", body, signal);
-}
-
-export function updateEvidence(itemId: string, payload: { notes?: string; tags?: string[]; entity_ids?: string[] }): Promise<EvidenceItem> {
-  return request<EvidenceItem>(`/evidence/items/${encodeURIComponent(itemId)}`, { method: "PATCH", body: JSON.stringify(payload) });
-}
-
-export function verifyEvidence(itemId: string): Promise<EvidenceVerification> {
-  return request<EvidenceVerification>(`/evidence/items/${encodeURIComponent(itemId)}/verify`, { method: "POST" });
-}
-
-export function deleteEvidence(itemId: string): Promise<void> {
-  return request<void>(`/evidence/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
-}
-
-export function evidencePreviewUrl(itemId: string): string {
-  return `${API_URL}/evidence/items/${encodeURIComponent(itemId)}/preview`;
-}
-
-export async function downloadEvidenceManifest(caseId: string): Promise<Blob> {
-  const response = await fetch(`${API_URL}/evidence/${encodeURIComponent(caseId)}/manifest.json`, { credentials: "include", headers: authHeaders() });
-  if (!response.ok) throw new Error(`Could not export evidence manifest (${response.status})`);
-  return response.blob();
-}
-
 export function updateGraphRelationship(relationshipId: string, payload: { label?: string; confidence?: number }): Promise<GraphRead["edges"][number]> {
   return request<GraphRead["edges"][number]>(`/graph/relationships/${encodeURIComponent(relationshipId)}`, { method: "PATCH", body: JSON.stringify(payload) });
 }
@@ -765,65 +681,3 @@ export function listAuditEvents(caseId?: string, limit = 80): Promise<AuditEvent
 }
 
 // --- Forensic lab ---
-export function importHashSet(payload: {
-  set_name: string;
-  category: "notable" | "known_good";
-  severity: string;
-  hashes: string;
-}): Promise<HashSetImportResult> {
-  return request<HashSetImportResult>("/forensic-core/hashsets/import", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export function listHashSets(): Promise<HashSetInfo[]> {
-  return request<HashSetInfo[]>("/forensic-core/hashsets");
-}
-
-export function lookupHash(value: string): Promise<HashLookupResult> {
-  return request<HashLookupResult>("/forensic-core/hashsets/lookup", {
-    method: "POST",
-    body: JSON.stringify({ value }),
-  });
-}
-
-export function correlateSelector(attrType: string, value: string): Promise<CorrelationQueryResult> {
-  const q = new URLSearchParams({ attr_type: attrType, value });
-  return request<CorrelationQueryResult>(`/forensic-core/correlate?${q.toString()}`);
-}
-
-export function carveFile(caseId: string, file: File): Promise<CarveResult> {
-  const body = new FormData();
-  body.append("case_id", caseId);
-  body.append("file", file);
-  return requestForm<CarveResult>("/forensic-core/carve", body);
-}
-
-export function listInterestingRules(): Promise<InterestingRule[]> {
-  return request<InterestingRule[]>("/forensic-core/interesting-rules");
-}
-
-export function createInterestingRule(payload: {
-  name: string;
-  severity: string;
-  name_contains?: string;
-  name_glob?: string;
-  extensions?: string[];
-  types?: string[];
-  min_size?: number | null;
-  max_size?: number | null;
-  min_entropy?: number | null;
-  description?: string;
-}): Promise<InterestingRule> {
-  return request<InterestingRule>("/forensic-core/interesting-rules", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export function deleteInterestingRule(ruleId: string): Promise<{ deleted: boolean }> {
-  return request<{ deleted: boolean }>(`/forensic-core/interesting-rules/${ruleId}`, {
-    method: "DELETE",
-  });
-}

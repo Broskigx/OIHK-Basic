@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { WorkspaceHeader } from "../../shared/ui/WorkspaceHeader";
 import type { PlatformArea } from "../../app/navigation";
 import type { useSystemLinkRegistry } from "../registry";
-import { EvidenceLabCard } from "../modules/evidence-lab/EvidenceLabCard";
+import { ModulePowerCard } from "./ModulePowerCard";
 import type { ModulePowerAction } from "./modulePowerModel";
 
 type Registry = ReturnType<typeof useSystemLinkRegistry>;
@@ -26,7 +26,11 @@ function PendingApproval({ pending, onApprove }: { pending: Registry["pending"][
 }
 
 export function SystemLinkControlPlane({ registry, onNavigate }: { registry: Registry; onNavigate: (area: PlatformArea) => void }) {
-  const evidenceLab = registry.status?.modules.find((module) => module.module_id === "oihk.evidence-lab");
+  // Every module the host knows about, linked or merely advertised. This used
+  // to `find` one hard-coded module id, which meant any other module paired
+  // successfully and was then invisible in the only screen that can start,
+  // stop or revoke it.
+  const modules = registry.status?.modules ?? [];
 
   function action(moduleId: string, value: ModulePowerAction) {
     if (value === "pair") {
@@ -34,7 +38,8 @@ export function SystemLinkControlPlane({ registry, onNavigate }: { registry: Reg
       return;
     }
     if (value === "open") {
-      const route = evidenceLab?.categories.find((category) => category.enabled)?.route_id;
+      const target = modules.find((module) => module.module_id === moduleId);
+      const route = target?.categories.find((category) => category.enabled)?.route_id;
       if (route) onNavigate(route as PlatformArea);
       return;
     }
@@ -68,7 +73,14 @@ export function SystemLinkControlPlane({ registry, onNavigate }: { registry: Reg
       )}
       {registry.pending.map((pending) => <PendingApproval key={pending.pairing_id} pending={pending} onApprove={(grants) => void registry.approvePairing(pending.pairing_id, grants)} />)}
       <div className="system-link-module-grid">
-        {evidenceLab && <EvidenceLabCard module={evidenceLab} busy={registry.busyModule === evidenceLab.module_id} onAction={(value) => action(evidenceLab.module_id, value)} />}
+        {modules.map((module) => (
+          <ModulePowerCard
+            key={module.module_id}
+            module={module}
+            busy={registry.busyModule === module.module_id}
+            onAction={(value) => action(module.module_id, value)}
+          />
+        ))}
       </div>
       <p className="platform-footnote">No module receives raw SQLite, arbitrary filesystem, private Tauri state, shell execution, or capabilities outside its explicit grant.</p>
     </div>

@@ -168,7 +168,7 @@ export function DashboardContent({
           </div>
           <nav className="dashboard-quick-actions" aria-label="Quick workspace actions">
             <button type="button" onClick={() => onNavigate("graph")}><Radar size={13} /> Intelligence graph</button>
-            <button type="button" onClick={() => onNavigate("evidence")}><ShieldCheck size={13} /> Evidence vault</button>
+            <button type="button" onClick={() => onNavigate("system-link")}><ShieldCheck size={13} /> Linked modules</button>
             <button type="button" onClick={onOpenCopilot}><Sparkles size={13} /> Open Copilot</button>
           </nav>
         </div>

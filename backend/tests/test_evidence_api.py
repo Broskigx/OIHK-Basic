@@ -1,4 +1,15 @@
-"""Managed evidence over HTTP, including what deletion leaves behind."""
+"""The evidence surface Basic keeps as custodian, over HTTP.
+
+Ingestion is not here any more. Basic no longer accepts browser uploads —
+Evidence Lab is installed separately and writes through the signed System Link
+module API, which is exercised in ``test_module_capability_api``. These tests
+cover what a custodian still does with records it holds: list them, prove a
+held file still matches its seal, export the manifest, and remove an exhibit.
+
+Evidence is arranged through the same services the module API calls, so the
+fixtures below produce records indistinguishable from ones a linked module
+wrote — which is the point: the custody surface must not care who ingested.
+"""
 
 from __future__ import annotations
 
@@ -7,14 +18,47 @@ from pathlib import Path
 from sqlalchemy import func, select
 
 from app import models
+from app.services.custody import seal_source
+from app.services.evidence_storage import store_evidence_bytes
 
 
-async def _upload(client, case_id: str, name: str = "note.txt", content: bytes = b"observed artifact"):
-    return await client.post(
-        "/evidence",
-        data={"case_id": case_id, "notes": "collected during the window", "tags": "field,raw"},
-        files={"file": (name, content, "text/plain")},
+async def _ingest(
+    session,
+    case_id: str,
+    *,
+    name: str = "note.txt",
+    content: bytes = b"observed artifact",
+    ingested_by: str = "module:oihk.evidence-lab",
+) -> models.EvidenceItem:
+    """Create sealed managed evidence the way the module API does."""
+    stored = store_evidence_bytes(case_id, name, content, content_type="text/plain")
+    source = models.Source(
+        case_id=case_id,
+        title=f"Evidence: {stored['filename']}"[:240],
+        kind="module_evidence",
+        body=f"sha256={stored['sha256']}",
+        citation=f"sha256:{stored['sha256']}",
+        license="case-evidence",
+        reliability=1.0,
     )
+    session.add(source)
+    await session.flush()
+    await seal_source(session, source, storage_path=str(stored["storage_path"]))
+    item = models.EvidenceItem(
+        case_id=case_id,
+        source_id=source.id,
+        original_name=str(stored["filename"]),
+        storage_path=str(stored["storage_path"]),
+        mime_type="text/plain",
+        size_bytes=int(stored["size_bytes"]),
+        sha256=str(stored["sha256"]),
+        notes="collected during the window",
+        tags=["field", "raw"],
+        ingested_by=ingested_by,
+    )
+    session.add(item)
+    await session.commit()
+    return item
 
 
 async def _stored_path(session, item_id: str) -> Path:
@@ -32,133 +76,129 @@ async def _stored_path(session, item_id: str) -> Path:
     return Path(path_value)
 
 
-async def test_upload_stores_hashes_and_lists_evidence(client, case, session, storage_dir) -> None:
-    response = await _upload(client, case["id"])
-    assert response.status_code == 201, response.text
-    item = response.json()
-
-    assert item["size_bytes"] == len(b"observed artifact")
-    assert len(item["sha256"]) == 64
-    assert item["tags"] == ["field", "raw"]
-
-    stored = await _stored_path(session, item["id"])
-    assert stored.is_file()
-    assert stored.is_relative_to(storage_dir.resolve())
+async def test_listing_returns_what_the_case_holds(client, case, session, storage_dir) -> None:
+    item = await _ingest(session, case["id"])
 
     listed = await client.get(f"/evidence/{case['id']}")
     assert listed.status_code == 200
-    assert [row["id"] for row in listed.json()] == [item["id"]]
+    rows = listed.json()
+    assert [row["id"] for row in rows] == [item.id]
+    assert rows[0]["sha256"] == item.sha256
+    assert rows[0]["ingested_by"] == "module:oihk.evidence-lab"
 
 
-async def test_managed_path_is_never_returned_to_the_client(client, case) -> None:
-    """An absolute filesystem path is not part of the API contract."""
-    item = (await _upload(client, case["id"])).json()
-    assert "storage_path" not in item
-    listed = (await client.get(f"/evidence/{case['id']}")).json()
-    assert "storage_path" not in listed[0]
+async def test_managed_path_is_never_returned_to_the_client(client, case, session, storage_dir) -> None:
+    await _ingest(session, case["id"])
+    listed = await client.get(f"/evidence/{case['id']}")
+    assert "storage_path" not in listed.text
 
 
-async def test_verify_confirms_an_intact_file(client, case) -> None:
-    item = (await _upload(client, case["id"])).json()
-    verified = await client.post(f"/evidence/items/{item['id']}/verify")
+async def test_ingestion_is_not_reachable_over_the_browser_api(client, case, storage_dir) -> None:
+    """The upload route is gone on purpose, not by accident.
+
+    An unauthenticated-by-module write path would be a second way in that no
+    module signature covers, which is exactly what moving ingestion to the
+    signed module API was meant to prevent.
+    """
+    response = await client.post(
+        "/evidence",
+        data={"case_id": case["id"]},
+        files={"file": ("note.txt", b"payload", "text/plain")},
+    )
+    assert response.status_code == 404
+
+
+async def test_annotation_is_not_reachable_over_the_browser_api(client, case, session, storage_dir) -> None:
+    item = await _ingest(session, case["id"])
+    response = await client.patch(f"/evidence/items/{item.id}", json={"notes": "edited"})
+    assert response.status_code == 405
+
+
+async def test_verify_confirms_an_intact_file(client, case, session, storage_dir) -> None:
+    item = await _ingest(session, case["id"])
+
+    verified = await client.post(f"/evidence/items/{item.id}/verify")
     assert verified.status_code == 200
     body = verified.json()
     assert body["intact"] is True
-    assert body["actual_sha256"] == body["expected_sha256"]
+    assert body["actual_sha256"] == body["expected_sha256"] == item.sha256
 
 
-async def test_verify_detects_a_tampered_file(client, case, session) -> None:
-    item = (await _upload(client, case["id"])).json()
-    (await _stored_path(session, item["id"])).write_bytes(b"substituted content")
+async def test_verify_detects_a_tampered_file(client, case, session, storage_dir) -> None:
+    item = await _ingest(session, case["id"])
+    # Capture the identifier before _stored_path expires the session: touching
+    # an expired ORM attribute afterwards triggers a lazy reload from sync
+    # context, which asyncio SQLAlchemy cannot service.
+    item_id = item.id
+    (await _stored_path(session, item_id)).write_bytes(b"substituted content")
 
-    verified = await client.post(f"/evidence/items/{item['id']}/verify")
+    verified = await client.post(f"/evidence/items/{item_id}/verify")
     assert verified.status_code == 200
     body = verified.json()
     assert body["intact"] is False
     assert body["actual_sha256"] != body["expected_sha256"]
 
 
-async def test_preview_serves_a_raster_image_inline(client, case) -> None:
-    png = bytes.fromhex(
-        "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4"
-        "890000000a49444154789c6360000002000100ffff03000006000557bfabd400"
-        "00000049454e44ae426082"
+async def test_verify_refuses_an_exhibit_basic_does_not_hold(client, case, session, storage_dir) -> None:
+    """An imported record has no managed file; saying "not intact" would be a lie.
+
+    ``evidence.import`` records that an exhibit exists in the module's own
+    store. Re-hashing nothing and reporting a mismatch would read as tampering
+    when the truth is that the bytes were never Basic's to check.
+    """
+    item = await _ingest(session, case["id"])
+    item.storage_path = ""
+    await session.commit()
+
+    verified = await client.post(f"/evidence/items/{item.id}/verify")
+    assert verified.status_code == 409
+    assert "linked module" in verified.json()["detail"]
+
+
+async def test_manifest_lists_holdings_and_marks_who_holds_them(client, case, session, storage_dir) -> None:
+    held = await _ingest(session, case["id"], name="held.txt")
+    referenced = await _ingest(session, case["id"], name="elsewhere.txt")
+    referenced.storage_path = ""
+    referenced.original_reference = "evidence-lab://vault/elsewhere.txt"
+    await session.commit()
+
+    response = await client.get(f"/evidence/{case['id']}/manifest.json")
+    assert response.status_code == 200
+    manifest = response.json()
+    by_id = {row["id"]: row for row in manifest["items"]}
+    assert by_id[held.id]["held_by_basic"] is True
+    assert by_id[referenced.id]["held_by_basic"] is False
+    assert by_id[referenced.id]["original_reference"] == "evidence-lab://vault/elsewhere.txt"
+
+
+async def test_deleting_evidence_removes_its_managed_file(client, case, session, storage_dir) -> None:
+    item = await _ingest(session, case["id"])
+    item_id = item.id
+    path = await _stored_path(session, item_id)
+    assert path.is_file()
+
+    removed = await client.delete(f"/evidence/items/{item_id}")
+    assert removed.status_code == 204
+    assert not path.exists()
+
+    session.expire_all()
+    remaining = await session.scalar(
+        select(func.count(models.EvidenceItem.id)).where(models.EvidenceItem.case_id == case["id"])
     )
-    item = (
-        await client.post(
-            "/evidence",
-            data={"case_id": case["id"]},
-            files={"file": ("pixel.png", png, "image/png")},
-        )
-    ).json()
-
-    preview = await client.get(f"/evidence/items/{item['id']}/preview")
-    assert preview.status_code == 200
-    assert preview.headers["content-type"].startswith("image/png")
-    assert preview.headers["content-disposition"].startswith("inline")
-    assert preview.headers["x-content-type-options"] == "nosniff"
-    assert "sandbox" in preview.headers["content-security-policy"]
+    assert remaining == 0
 
 
-async def test_preview_forces_an_attachment_for_active_content(client, case) -> None:
-    """SVG is a scriptable document; it must never render in the app context."""
-    item = (
-        await client.post(
-            "/evidence",
-            data={"case_id": case["id"]},
-            files={"file": ("payload.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>", "image/svg+xml")},
-        )
-    ).json()
+async def test_deleting_a_case_removes_its_evidence_and_files(client, case, session, storage_dir) -> None:
+    item = await _ingest(session, case["id"])
+    path = await _stored_path(session, item.id)
+    assert path.is_file()
 
-    preview = await client.get(f"/evidence/items/{item['id']}/preview")
-    assert preview.status_code == 200
-    assert preview.headers["content-type"].startswith("application/octet-stream")
-    assert preview.headers["content-disposition"].startswith("attachment")
+    removed = await client.delete(f"/cases/{case['id']}")
+    assert removed.status_code == 204
+    assert not path.exists(), "deleting a case must not leave its evidence files on disk"
 
-
-async def test_upload_to_an_inaccessible_case_is_refused(client, storage_dir) -> None:
-    response = await _upload(client, "does-not-exist")
-    assert response.status_code == 404
-    # A refused upload must not leave a file behind in managed storage.
-    assert not any(storage_dir.rglob("*")) if storage_dir.exists() else True
-
-
-async def test_case_id_cannot_escape_managed_storage(client, storage_dir) -> None:
-    response = await _upload(client, "../../escaped")
-    assert response.status_code in {400, 404}
-
-
-async def test_evidence_association_must_stay_inside_the_case(client, case) -> None:
-    item = (await _upload(client, case["id"])).json()
-    response = await client.patch(
-        f"/evidence/items/{item['id']}",
-        json={"entity_ids": ["an-entity-from-another-case"]},
+    session.expire_all()
+    remaining = await session.scalar(
+        select(func.count(models.EvidenceItem.id)).where(models.EvidenceItem.case_id == case["id"])
     )
-    assert response.status_code == 400
-
-
-async def test_deleting_evidence_removes_its_managed_file(client, case, session) -> None:
-    item = (await _upload(client, case["id"])).json()
-    stored = await _stored_path(session, item["id"])
-    assert stored.is_file()
-
-    deleted = await client.delete(f"/evidence/items/{item['id']}")
-    assert deleted.status_code == 204, deleted.text
-    assert not stored.exists(), "the managed file outlived its evidence record"
-
-
-async def test_deleting_a_case_removes_its_evidence_and_files(client, case, session) -> None:
-    """A deleted case must not leave evidence rows or unreferenced files behind."""
-    item = (await _upload(client, case["id"])).json()
-    stored = await _stored_path(session, item["id"])
-    assert stored.is_file()
-
-    deleted = await client.delete(f"/cases/{case['id']}")
-    assert deleted.status_code == 204, deleted.text
-
-    for model in (models.EvidenceItem, models.EvidenceSeal, models.Source):
-        remaining = await session.scalar(
-            select(func.count()).select_from(model).where(model.case_id == case["id"])
-        )
-        assert remaining == 0, f"{model.__name__} rows outlived the case"
-    assert not stored.exists(), "managed evidence files outlived the case that owned them"
+    assert remaining == 0
