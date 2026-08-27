@@ -3,12 +3,52 @@
 // The module bundle runs inside a sandboxed iframe (opaque origin). The ONLY
 // channel it has to the host is postMessage, and this module is the host-side
 // gate: it validates the message shape, the per-surface nonce, the event
-// source, and the operation allowlist before any Basic API call is made. The
-// same operations are also enforced server-side by the regular API routes.
+// source, the operation allowlist, and — crucially — whether the module that
+// owns this surface was actually granted the capability the operation needs.
+//
+// That last check is not redundant with the server. A bridge operation is
+// served by calling Basic's own API with the *operator's* session, so the
+// server sees an authorised human, not a module: it enforces what the operator
+// may read, never what the module was approved for. Without the grant check
+// here, a module approved for navigation alone could read every case and every
+// exhibit in the installation simply by asking its own host surface for them.
+//
+// The bridge is deliberately read-only. A module's writes go through the
+// signed, replay-protected module API in `system_link/module_api.py`, where
+// they are attributed to the module and land in the audit trail under its
+// name. Letting the iframe write here would launder a module's writes into
+// the operator's identity, which is exactly what the audit trail exists to
+// prevent.
 
-export const MODULE_BRIDGE_OPERATIONS = ["case.read", "evidence.read"] as const;
+export const MODULE_BRIDGE_OPERATIONS = [
+  "case.read",
+  "case.list",
+  "evidence.read",
+  "entity.read",
+  "source.read",
+  "report.read",
+] as const;
 
 export type ModuleBridgeOperation = (typeof MODULE_BRIDGE_OPERATIONS)[number];
+
+/** The System Link capability a module must hold to invoke each operation. */
+export const BRIDGE_OPERATION_CAPABILITY: Record<ModuleBridgeOperation, string> = {
+  "case.read": "case.read",
+  "case.list": "case.metadata.read",
+  "evidence.read": "evidence.read",
+  "entity.read": "entity.read",
+  "source.read": "source.read",
+  "report.read": "report.read",
+};
+
+/** Whether `grantedCapabilities` authorises `operation`. Fails closed. */
+export function bridgeOperationAllowed(
+  operation: ModuleBridgeOperation,
+  grantedCapabilities: readonly string[],
+): boolean {
+  const required = BRIDGE_OPERATION_CAPABILITY[operation];
+  return required !== undefined && grantedCapabilities.includes(required);
+}
 
 export type ModuleBridgeRequest = {
   type: "oihk-module-request";

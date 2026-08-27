@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import models
 from app.core.config import get_settings
 from app.system_link.capabilities import granted_capabilities
-from app.system_link.modules.evidence_lab import EVIDENCE_LAB_ADAPTER
+from app.system_link.catalog import KNOWN_MODULES
 from app.system_link.package_verification import verify_package
 from app.system_link.protocol import (
     SYSTEM_LINK_PROTOCOL_VERSION,
@@ -38,9 +38,9 @@ from app.system_link.security import (
 )
 from app.version import PRODUCT_VERSION
 
-# Static host catalog entries are presentation/control adapters, not embedded product runtimes.
-EVIDENCE_LAB_MODULE_ID = EVIDENCE_LAB_ADAPTER.module_id
-EVIDENCE_LAB_PRODUCT_NAME = EVIDENCE_LAB_ADAPTER.product_name
+# Retained for callers that still import them; the catalog is the source of truth.
+EVIDENCE_LAB_MODULE_ID = KNOWN_MODULES[0].module_id
+EVIDENCE_LAB_PRODUCT_NAME = KNOWN_MODULES[0].product_name
 
 
 class SystemLinkError(RuntimeError):
@@ -154,14 +154,9 @@ class SystemLinkService:
             raise SystemLinkError("pairing_key_invalid", "OIHK Link Key is invalid")
         if PRODUCT_VERSION not in manifest.compatible_basic_versions:
             raise SystemLinkError("basic_version_incompatible", "Module manifest does not support this Basic version")
-        try:
-            EVIDENCE_LAB_ADAPTER.validate_identity(
-                module_id=manifest.module_id,
-                product_name=manifest.name,
-                entrypoint_id=manifest.lifecycle.entrypoint_id,
-            )
-        except ValueError as exc:
-            raise SystemLinkError("module_not_first_party", str(exc)) from exc
+        # A module's identity is established by the publisher signature verified
+        # further down, not by matching a name against a built-in list. See
+        # app.system_link.catalog for why the previous name check was removed.
         try:
             fingerprint = public_key_fingerprint(module_public_key)
         except Exception as exc:
@@ -418,11 +413,14 @@ class SystemLinkService:
     async def list_modules(self) -> list[LinkedModuleRead]:
         rows = list((await self.session.execute(select(models.SystemLinkModule))).scalars())
         modules = [await self.module_view(row) for row in rows]
-        if not any(module.module_id == EVIDENCE_LAB_MODULE_ID for module in modules):
+        linked_ids = {module.module_id for module in modules}
+        for entry in KNOWN_MODULES:
+            if entry.module_id in linked_ids:
+                continue
             modules.append(
                 LinkedModuleRead(
-                    module_id=EVIDENCE_LAB_MODULE_ID,
-                    product_name=EVIDENCE_LAB_PRODUCT_NAME,
+                    module_id=entry.module_id,
+                    product_name=entry.product_name,
                     module_version="",
                     protocol_version=SYSTEM_LINK_PROTOCOL_VERSION,
                     state=ModuleState.NOT_INSTALLED,

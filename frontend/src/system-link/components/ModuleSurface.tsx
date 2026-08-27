@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getCase, listEvidence } from "../../api";
+import { getCase, getGraph, listCases, listEvidence, listReports, listSources } from "../../api";
 import type { LinkedSystemModule, SystemLinkCategory } from "../types";
 import {
+  bridgeOperationAllowed,
   buildModuleBridgeError,
   buildModuleBridgeResponse,
   isModuleBridgeRequest,
@@ -9,20 +10,35 @@ import {
   type ModuleBridgeOperation,
 } from "../moduleSurface";
 
+function requireCaseId(payload: Record<string, unknown>, operation: string): string {
+  const caseId = String(payload.caseId ?? "");
+  if (!caseId) throw new Error(`${operation} requires a caseId`);
+  return caseId;
+}
+
 async function executeBridgeOperation(
   operation: ModuleBridgeOperation,
   payload: Record<string, unknown>,
 ): Promise<unknown> {
   switch (operation) {
-    case "case.read": {
-      const caseId = String(payload.caseId ?? "");
-      if (!caseId) throw new Error("case.read requires a caseId");
-      return getCase(caseId);
-    }
-    case "evidence.read": {
-      const caseId = String(payload.caseId ?? "");
-      if (!caseId) throw new Error("evidence.read requires a caseId");
-      return listEvidence(caseId);
+    case "case.read":
+      return getCase(requireCaseId(payload, operation));
+    case "case.list":
+      return listCases();
+    case "evidence.read":
+      return listEvidence(requireCaseId(payload, operation));
+    case "entity.read":
+      return getGraph(requireCaseId(payload, operation));
+    case "source.read":
+      return listSources(requireCaseId(payload, operation));
+    case "report.read":
+      return listReports(requireCaseId(payload, operation));
+    default: {
+      // Exhaustiveness guard: adding an operation to MODULE_BRIDGE_OPERATIONS
+      // without a case here is a compile error rather than a silent undefined
+      // handed back to the module as a successful result.
+      const unreachable: never = operation;
+      throw new Error(`Unhandled bridge operation: ${String(unreachable)}`);
     }
   }
 }
@@ -51,6 +67,19 @@ export function ModuleSurface({
       if (event.source !== frameRef.current?.contentWindow) return;
       if (!isModuleBridgeRequest(event.data, nonce)) return;
       const request = event.data;
+      // The operation is served with the operator's session, so the server
+      // will happily answer it. What the operator approved for *this module*
+      // is only known here.
+      if (!bridgeOperationAllowed(request.operation, module.granted_capabilities)) {
+        frameRef.current?.contentWindow?.postMessage(
+          buildModuleBridgeError(
+            request.id,
+            `Capability '${request.operation}' was not granted to ${module.module_id}`,
+          ),
+          "*",
+        );
+        return;
+      }
       void executeBridgeOperation(request.operation, request.payload)
         .then((result) => {
           frameRef.current?.contentWindow?.postMessage(buildModuleBridgeResponse(request.id, result), "*");
@@ -62,7 +91,7 @@ export function ModuleSurface({
     }
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [nonce]);
+  }, [nonce, module.granted_capabilities, module.module_id]);
 
   return (
     <div className="system-link-module-surface">
