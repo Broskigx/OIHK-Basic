@@ -5,6 +5,10 @@ import re
 from app.forensic.types import TextExtraction
 
 _MAX_OOXML_MEMBER_BYTES = 10 * 1024 * 1024
+# A presentation contributes one member per slide, so the member list is
+# attacker-influenced in a way the fixed Word and Excel paths never were. The
+# per-member byte ceiling bounds each read; this bounds how many of them run.
+_MAX_OOXML_MEMBERS = 512
 
 
 def extract_text(data: bytes, filename: str, content_type: str) -> TextExtraction:
@@ -64,6 +68,34 @@ def _extract_pdf(data: bytes, errors: list[str]) -> str:
         return ""
 
 
+def _ooxml_members(archive) -> list[str]:
+    """Return the text-bearing members of an OOXML package, in reading order.
+
+    Word and Excel keep their text at one fixed path each. PowerPoint does not:
+    its text lives in ``ppt/slides/slideN.xml``, one member per slide, with
+    speaker notes alongside in ``ppt/notesSlides/``. Naming only the two fixed
+    paths meant every ``.pptx`` was accepted, opened, and reported as holding no
+    text at all — with an empty error list, so nothing distinguished a deck that
+    could not be read from a deck with nothing in it.
+    """
+    names = set(archive.namelist())
+    members = [name for name in ("word/document.xml", "xl/sharedStrings.xml") if name in names]
+
+    def slide_order(name: str) -> tuple[int, str]:
+        # slide10 must sort after slide2, which a plain string sort gets wrong.
+        digits = re.findall(r"\d+", name.rsplit("/", 1)[-1])
+        return (int(digits[-1]) if digits else 0, name)
+
+    for prefix in ("ppt/slides/slide", "ppt/notesSlides/notesSlide"):
+        members.extend(
+            sorted(
+                (name for name in names if name.startswith(prefix) and name.endswith(".xml")),
+                key=slide_order,
+            )
+        )
+    return members[:_MAX_OOXML_MEMBERS]
+
+
 def _extract_ooxml(data: bytes, errors: list[str]) -> str:
     try:
         import io
@@ -71,7 +103,7 @@ def _extract_ooxml(data: bytes, errors: list[str]) -> str:
 
         texts: list[str] = []
         with zipfile.ZipFile(io.BytesIO(data)) as z:
-            for member_name in ("word/document.xml", "xl/sharedStrings.xml"):
+            for member_name in _ooxml_members(z):
                 try:
                     member = z.getinfo(member_name)
                 except KeyError:

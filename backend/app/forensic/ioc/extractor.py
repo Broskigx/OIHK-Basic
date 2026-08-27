@@ -17,31 +17,81 @@ _IOC_PATTERNS: list[tuple[str, str, re.Pattern]] = [
     ("eth", "Ethereum address", re.compile(r"\b0x[a-fA-F0-9]{40}\b")),
 ]
 
+_LOWERCASED_TYPES = frozenset({"email", "url", "domain"})
+_MAX_MATCHES = 200
+
+
+def _is_routable_ipv4(value: str) -> bool:
+    """Reject dotted quads whose octets are out of range.
+
+    ``\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b`` is a shape, not an address: it accepts
+    ``999.999.999.999`` and reports it at the same 0.9 confidence as a real
+    address. Range-checking here keeps a malformed string from entering an
+    exhibit as a high-confidence indicator.
+    """
+    parts = value.split(".")
+    if len(parts) != 4:
+        return False
+    return all(part.isdigit() and len(part) <= 3 and int(part) <= 255 for part in parts)
+
+
+_VALIDATORS = {"ipv4": _is_routable_ipv4}
+
+
+def _fair_share(by_type: dict[str, list[IocMatch]], ceiling: int) -> list[IocMatch]:
+    """Fill ``ceiling`` slots by rotating across indicator types.
+
+    A single global sort truncated at 200 lets the highest-confidence type
+    consume every slot: an archive with more than 200 email addresses in it
+    reported *only* email addresses, and the hashes, CVEs and URLs beside them
+    were dropped with no indication that anything had been discarded. Rotating
+    means each type present keeps its highest-confidence findings, and a chatty
+    type only spends the capacity nobody else claims.
+    """
+    remaining = {
+        ioc_type: list(matches)
+        for ioc_type, matches in sorted(by_type.items(), key=lambda item: -item[1][0].confidence)
+        if matches
+    }
+    selected: list[IocMatch] = []
+    while remaining and len(selected) < ceiling:
+        for ioc_type in list(remaining):
+            if len(selected) >= ceiling:
+                break
+            selected.append(remaining[ioc_type].pop(0))
+            if not remaining[ioc_type]:
+                del remaining[ioc_type]
+    selected.sort(key=lambda match: match.confidence, reverse=True)
+    return selected
+
 
 def extract_iocs(text: str) -> IocReport:
     """Extract IOCs from text content."""
-    matches: list[IocMatch] = []
+    by_type: dict[str, list[IocMatch]] = {}
     seen: set[tuple[str, str]] = set()
-    asn_lookups: list[dict[str, str]] = []
 
     for ioc_type, _label, pattern in _IOC_PATTERNS:
+        validator = _VALIDATORS.get(ioc_type)
         for match in pattern.finditer(text):
-            value = match.group().strip().lower() if ioc_type in ("email", "url", "domain") else match.group().strip()
+            raw = match.group().strip()
+            value = raw.lower() if ioc_type in _LOWERCASED_TYPES else raw
+            if validator is not None and not validator(value):
+                continue
             key = (ioc_type, value)
-            if key not in seen:
-                seen.add(key)
-                matches.append(
-                    IocMatch(
-                        type=ioc_type,
-                        value=value,
-                        display=match.group().strip(),
-                        confidence=_confidence(ioc_type),
-                        offset=match.start(),
-                    )
+            if key in seen:
+                continue
+            seen.add(key)
+            by_type.setdefault(ioc_type, []).append(
+                IocMatch(
+                    type=ioc_type,
+                    value=value,
+                    display=raw,
+                    confidence=_confidence(ioc_type),
+                    offset=match.start(),
                 )
+            )
 
-    matches.sort(key=lambda m: m.confidence, reverse=True)
-    return IocReport(matches=matches[:200], asn_lookups=asn_lookups)
+    return IocReport(matches=_fair_share(by_type, _MAX_MATCHES), asn_lookups=[])
 
 
 def _confidence(ioc_type: str) -> float:

@@ -6,6 +6,7 @@ import time
 from collections import Counter
 from math import log2
 
+from app.forensic.discrepancies import detect_discrepancies
 from app.forensic.extraction.text import extract_text
 from app.forensic.hashing.hasher import compute_hashes
 from app.forensic.ioc.extractor import extract_iocs
@@ -52,7 +53,13 @@ def analyze_file(
         hashes=hashes,
         timestamps={},
         permissions=None,
-        discrepancies=[],
+        discrepancies=detect_discrepancies(
+            filename=filename,
+            extension=ext,
+            detected_type=detected_type,
+            mime_type=mime_type,
+            declared_content_type=content_type,
+        ),
     )
 
     # Metadata
