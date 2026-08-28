@@ -5,6 +5,8 @@ import {
   isModuleBridgeRequest,
   moduleUiUrl,
   MODULE_BRIDGE_OPERATIONS,
+  BRIDGE_OPERATION_CAPABILITY,
+  bridgeOperationAllowed,
 } from "./moduleSurface";
 
 const NONCE = "surface-nonce-123";
@@ -58,5 +60,50 @@ describe("module surface bridge", () => {
       ok: false,
       error: "denied",
     });
+  });
+});
+
+describe("bridge capability gating", () => {
+  it("maps every bridge operation to the capability that authorises it", () => {
+    // A bridge operation with no capability behind it would be reachable by
+    // any linked module regardless of what the operator approved.
+    for (const operation of MODULE_BRIDGE_OPERATIONS) {
+      expect(BRIDGE_OPERATION_CAPABILITY[operation], `${operation} has no capability`).toBeTruthy();
+    }
+  });
+
+  it("refuses an operation the module was never granted", () => {
+    // The surface used to validate shape, nonce and event source, then call the
+    // host API with the *operator's* session -- so a module approved for
+    // navigation alone could still read every case and every exhibit.
+    const navigationOnly = ["ui.navigation.register"];
+    expect(bridgeOperationAllowed("case.read", navigationOnly)).toBe(false);
+    expect(bridgeOperationAllowed("evidence.read", navigationOnly)).toBe(false);
+    expect(bridgeOperationAllowed("entity.read", navigationOnly)).toBe(false);
+  });
+
+  it("allows exactly the operations covered by the module's grants", () => {
+    const granted = ["ui.navigation.register", "case.read", "evidence.read"];
+    expect(bridgeOperationAllowed("case.read", granted)).toBe(true);
+    expect(bridgeOperationAllowed("evidence.read", granted)).toBe(true);
+    expect(bridgeOperationAllowed("source.read", granted)).toBe(false);
+    expect(bridgeOperationAllowed("case.list", granted)).toBe(false);
+  });
+
+  it("treats an empty grant list as granting nothing", () => {
+    for (const operation of MODULE_BRIDGE_OPERATIONS) {
+      expect(bridgeOperationAllowed(operation, [])).toBe(false);
+    }
+  });
+
+  it("carries the reads a module surface needs", () => {
+    expect([...MODULE_BRIDGE_OPERATIONS].sort()).toEqual([
+      "case.list",
+      "case.read",
+      "entity.read",
+      "evidence.read",
+      "report.read",
+      "source.read",
+    ]);
   });
 });

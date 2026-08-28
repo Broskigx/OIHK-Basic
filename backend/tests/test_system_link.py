@@ -66,7 +66,7 @@ async def migrated_system_link_session(tmp_path: Path):
 
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-        assert await run_migrations(connection) == 8
+        assert await run_migrations(connection) == 9
         enabled = await connection.exec_driver_sql("PRAGMA foreign_keys")
         assert enabled.scalar_one() == 1
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -108,23 +108,29 @@ def _write_publisher_metadata(
     return key
 
 
-def _module_fixture(tmp_path: Path) -> tuple[ModuleManifest, Ed25519PrivateKey, Path]:
-    package_root = tmp_path / "module-package"
+def _module_fixture(
+    tmp_path: Path,
+    *,
+    module_id: str = "oihk.evidence-lab",
+    product_name: str = "OIHK Evidence Lab Basic",
+) -> tuple[ModuleManifest, Ed25519PrivateKey, Path]:
+    slug = module_id.rsplit(".", 1)[-1]
+    package_root = tmp_path / f"module-package-{slug}"
     package_root.mkdir()
     (package_root / "ui").mkdir()
-    (package_root / "ui" / "index.js").write_text("export const module = 'evidence-lab';", encoding="utf-8")
+    (package_root / "ui" / "index.js").write_text(f"export const module = '{slug}';", encoding="utf-8")
     # The publisher-signed metadata must exist before the manifest is computed
     # so manifest.package_sha256 and the publisher content hash stay consistent
     # with the Evidence Lab build pipeline.
-    _write_publisher_metadata(package_root, module_id="oihk.evidence-lab", version="0.1.0")
-    install_root = tmp_path / "evidence-lab"
+    _write_publisher_metadata(package_root, module_id=module_id, version="0.1.0")
+    install_root = tmp_path / slug
     install_root.mkdir()
-    executable_name = "evidence-lab-runtime.exe" if os.name == "nt" else "evidence-lab-runtime"
+    executable_name = f"{slug}-runtime.exe" if os.name == "nt" else f"{slug}-runtime"
     executable = install_root / executable_name
     executable.write_bytes(b"verified runtime fixture")
     manifest = ModuleManifest(
-        module_id="oihk.evidence-lab",
-        name="OIHK Evidence Lab Basic",
+        module_id=module_id,
+        name=product_name,
         version="0.1.0",
         compatible_basic_versions=[PRODUCT_VERSION],
         requested_capabilities=["case.read", "evidence.read", "ui.navigation.register"],
@@ -140,7 +146,7 @@ def _module_fixture(tmp_path: Path) -> tuple[ModuleManifest, Ed25519PrivateKey, 
         package_sha256=calculate_package_sha256(package_root),
         frontend_entrypoint="ui/index.js",
         lifecycle={
-            "entrypoint_id": "evidence-lab-runtime",
+            "entrypoint_id": f"{slug}-runtime",
             "install_root": str(install_root.resolve()),
             "executable": executable_name,
             "executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
@@ -525,7 +531,7 @@ async def test_system_link_migrations_upgrade_a_pre_feature_database(tmp_path: P
         preserved = await connection.exec_driver_sql("SELECT value FROM legacy_case_data WHERE id='preserved'")
         preserved_value = preserved.scalar_one()
     await engine.dispose()
-    assert version == 8
+    assert version == 9
     assert preserved_value == "yes"
     assert {
         "system_link_installations",
@@ -1370,3 +1376,49 @@ async def test_reconcile_resets_crash_counter_on_healthy_runtime(
     await supervisor.reconcile(system_link_session, module)
     assert module.state == ModuleState.READY.value
     assert module.crash_count == 0
+
+
+@pytest.mark.asyncio
+async def test_a_module_outside_the_built_in_catalog_can_pair(tmp_path: Path, system_link_session) -> None:
+    """Trust must come from the publisher signature, not from a hard-coded name.
+
+    Pairing used to run a name check against a single built-in adapter, so any
+    module whose id, product name or entrypoint differed from Evidence Lab's
+    was refused as ``module_not_first_party`` — which made "System Link links
+    separately installed OIHK modules" true of exactly one module. The check
+    also bought nothing: an attacker able to forge the publisher signature that
+    ``publisher_trust`` verifies could equally well call themselves Evidence
+    Lab. The signature is the control; the name never was.
+    """
+    service = SystemLinkService(system_link_session, InstallationIdentityStore(tmp_path / "identity.key"))
+    manifest, module_key, package_root = _module_fixture(
+        tmp_path, module_id="oihk.triage-suite", product_name="OIHK Triage Suite"
+    )
+    pairing, link_key, _, _ = await service.begin_pairing()
+    public = _public_key(module_key)
+    digest = hashlib.sha256(canonical_json(manifest)).hexdigest()
+
+    row = await service.submit_pairing(
+        pairing_id=pairing.id,
+        link_key=link_key,
+        module_public_key=public,
+        manifest=manifest,
+        manifest_signature=b64encode(module_key.sign(canonical_json(manifest))),
+        challenge_signature=b64encode(
+            module_key.sign(
+                pairing_proof_payload(
+                    pairing_id=pairing.id,
+                    challenge=pairing.challenge,
+                    module_id=manifest.module_id,
+                    module_public_key=public,
+                    manifest_sha256=digest,
+                )
+            )
+        ),
+        package_root=str(package_root),
+    )
+    assert row.pending_module["manifest"]["module_id"] == "oihk.triage-suite"
+
+    module = await service.approve_pairing(pairing.id, ["ui.navigation.register"])
+    assert module.module_id == "oihk.triage-suite"
+    assert module.product_name == "OIHK Triage Suite"

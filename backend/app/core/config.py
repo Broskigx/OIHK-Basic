@@ -105,6 +105,12 @@ class Settings(BaseSettings):
     search_target_results: Annotated[int, Field(alias="OIHK_SEARCH_TARGET_RESULTS")] = 50
     max_fetch_bytes: Annotated[int, Field(alias="OIHK_MAX_FETCH_BYTES")] = 1_048_576
     max_evidence_bytes: Annotated[int, Field(alias="OIHK_MAX_EVIDENCE_BYTES")] = 262_144_000
+    # Deliberately far below max_evidence_bytes. A module call is authenticated
+    # by a signature taken over the whole request body, so the host must buffer
+    # every byte before it may trust any of them — the interactive upload path
+    # streams to disk instead and can afford a much larger ceiling. Raising this
+    # raises peak memory per in-flight module call, not just the file size.
+    max_module_upload_bytes: Annotated[int, Field(alias="OIHK_MAX_MODULE_UPLOAD_BYTES")] = 33_554_432
     # Ceilings for third-party lookup and model responses. httpx decompresses
     # transparently, so an unbounded read lets a small compressed body expand
     # without limit in memory; these caps apply to the decompressed stream.

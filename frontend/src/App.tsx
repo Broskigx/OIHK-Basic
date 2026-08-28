@@ -6,12 +6,12 @@ import { useAdaptiveUiScale } from "./app/useAdaptiveUiScale";
 import { usePlatformRoute } from "./app/usePlatformRoute";
 import { DashboardView } from "./features/dashboard/DashboardView";
 import { EntityManagerView } from "./features/entities/EntityManagerView";
-import { EvidenceVaultView } from "./features/evidence/EvidenceVaultView";
 import { GraphWorkspaceView } from "./features/graph/GraphWorkspaceView";
 import { InvestigationsView } from "./features/investigations/InvestigationsView";
 import { NewInvestigationDialog } from "./features/investigations/NewInvestigationDialog";
 import { ReportsWorkspaceView } from "./features/reports/ReportsWorkspaceView";
 import { LocalModelsView } from "./features/models/LocalModelsView";
+import { CustodyRegisterView } from "./features/custody/CustodyRegisterView";
 import { DataSourcesView } from "./features/sources/DataSourcesView";
 import { OsintWorkspaceView } from "./features/osint/OsintWorkspaceView";
 import { AboutView } from "./features/about/AboutView";
@@ -19,7 +19,6 @@ import { SettingsView } from "./features/settings/SettingsView";
 import { OnboardingDialog } from "./features/onboarding/OnboardingDialog";
 import { usePlatformCatalogs } from "./features/settings/usePlatformCatalogs";
 import { TimelineView } from "./features/timeline";
-import { ToolsWorkspaceView } from "./features/tools/ToolsWorkspaceView";
 import { useUpdater } from "./features/updates/useUpdater";
 import { useCaseManager } from "./hooks/useCaseManager";
 import { useGraphInteraction } from "./hooks/useGraphInteraction";
@@ -432,18 +431,6 @@ export function App({ currentUser }: { currentUser: User }) {
           />
         );
         break;
-      case "evidence":
-        content = (
-          <EvidenceVaultView
-            caseId={caseMgr.activeCaseId}
-            sources={caseMgr.sources}
-            photos={caseMgr.targetPhotos}
-            custody={caseMgr.custody}
-            entities={caseMgr.graph.nodes}
-            onRefresh={refreshActiveCase}
-          />
-        );
-        break;
       case "timeline":
         content = (
           <div className="platform-view">
@@ -463,6 +450,17 @@ export function App({ currentUser }: { currentUser: User }) {
               exportFileName={`${activeCase?.title?.replace(/[^a-z0-9_-]+/gi, "_") || "investigation"}-timeline.json`}
             />
           </div>
+        );
+        break;
+      case "custody":
+        content = (
+          <CustodyRegisterView
+            caseId={caseMgr.activeCaseId}
+            custody={caseMgr.custody}
+            onOpenSystemLink={() => handleNavigate("system-link")}
+            onOpenInvestigations={() => handleNavigate("investigations")}
+            onRefresh={() => void refreshActiveCase()}
+          />
         );
         break;
       case "graph":
@@ -500,18 +498,6 @@ export function App({ currentUser }: { currentUser: User }) {
           />
         );
         break;
-      case "tools":
-        content = (
-          <ToolsWorkspaceView
-            caseId={caseMgr.activeCaseId}
-            isAdmin={currentUser.role === "admin" || currentUser.role === "system"}
-            sources={caseMgr.sources}
-            custody={caseMgr.custody}
-            onRefresh={refreshActiveCase}
-            onOpenEvidence={() => handleNavigate("evidence")}
-          />
-        );
-        break;
       case "reports":
         content = activeCase ? (
           <ReportsWorkspaceView
@@ -539,7 +525,7 @@ export function App({ currentUser }: { currentUser: User }) {
           <DataSourcesView
             activeCase={activeCase}
             sources={caseMgr.sources}
-            onOpenEvidence={() => handleNavigate("evidence")}
+            onOpenSystemLink={() => handleNavigate("system-link")}
             onOpenInvestigations={() => handleNavigate("investigations")}
           />
         );

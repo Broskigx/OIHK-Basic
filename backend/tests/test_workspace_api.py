@@ -115,13 +115,31 @@ async def test_custody_chain_is_intact_after_ingestion(client, case) -> None:
     assert body["intact"] is True
 
 
-async def test_custody_chain_covers_managed_evidence(client, case) -> None:
-    upload = await client.post(
-        "/evidence",
-        data={"case_id": case["id"]},
-        files={"file": ("note.txt", b"observed artifact", "text/plain")},
+async def test_custody_chain_covers_managed_evidence(client, case, session, storage_dir) -> None:
+    """Evidence a linked module writes must join the same chain as anything else.
+
+    Arranged through the services the System Link module API calls rather than
+    over HTTP: Basic no longer has a browser upload route, and the point of the
+    assertion is that the custody chain does not care which side ingested.
+    """
+    from app import models
+    from app.services.custody import seal_source
+    from app.services.evidence_storage import store_evidence_bytes
+
+    stored = store_evidence_bytes(case["id"], "note.txt", b"observed artifact", content_type="text/plain")
+    source = models.Source(
+        case_id=case["id"],
+        title="Evidence: note.txt",
+        kind="module_evidence",
+        body=f"sha256={stored['sha256']}",
+        citation=f"sha256:{stored['sha256']}",
+        license="case-evidence",
+        reliability=1.0,
     )
-    assert upload.status_code == 201, upload.text
+    session.add(source)
+    await session.flush()
+    await seal_source(session, source, storage_path=str(stored["storage_path"]))
+    await session.commit()
 
     body = (await client.get(f"/custody/{case['id']}")).json()
     assert body["intact"] is True

@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app import models
 from app.database import Base
 from app.services.graph_io import import_entities_csv
-from app.services.hash_intel import import_hash_entries
 
 # The private helpers below are imported inside each test rather than at module
 # scope on purpose: it keeps this file collectable against the pre-hardening
@@ -104,50 +103,6 @@ async def test_csv_import_stops_at_the_row_limit(tmp_path, monkeypatch):
         )
         assert summary.nodes == 5
         assert any("row limit" in error for error in summary.errors)
-    await engine.dispose()
-
-
-# --------------------------------------------------------------------------
-# Hash sets: digest length must agree with the algorithm
-# --------------------------------------------------------------------------
-
-
-@pytest.mark.parametrize(
-    "hostile",
-    ["abc123", "a" * 63, "a" * 65, "", "zz" * 16, "0123456789abcdef"],
-)
-def test_classify_digest_rejects_length_algorithm_mismatch(hostile):
-    from app.services.hash_intel import _classify_digest
-
-    assert _classify_digest(hostile) is None
-
-
-def test_classify_digest_accepts_the_three_supported_lengths():
-    from app.services.hash_intel import _classify_digest
-
-    assert _classify_digest("0" * 32) == ("md5", "0" * 32)
-    assert _classify_digest("A" * 40) == ("sha1", "a" * 40)  # case-normalised
-    assert _classify_digest("  " + "F" * 64 + "  ") == ("sha256", "f" * 64)  # trimmed
-
-
-@pytest.mark.asyncio
-async def test_hash_import_counts_short_digests_as_invalid(tmp_path):
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'hashes.db'}")
-    sessions = async_sessionmaker(engine, expire_on_commit=False)
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-    async with sessions() as session:
-        summary = await import_hash_entries(
-            session,
-            organization_id="system",
-            set_name="known-bad",
-            category="malware",
-            severity="high",
-            text="deadbeef sample-too-short\n" + ("a" * 64) + " real-sha256\n",
-        )
-        await session.commit()
-        assert summary.added == 1
-        assert summary.invalid == 1
     await engine.dispose()
 
 

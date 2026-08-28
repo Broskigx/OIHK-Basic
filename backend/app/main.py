@@ -23,8 +23,6 @@ from app.routers import (
     dashboard,
     evidence,
     exports,
-    forensic_core,
-    forensics,
     graph,
     health,
     local_models,
@@ -281,8 +279,6 @@ app.include_router(osint.router, dependencies=_auth)
 app.include_router(transforms.router, dependencies=_auth)
 app.include_router(custody.router, dependencies=_auth)
 app.include_router(evidence.router, dependencies=_auth)
-app.include_router(forensics.router, dependencies=_auth)
-app.include_router(forensic_core.router, dependencies=_auth)
 app.include_router(operations.router, dependencies=_auth)
 app.include_router(local_models.router, dependencies=_auth)
 app.include_router(assistant.router, dependencies=_auth)

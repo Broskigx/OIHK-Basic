@@ -87,6 +87,9 @@ Síntomas reportados: *se crean chats nuevos de manera inesperada* y *algunos ch
 
 - `AssistantSidebar.tsx`, `CaseLaunchView.tsx`, `InspectorDock.tsx`, `EntityDock.tsx`, `AnalysisPanels.tsx` están definidos pero **no se importan** en ningún punto del app (código muerto / legado de OIHK Full que quedó en Basic). `CaseLaunchView` usa `preparedGraph` con datos de demostración.
 - `ForensicLab.tsx` sí se usa (vía `ToolsWorkspaceView`).
+  - *Cerrado (2026-08-27):* ambos se fueron con Evidence Lab, que ahora se
+    desarrolla en su propio repositorio y vuelve como módulo de System Link.
+    Este documento es la foto de la auditoría original y se deja como estaba.
 - No se deben eliminar sin confirmación (restricción del encargo), pero hay que documentarlo.
 
 ### 2.7 BAJO — Scripts de build no estandarizados (Fase 8)

@@ -9,9 +9,9 @@ import {
 
 describe("platform navigation", () => {
   it("round-trips a case-scoped workspace", () => {
-    const hash = platformHash("evidence", "case-123");
-    expect(hash).toBe("#/investigations/case-123/evidence");
-    expect(parsePlatformHash(hash)).toEqual({ area: "evidence", caseId: "case-123" });
+    const hash = platformHash("graph", "case-123");
+    expect(hash).toBe("#/investigations/case-123/graph");
+    expect(parsePlatformHash(hash)).toEqual({ area: "graph", caseId: "case-123" });
   });
 
   it("maps investigation overview to the investigations area", () => {
@@ -25,9 +25,23 @@ describe("platform navigation", () => {
     expect(parsePlatformHash("#/not-real")).toEqual({ area: "dashboard", caseId: "" });
   });
 
-  it("presents the compatible tools route", () => {
-    expect(CORE_NAVIGATION.find((item) => item.id === "tools")?.label).toBe("Tools");
-    expect(parsePlatformHash("#/investigations/case-123/tools")).toEqual({ area: "tools", caseId: "case-123" });
+  it("no longer routes to the removed Evidence Lab workspaces", () => {
+    // Evidence Lab is installed separately and reached through System Link, so
+    // a stale bookmark to its old in-app route must not resolve to a blank
+    // screen -- it resolves to nothing and the shell falls back.
+    const ids = CORE_NAVIGATION.map((item) => String(item.id));
+    expect(ids).not.toContain("evidence");
+    expect(ids).not.toContain("tools");
+    // A bookmark saved before the split must land somewhere real rather than
+    // on a route the shell has no case for: both fall back to the case itself.
+    expect(parsePlatformHash("#/investigations/case-123/evidence")).toEqual({
+      area: "investigations",
+      caseId: "case-123",
+    });
+    expect(parsePlatformHash("#/investigations/case-123/tools")).toEqual({
+      area: "investigations",
+      caseId: "case-123",
+    });
   });
 
   it("keeps the agent out of page navigation and safely retires legacy Copilot links", () => {

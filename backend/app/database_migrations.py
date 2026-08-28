@@ -151,6 +151,14 @@ MIGRATIONS = (
             "ALTER TABLE system_link_modules ADD COLUMN publisher_channel VARCHAR(20) NOT NULL DEFAULT ''",
         ),
     ),
+    Migration(
+        9,
+        "evidence_verification_verdict",
+        # Nullable on purpose: existing rows have been verified at some point
+        # or not at all, and neither history records the outcome. NULL says
+        # "no verdict on record" rather than inventing a passing one.
+        ("ALTER TABLE evidence_items ADD COLUMN last_verification_intact BOOLEAN",),
+    ),
 )
 
 # Migration version → table whose ALTER ADD COLUMN statements must be guarded so
@@ -160,6 +168,7 @@ _ALTER_GUARD_TABLES: dict[int, str] = {
     2: "cases",
     4: "assistant_conversations",
     8: "system_link_modules",
+    9: "evidence_items",
 }
 
 
