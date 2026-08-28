@@ -1,5 +1,82 @@
 # Changelog
 
+## Unreleased
+
+Evidence Lab left this repository. What remains is the case spine — the graph,
+the sources, the reports and the custody chain — with acquisition and analysis
+now belonging to a separately installed module that reaches those records
+through System Link.
+
+### Changed
+
+- **Forensic acquisition and analysis moved to OIHK Evidence Lab.** The
+  analysis engine, its routers and the workspaces that drove them are gone
+  from Basic. The four evidence and custody tables are untouched — there is no
+  destructive migration — because those records are exactly what the linked
+  module reads and writes. `custody.seal_source` stays too: the graph, targets
+  and OSINT promotion all use it, so it was never Evidence Lab's to take.
+- **Ingestion and annotation left the browser API.** They arrive through the
+  signed module API instead, where every write is attributed to the module
+  that sent it. A second, unattributed way in would have defeated the reason
+  that API is signed, so `POST /evidence` now returns 404 and a test says so.
+
+### Fixed
+
+- **A granted System Link capability did nothing.** The protocol declared
+  fifteen and four had an endpoint behind them, so approving `evidence.write`
+  for a module recorded a grant against a route that did not exist. All
+  fifteen are enforced now, and a test reads the list out of the source and
+  fails if one is ever declared without a route.
+- **The module UI bridge ignored the module's own grants.** It validated
+  message shape, per-surface nonce and event source, then served the operation
+  by calling Basic's API with the *operator's* session — so the server saw an
+  authorised human and enforced what that human could read, never what the
+  module was approved for. A module granted navigation alone could read every
+  case and every exhibit in the installation.
+- **Pairing refused every module but one.** It matched a hard-coded id,
+  product name and entrypoint, which made "System Link links separately
+  installed OIHK modules" true of exactly one module — and stopped nobody,
+  since anyone able to forge the publisher signature could also write that
+  name into a manifest. The signature is the control.
+- **A JPEG could dictate false dimensions to a forensic report.** Dimensions
+  came from scanning the file for `FF C0`, which misses progressive JPEGs
+  entirely and accepts those bytes wherever they appear — including inside an
+  earlier segment's payload. Nine further defects in the same package were
+  fixed before it left: RIFF resolving to `video/avi` for WAV and WebP, MP4
+  matched by one encoder's box length, a global IOC ceiling that let 200
+  emails starve every hash and CVE in the same document, `.pptx` returning
+  empty text *and* an empty error list, and `FileAnalysis.discrepancies` being
+  wired through the panel, the report and the schema while always being handed
+  an empty list — so an executable named `.jpg` analysed clean.
+- **A failed integrity check disappeared on reload.** `verified_at` recorded
+  when an exhibit was last checked and nothing about the outcome, so a
+  tampered file and an intact one were indistinguishable the moment the page
+  refreshed. Migration 9 records the verdict, nullable so rows checked under
+  the old schema report "no verdict on record" rather than an invented pass.
+- **The System Link E2E smoke reported success without running.** It re-runs
+  itself under a venv holding both products, and did that with `os.execv` —
+  correct on POSIX, and on Windows a spawn-and-terminate that returned 0 to
+  the caller immediately while the smoke was still building. A failing run
+  exited 0 in under a second. It also dropped `--port` when relaunching, so
+  the documented flag silently ran on a random port.
+
+### Added
+
+- **Custody register.** The verify, delete and manifest routes survived the
+  split and stayed tested, but nothing called them: with no module linked an
+  operator could not see what the installation held. The register lists it,
+  distinguishes files Basic holds from ones it only references, re-hashes
+  against the seal, exports the manifest, and removes an exhibit.
+- **The E2E smoke runs in CI**, building the real Evidence Lab runtime and
+  package and driving the full eighteen-step lifecycle against a real Basic
+  backend. It needs the `EVIDENCE_LAB_TOKEN` secret because the module
+  repository is private; without it the job explains how to create one and
+  stops rather than failing.
+
+### Security
+
+- `pip` moved past PYSEC-2026-3721 in the locked dependency set.
+
 ## 0.2.0-beta.1 — 2026-08-14
 
 First beta candidate. This release is about correctness and evidence rather than features: the loopback API gained the browser-facing controls it was missing, the REST surface gained an integration suite that immediately found real defects, and the coverage tooling that was supposed to measure all of it turned out to be misreporting.

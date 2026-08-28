@@ -15,13 +15,14 @@ Loopback bounds the *network*, not the *browser*. A web page the operator visits
 
 Interactive API documentation (`/docs`, `/redoc`, `/openapi.json`) is served in development only. The packaged desktop build and production withdraw it, since it maps the API for anyone who does reach the port. Set `OIHK_DOCS_ENABLED=true` to override.
 
-Every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: same-origin`, a restrictive `Permissions-Policy`, `Cache-Control: no-store` and `X-Frame-Options: DENY`. A route that sets one of these itself keeps its own value, so the evidence preview sandbox and the System Link module surface remain the authority on their own content. `no-store` is deliberate: a response body here can be evidence, and the webview cache would be an unmanaged copy of it that no custody record accounts for.
+Every response carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: same-origin`, a restrictive `Permissions-Policy`, `Cache-Control: no-store` and `X-Frame-Options: DENY`. A route that sets one of these itself keeps its own value, so the System Link module surface remains the authority on its own content. `no-store` is deliberate: a response body here can be evidence, and the webview cache would be an unmanaged copy of it that no custody record accounts for.
 
 ## Data and evidence
 
 - Application data stays in the operating-system application-data directory unless explicitly overridden.
-- Evidence uploads are streamed, size-limited, sanitized, copied atomically below managed storage and hashed with SHA-256.
-- Preview is inline only for safe raster image MIME types; SVG and other files download as attachments with `nosniff`.
+- Basic does not accept evidence over the browser API. Acquisition belongs to a linked module and arrives through the signed System Link module API, so every ingested exhibit carries the identity of the module that sent it. Bytes are written atomically below managed storage, hashed with SHA-256, and sealed into the case's custody chain by the same code path for every source.
+- Removing an exhibit is an operator action recorded under their name; no module capability grants deletion.
+- A held file can be re-hashed against its seal on demand, and the verdict is recorded — a failed integrity check stays visible rather than reading as "verified" after a reload.
 - Report HTML is escaped, sandboxed and generated with a restrictive CSP.
 - Backups and diagnostics omit secrets and model credentials.
 

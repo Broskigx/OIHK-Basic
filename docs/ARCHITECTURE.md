@@ -13,7 +13,7 @@ Tauri 2 desktop lifecycle
             └─ FastAPI sidecar on dynamic 127.0.0.1 port
                  ├─ SQLAlchemy async + SQLite
                  ├─ managed evidence storage
-                 ├─ deterministic OSINT/forensic services
+                 ├─ deterministic OSINT services
                  ├─ agent tool dispatch over the existing routes
                  └─ optional private/local model adapters
 ```
@@ -40,13 +40,13 @@ Tauri selects an unused loopback port, starts the PyInstaller sidecar, exposes t
 
 The frontend asks Tauri for the live port before rendering, updates its REST/WebSocket base URL and waits for backend health. Closing the window terminates and reaps the managed child.
 
-System Link module lifecycle remains behind the FastAPI control plane. It can launch only a first-party catalog entry whose installer root, relative executable identity, package hash and executable hash match its signed manifest. It never passes a manifest string to a shell.
+System Link module lifecycle remains behind the FastAPI control plane. It can launch only a module whose installer root, relative executable identity, package hash and executable hash match its signed manifest, and whose package carries a publisher signature verifying against an embedded trust anchor. Trust comes from that signature rather than from a built-in list of permitted module ids: a name check excluded honest modules while stopping nobody able to forge the signature. It never passes a manifest string to a shell.
 
 ## Frontend
 
 - `frontend/src/App.tsx`: application composition and workspace orchestration.
 - `frontend/src/app/`: routing, navigation, shell and design system.
-- `frontend/src/features/`: dashboard, investigations, graph, OSINT, evidence, reports, Copilot, models, sources, settings, onboarding and About.
+- `frontend/src/features/`: dashboard, investigations, graph, entities, timeline, OSINT, custody, reports, Copilot, models, sources, settings, updates, onboarding and About.
 - `frontend/src/graph/`: renderer, interaction, layouts, camera, hit testing and state/history.
 - `frontend/src/api.ts`: typed requests, downloads and dynamic API endpoint.
 
@@ -57,8 +57,9 @@ Core routes remain a closed union. Verified module categories use `module:<modul
 ## Backend
 
 - `app/models.py` and `app/schemas.py`: explicit persistence and API contracts.
-- `app/routers/`: case lifecycle, graph workspace/snapshots, evidence, reports, OSINT history, local models, conversations, settings and legacy forensic flows.
-- `app/services/managed_evidence.py`: streaming, size limits, safe paths, atomic writes and SHA-256.
+- `app/routers/`: case lifecycle, graph workspace/snapshots, the evidence custody register, reports, OSINT history, local models, conversations and settings. Forensic acquisition and analysis are not here: they live in OIHK Evidence Lab and reach these records through the signed System Link module API.
+- `app/services/evidence_storage.py`: atomic writes, safe paths and SHA-256 for bytes a linked module hands over.
+- `app/services/managed_evidence.py`: path containment and re-hashing a held file against its seal.
 - `app/services/local_models.py`: LM Studio, Ollama and OpenAI-compatible private endpoints.
 - `app/database.py`: SQLite initialization, FK enforcement, additive migration and backup.
 - `app/system_link/`: System Link v1 protocol, installation identity, pairing, registry, grants, package/runtime verification, lifecycle and module APIs.
