@@ -126,6 +126,7 @@ def _evidence_payload(item: models.EvidenceItem) -> dict[str, Any]:
         "entity_ids": item.entity_ids,
         "ingested_by": item.ingested_by,
         "original_reference": item.original_reference,
+        "held_by_basic": item.held_by_basic,
         "created_at": item.created_at,
         "verified_at": item.verified_at,
     }

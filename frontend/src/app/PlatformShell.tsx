@@ -47,6 +47,7 @@ const NAV_ICONS: Record<CorePlatformArea, LucideIcon> = {
   entities: Boxes,
   timeline: Activity,
   graph: Network,
+  custody: ShieldCheck,
   osint: ScanSearch,
   reports: FileText,
   models: HardDrive,

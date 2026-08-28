@@ -202,3 +202,53 @@ async def test_deleting_a_case_removes_its_evidence_and_files(client, case, sess
         select(func.count(models.EvidenceItem.id)).where(models.EvidenceItem.case_id == case["id"])
     )
     assert remaining == 0
+
+
+async def test_the_listing_says_who_holds_each_exhibit(client, case, session, storage_dir) -> None:
+    """The register has to distinguish what Basic holds from what it only records.
+
+    The two support different actions — a held file can be re-hashed against
+    its seal, a referenced one cannot — and the operator cannot tell them apart
+    from name, size or digest, all of which are present either way. The managed
+    path itself is never exposed, so the answer travels as a boolean.
+    """
+    held = await _ingest(session, case["id"], name="held.txt")
+    referenced = await _ingest(session, case["id"], name="elsewhere.txt")
+    referenced.storage_path = ""
+    await session.commit()
+
+    rows = {row["id"]: row for row in (await client.get(f"/evidence/{case['id']}")).json()}
+    assert rows[held.id]["held_by_basic"] is True
+    assert rows[referenced.id]["held_by_basic"] is False
+    assert "storage_path" not in rows[held.id]
+
+
+async def test_a_failed_verification_survives_a_reload(client, case, session, storage_dir) -> None:
+    """The register must remember the verdict, not just that a check happened.
+
+    ``verified_at`` records *when* an exhibit was last checked and says nothing
+    about the outcome, so a tampered file and an intact one looked identical
+    the moment the page was refreshed — the one state a custody register can
+    least afford to lose.
+    """
+    item = await _ingest(session, case["id"])
+    item_id = item.id
+    path = await _stored_path(session, item_id)
+
+    await client.post(f"/evidence/items/{item_id}/verify")
+    intact_row = next(row for row in (await client.get(f"/evidence/{case['id']}")).json() if row["id"] == item_id)
+    assert intact_row["last_verification_intact"] is True
+
+    path.write_bytes(b"substituted content")
+    await client.post(f"/evidence/items/{item_id}/verify")
+    broken_row = next(row for row in (await client.get(f"/evidence/{case['id']}")).json() if row["id"] == item_id)
+    assert broken_row["last_verification_intact"] is False
+    assert broken_row["verified_at"] is not None
+
+
+async def test_an_unchecked_exhibit_reports_no_verdict(client, case, session, storage_dir) -> None:
+    """Never-checked and checked-and-passed must not look the same either."""
+    await _ingest(session, case["id"])
+    row = (await client.get(f"/evidence/{case['id']}")).json()[0]
+    assert row["last_verification_intact"] is None
+    assert row["verified_at"] is None

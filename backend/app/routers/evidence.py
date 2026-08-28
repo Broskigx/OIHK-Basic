@@ -83,6 +83,7 @@ async def verify_evidence(
         )
     actual = await asyncio.to_thread(hash_managed_file, item.storage_path)
     item.verified_at = datetime.now(UTC)
+    item.last_verification_intact = actual == item.sha256
     await audit(
         session,
         "evidence.verified",
@@ -162,9 +163,10 @@ async def evidence_manifest(
                 "entity_ids": item.entity_ids,
                 "ingested_by": item.ingested_by,
                 "original_reference": item.original_reference,
-                "held_by_basic": bool(item.storage_path),
+                "held_by_basic": item.held_by_basic,
                 "created_at": item.created_at.isoformat(),
                 "verified_at": item.verified_at.isoformat() if item.verified_at else None,
+                "last_verification_intact": item.last_verification_intact,
             }
             for item in items
         ],

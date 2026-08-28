@@ -9,6 +9,7 @@ import type {
   DashboardSummary,
   EntityDossier,
   EvidenceItem,
+  EvidenceVerification,
   GraphAnalytics,
   GraphEntityCreate,
   GraphExpandResult,
@@ -579,6 +580,20 @@ export function deleteReportTemplate(templateId: string): Promise<void> {
 
 export function listEvidence(caseId: string): Promise<EvidenceItem[]> {
   return request<EvidenceItem[]>(`/evidence/${encodeURIComponent(caseId)}`);
+}
+
+export function verifyEvidence(itemId: string): Promise<EvidenceVerification> {
+  return request<EvidenceVerification>(`/evidence/items/${encodeURIComponent(itemId)}/verify`, { method: "POST" });
+}
+
+export function deleteEvidence(itemId: string): Promise<void> {
+  return request<void>(`/evidence/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+}
+
+export async function downloadEvidenceManifest(caseId: string): Promise<Blob> {
+  const response = await fetch(`${API_URL}/evidence/${encodeURIComponent(caseId)}/manifest.json`, { credentials: "include", headers: authHeaders() });
+  if (!response.ok) throw new Error(`Could not export the custody manifest (${response.status})`);
+  return response.blob();
 }
 
 export function updateGraphRelationship(relationshipId: string, payload: { label?: string; confidence?: number }): Promise<GraphRead["edges"][number]> {

@@ -4,6 +4,7 @@ export type CorePlatformArea =
   | "entities"
   | "timeline"
   | "graph"
+  | "custody"
   | "osint"
   | "reports"
   | "models"
@@ -41,6 +42,7 @@ export const CORE_NAVIGATION: NavigationItem[] = [
   { id: "dashboard", label: "Dashboard", caseScoped: false, group: "primary" },
   { id: "investigations", label: "Investigations", caseScoped: false, group: "primary" },
   { id: "graph", label: "Graph", caseScoped: true, group: "primary" },
+  { id: "custody", label: "Custody", caseScoped: true, group: "primary" },
   { id: "reports", label: "Reports", caseScoped: true, group: "primary" },
   { id: "models", label: "Local Models", caseScoped: false, group: "primary" },
   { id: "system-link", label: "System Link", caseScoped: false, group: "primary" },

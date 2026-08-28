@@ -66,7 +66,7 @@ async def migrated_system_link_session(tmp_path: Path):
 
     async with engine.begin() as connection:
         await connection.run_sync(Base.metadata.create_all)
-        assert await run_migrations(connection) == 8
+        assert await run_migrations(connection) == 9
         enabled = await connection.exec_driver_sql("PRAGMA foreign_keys")
         assert enabled.scalar_one() == 1
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -531,7 +531,7 @@ async def test_system_link_migrations_upgrade_a_pre_feature_database(tmp_path: P
         preserved = await connection.exec_driver_sql("SELECT value FROM legacy_case_data WHERE id='preserved'")
         preserved_value = preserved.scalar_one()
     await engine.dispose()
-    assert version == 8
+    assert version == 9
     assert preserved_value == "yes"
     assert {
         "system_link_installations",

@@ -301,10 +301,22 @@ export type EvidenceItem = {
   entity_ids: string[];
   ingested_by: string;
   original_reference: string;
+  /** True when Basic holds the bytes; false when it only records a linked module's exhibit. */
+  held_by_basic: boolean;
   export_count: number;
   created_at: string;
   updated_at: string;
   verified_at: string | null;
+  /** Verdict of the last check: null when no check is on record. */
+  last_verification_intact: boolean | null;
+};
+
+export type EvidenceVerification = {
+  id: string;
+  expected_sha256: string;
+  actual_sha256: string;
+  intact: boolean;
+  verified_at: string;
 };
 
 export type ReportSection = "investigation" | "summary" | "entities" | "relationships" | "sources" | "evidence" | "notes" | "timeline" | "methodology" | "limitations";

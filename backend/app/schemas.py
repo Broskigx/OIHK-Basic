@@ -417,10 +417,16 @@ class EvidenceItemRead(BaseModel):
     entity_ids: list[str]
     ingested_by: str
     original_reference: str
+    # True when the bytes are in Basic's managed storage, false when the record
+    # only points at a linked module's own store. The managed path itself is
+    # never returned; a client has no use for an absolute filesystem path.
+    held_by_basic: bool
     export_count: int
     created_at: datetime
     updated_at: datetime
     verified_at: datetime | None
+    # None when no check is on record; the boolean is the last verdict.
+    last_verification_intact: bool | None
 
     model_config = {"from_attributes": True}
 

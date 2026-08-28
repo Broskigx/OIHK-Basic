@@ -11,6 +11,7 @@ import { InvestigationsView } from "./features/investigations/InvestigationsView
 import { NewInvestigationDialog } from "./features/investigations/NewInvestigationDialog";
 import { ReportsWorkspaceView } from "./features/reports/ReportsWorkspaceView";
 import { LocalModelsView } from "./features/models/LocalModelsView";
+import { CustodyRegisterView } from "./features/custody/CustodyRegisterView";
 import { DataSourcesView } from "./features/sources/DataSourcesView";
 import { OsintWorkspaceView } from "./features/osint/OsintWorkspaceView";
 import { AboutView } from "./features/about/AboutView";
@@ -449,6 +450,17 @@ export function App({ currentUser }: { currentUser: User }) {
               exportFileName={`${activeCase?.title?.replace(/[^a-z0-9_-]+/gi, "_") || "investigation"}-timeline.json`}
             />
           </div>
+        );
+        break;
+      case "custody":
+        content = (
+          <CustodyRegisterView
+            caseId={caseMgr.activeCaseId}
+            custody={caseMgr.custody}
+            onOpenSystemLink={() => handleNavigate("system-link")}
+            onOpenInvestigations={() => handleNavigate("investigations")}
+            onRefresh={() => void refreshActiveCase()}
+          />
         );
         break;
       case "graph":

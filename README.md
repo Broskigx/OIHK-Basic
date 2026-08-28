@@ -35,7 +35,7 @@ La versión actual es `0.2.0-beta.1`.
 
 ### Qué está validado
 
-- **487 pruebas automatizadas** en verde: 379 de backend y 108 de frontend, más el desktop. La superficie REST tiene pruebas de integración sobre HTTP real, atravesando el stack de middleware completo y con claves foráneas activas. El API de módulo de System Link se ejercita con sobres firmados de verdad, y cada capacidad tiene un caso de denegación junto al de éxito.
+- **517 pruebas automatizadas** en verde: 382 de backend y 135 de frontend, más el desktop. La superficie REST tiene pruebas de integración sobre HTTP real, atravesando el stack de middleware completo y con claves foráneas activas. El API de módulo de System Link se ejercita con sobres firmados de verdad, y cada capacidad tiene un caso de denegación junto al de éxito.
 - **78 % de cobertura** medida correctamente. El instrumental declara la concurrencia de greenlet que usa la capa asyncio de SQLAlchemy; sin eso perdía el rastro en cada `await` contra la base de datos y subestimaba la cobertura de prácticamente todas las rutas.
 - **Auditorías de dependencias sin vulnerabilidades conocidas**: `pip-audit` y `npm audit` limpios; `cargo audit` pasa con 17 avisos permitidos por crates transitivos sin mantenimiento del stack GTK/Tauri, ninguno de ellos una vulnerabilidad. Gitleaks escanea el historial completo.
 - **El límite del navegador está cerrado**: validación de `Host` y de `Origin` en el API de loopback, con pruebas dedicadas. Consulta [Threat Model](THREAT_MODEL.md) T4.11 y T4.12.
@@ -54,7 +54,7 @@ El canal del updater sigue siendo `alpha` de forma deliberada: cambiarlo mueve e
 
 ## Qué incluye
 
-OIHK Basic reúne once capacidades principales. Nueve son espacios de trabajo con su propia ruta, la custodia de evidencia es parte de la columna del caso sin pantalla propia, y Copilot vive en un dock disponible desde cualquiera de ellas.
+OIHK Basic reúne once capacidades principales. Diez son espacios de trabajo con su propia ruta; Copilot vive en un dock disponible desde cualquiera de ellas.
 
 El análisis forense ya no está aquí. La adquisición, el hashing, el carving y el análisis viven en **OIHK Evidence Lab**, que se instala por separado, carga desde su propia carpeta y se vincula por System Link; Basic renderiza su superficie y conserva la cadena de custodia.
 
@@ -62,7 +62,7 @@ El análisis forense ya no está aquí. La adquisición, el hashing, el carving 
 2. **Investigations** para crear, editar, duplicar, archivar, restaurar, importar y exportar casos.
 3. **Intelligence Graph** sobre Canvas 2D con cámara, minimapa, layouts, filtros, pinning, selección múltiple, undo/redo y snapshots persistentes.
 4. **OSINT Workspace** con consultas explícitas, historial SQLite, cancelación y promoción controlada al grafo.
-5. **Custodia de evidencia** como registro, no como laboratorio: Basic guarda los items que un módulo vinculado le entrega, los sella en la cadena de custodia, verifica que un fichero que conserva sigue coincidiendo con su sello y exporta el manifiesto. La adquisición y el análisis los hace Evidence Lab.
+5. **Custody register** como registro, no como laboratorio: lista lo que la instalación conserva para un caso, distingue los ficheros que guarda de los que solo referencia en un módulo vinculado, re-hashea un fichero contra su sello y **conserva el veredicto** —un fallo de integridad sigue visible al día siguiente—, exporta el manifiesto y permite retirar una pieza. Retirar es una acción exclusiva del operador: ninguna capacidad de módulo concede borrado. La adquisición y el análisis los hace Evidence Lab.
 6. **Reports** con secciones, plantillas, Markdown, HTML seguro, JSON, historial y aprobación de borradores.
 7. **Copilot** en un dock acoplado a la interfaz, con conversaciones persistentes, un modelo local elegido por el usuario y un conjunto acotado de operaciones que puede invocar por nombre. No puede modificar ni borrar evidencia, ni aprobar reportes, y toda escritura queda auditada.
 8. **Local Models** con detección y configuración de LM Studio, Ollama y endpoints privados OpenAI-compatible.

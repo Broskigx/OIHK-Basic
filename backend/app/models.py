@@ -422,6 +422,24 @@ class EvidenceItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # The verdict of the last check, not merely that one happened. NULL means
+    # never checked, which is a third state and must stay distinguishable from
+    # "checked and passed" -- a register that forgets a failed integrity check
+    # is worse than one that never offered the check.
+    last_verification_intact: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
+    @property
+    def held_by_basic(self) -> bool:
+        """Whether Basic holds this exhibit's bytes rather than only its record.
+
+        An item ingested through ``evidence.write`` lives in managed storage
+        and can be re-hashed against its seal. One recorded through
+        ``evidence.import`` is an assertion that the bytes exist in a linked
+        module's own store, and carries no managed path. The two are otherwise
+        identical in the API — same name, size and digest — so without this the
+        difference is invisible to anyone deciding what they may do with it.
+        """
+        return bool(self.storage_path)
 
 
 class ReportTemplate(Base):
