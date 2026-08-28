@@ -65,7 +65,11 @@ export function useInterfaceMotion(area: PlatformArea, shellRef: RefObject<HTMLE
         ".platform-main .platform-workspace-header, .platform-main .dashboard-hero, .platform-main .platform-inline-error, .platform-main .platform-inline-success",
       );
       const surfaces = Array.from(shell.querySelectorAll<HTMLElement>(
-        ".platform-main .dashboard-metric, .platform-main .dashboard-panel, .platform-main .platform-section, .platform-main .platform-investigations-toolbar, .platform-main .platform-investigations-table-wrap, .platform-main .platform-investigations-detail, .platform-main .settings-layout, .platform-main .copilot-layout, .platform-main .platform-graph-layout, .platform-main .system-link-power-card, .platform-main .timeline-shell",
+        // Every workspace surface that should share the entrance rhythm. A
+        // surface missing from this list still renders, just without the
+        // stagger — which is how the custody register came to be the one
+        // workspace that appeared abruptly while the rest settled in.
+        ".platform-main .dashboard-metric, .platform-main .dashboard-panel, .platform-main .platform-section, .platform-main .platform-investigations-toolbar, .platform-main .platform-investigations-table-wrap, .platform-main .platform-investigations-detail, .platform-main .settings-layout, .platform-main .copilot-layout, .platform-main .platform-graph-layout, .platform-main .system-link-power-card, .platform-main .system-link-identity-strip, .platform-main .platform-table-panel, .platform-main .platform-empty, .platform-main .timeline-shell",
       )).slice(0, 28);
 
       if (activeNavigation) {

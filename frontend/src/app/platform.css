@@ -2745,6 +2745,19 @@ textarea:focus-visible,
   .local-settings-grid { grid-template-columns: 1fr; }
 }
 
+/* ===================================================================
+   CUSTODY REGISTER (structure; theming lives in experience.css)
+   =================================================================== */
+
+/* Per-row actions sat at display:block, so Verify and Remove stacked instead
+   of sitting together at the end of the row. */
+.platform-row-actions {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
 .reduce-motion .onboarding-backdrop,
 .reduce-motion .onboarding-dialog,
 .reduce-motion .onboarding-step,

@@ -1011,6 +1011,55 @@ input:focus, select:focus, textarea:focus {
   .forensic-capability-strip { grid-template-columns: 1fr; }
 }
 
+/* ── Custody register ──────────────────────────────────────────────────── */
+
+/* The chain banner reuses the System Link identity strip, whose green
+   gradient and border are baked into the base rule. A tone class alone
+   therefore changed nothing: a broken chain rendered exactly like an intact
+   one, which is the single distinction this banner exists to draw. Both
+   classes are named so the override does not rest on source order. */
+.system-link-identity-strip.custody-chain-positive > svg { color: var(--accent); }
+
+.system-link-identity-strip.custody-chain-warning {
+  background: linear-gradient(90deg, rgba(255, 119, 119, .10), rgba(255, 119, 119, .02));
+  border-color: rgba(255, 119, 119, .32);
+}
+.system-link-identity-strip.custody-chain-warning > svg { color: var(--danger); }
+
+.system-link-identity-strip.custody-chain-neutral {
+  background: linear-gradient(90deg, rgba(164, 173, 178, .07), rgba(164, 173, 178, .015));
+  border-color: var(--border-subtle);
+}
+.system-link-identity-strip.custody-chain-neutral > svg { color: var(--text-muted); }
+
+/* Removing an exhibit is the one destructive action in the register and it
+   rendered in the neutral button palette, indistinguishable from Verify beside
+   it. Scoped through .platform-view for the same reason .platform-primary is:
+   the generic `.platform-view button` rule already sets background, border and
+   colour, and a bare single-class selector loses to it. */
+.platform-view .platform-danger {
+  background: rgba(255, 119, 119, .07);
+  border-color: rgba(255, 119, 119, .24);
+  color: var(--danger);
+}
+.platform-view .platform-danger:hover:not(:disabled) {
+  background: rgba(255, 119, 119, .14);
+  border-color: rgba(255, 119, 119, .42);
+}
+
+/* A digest is what an analyst compares across two screens, so the cell is
+   selectable in one gesture rather than decorative. */
+.platform-table code { color: var(--text-secondary); font-size: 10px; letter-spacing: .02em; user-select: all; }
+
+/* The verdict is the row's payload. It settles in so a mismatch arriving after
+   Verify reads as a result rather than as a repaint. The global reduce-motion
+   block at the end of this file already neutralises it. */
+.platform-table .platform-status { animation: custody-verdict-in 240ms ease both; }
+@keyframes custody-verdict-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
 .reduce-motion *,
 .reduce-motion *::before,
 .reduce-motion *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
