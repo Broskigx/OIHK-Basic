@@ -10,6 +10,7 @@
 [![Version](https://img.shields.io/badge/version-0.2.0--beta.1-6bb5e8)](VERSION)
 [![License: MIT](https://img.shields.io/badge/license-MIT-66d347.svg)](LICENSE)
 [![Local first](https://img.shields.io/badge/architecture-local--first-6bb5e8)](PRIVACY.md)
+[![Code](https://img.shields.io/badge/code-~40k_lines-6bb5e8)](CONTRIBUTING.md)
 
 Plataforma de investigación local-first para organizar casos autorizados, evidencia, fuentes, relaciones, reportes y flujos de IA local desde una aplicación de escritorio Tauri.
 
@@ -336,7 +337,7 @@ System Link no acepta comandos shell ni scripts arbitrarios. Solo puede ejecutar
 
 ## Diferencia frente a OIHK normal
 
-OIHK Basic conserva un flujo local de investigación, custodia de evidencia, grafo, modelos y módulos vinculados, pero no incluye colaboración multiusuario, organizations, enterprise SSO, sincronización cloud, administración de conectores privados, billing, licensing, Redis, queues, GraphQL ni infraestructura distribuida. OIHK normal y OIHK Basic son productos separados.
+OIHK Basic conserva un flujo local de investigación, custodia de evidencia, grafo, modelos y módulos vinculados, pero no incluye colaboración multiusuario, organizations, enterprise SSO, sincronización cloud, administración de conectores privados, billing, licensing, Redis, queues, GraphQL, infraestructura distribuida ni papas fritas 🍟. OIHK normal y OIHK Basic son productos separados.
 
 ## Builds y releases
 
