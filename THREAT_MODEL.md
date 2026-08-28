@@ -103,11 +103,14 @@ the audited route and is recorded against the acting user, which is what makes
 it reviewable after the fact. Model output remains labeled unverified.
 
 ### T4.3 Path traversal / arbitrary file access
-Evidence uploads are streamed, size-limited, sanitized, copied atomically
-below managed storage and hashed. Paths are resolved against the managed
-root; escape attempts fail closed. Preview is inline only for safe raster
-image MIME types; SVG and other files download as attachments with
-`nosniff`.
+Basic no longer accepts evidence over the browser API, so the traversal
+surface is the module API and the managed store behind it. Bytes handed over
+by a linked module are written atomically below managed storage and hashed;
+the filename is sanitised of separators and the case id is resolved before
+anything is written. Paths are resolved against the managed root and escape
+attempts fail closed, which is pinned by a test that feeds a traversing case
+id straight to the storage layer. The managed path is never returned to a
+client.
 
 ### T4.4 XSS via reports and markdown
 Report HTML is escaped (`html.escape`), sandboxed and served with a
@@ -138,15 +141,16 @@ sidecar shutdowns fail closed. Release workflows pin third-party actions to
 immutable commits and run Gitleaks and dependency audits.
 
 ### T4.9 Archive / compressed-file extraction attacks
-OOXML text extraction reads only specific named members in memory
-(`word/document.xml`, `xl/sharedStrings.xml`) and never extracts archives to
-disk, so there is no path-traversal surface. Evidence uploads are streamed
-and size-limited before any parsing.
+Basic does not parse exhibit contents at all any more — no archive, document
+or image reaches a parser here. Extraction moved to OIHK Evidence Lab with
+the rest of the analysis engine, and that product's threat model owns this
+entry now.
 
-> **Known gap:** there are no explicit per-entry decompression size limits yet.
-> A crafted archive with a high compression ratio could inflate in memory
-> within the upload size limit. Recommended hardening for a future release:
-> cap decompressed bytes per member.
+> **Closed there, not here:** the per-member decompression ceiling this
+> section previously listed as a known gap exists in Evidence Lab. Its OOXML
+> reader stops at a byte limit *during* the read rather than trusting the
+> size the archive declares, and bounds how many members it will open, which
+> matters because a presentation contributes one member per slide.
 
 ### T4.10 Malicious or replaced System Link module
 Basic rejects unknown module ids, manifest/schema/protocol incompatibility,

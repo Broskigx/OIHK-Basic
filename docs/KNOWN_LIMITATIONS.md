@@ -20,7 +20,9 @@ These are intentional product boundaries or explicit adapter gaps, not simulated
 
 ## Evidence and reports
 
-- Inline evidence preview is restricted to safe raster image types. Other files are downloaded as attachments.
+- Basic does not acquire or analyse evidence. It keeps the custody register — what the installation holds, who put it there, and whether a held file still matches its seal — while acquisition, hashing, carving and analysis belong to OIHK Evidence Lab, installed separately and linked through System Link. With no module linked, a case can hold no new evidence.
+- There is no in-app preview of an exhibit's contents. Rendering an exhibit is the linked module's surface, which Basic hosts in a sandboxed frame rather than parsing itself.
+- An exhibit recorded by reference (`evidence.import`) has no bytes in managed storage, so Basic cannot re-hash it. Verification is refused for those rather than answered with a mismatch that would read as tampering.
 - Reports export Markdown, safe HTML and structured JSON. PDF and DOCX renderers are not bundled.
 - Graph PNG export is available from the graph workspace but is not embedded automatically in report documents.
 - A storage-directory change requires backup and restart; live database relocation is deliberately blocked.

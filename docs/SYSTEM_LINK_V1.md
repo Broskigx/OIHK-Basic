@@ -73,9 +73,40 @@ Any failure is fail-closed and leaves the module in `ERROR`; three consecutive r
 
 Authenticated modules may use only the narrow `/system-link/module-api/v1` surface and only while `READY`/`BUSY`:
 
-- `GET /cases/{case_id}` requires `case.read`;
-- `GET /cases/{case_id}/evidence` requires `evidence.read` and omits managed filesystem paths;
-- `POST /status` requires `module.status.publish`.
+Every capability the protocol declares has a route that enforces it. That was
+not always so: for most of v1 the protocol declared fifteen and four had an
+endpoint, so approving `evidence.write` for a module bought that module
+nothing. `backend/tests/test_module_capability_api.py` reads the capability
+list out of the source and fails if one is ever declared without a route.
+
+| Route | Capability |
+| --- | --- |
+| `GET /cases` | `case.metadata.read` |
+| `GET /cases/{case_id}` | `case.read` |
+| `PATCH /cases/{case_id}` | `case.write` |
+| `GET /cases/{case_id}/sources` | `source.read` |
+| `GET /cases/{case_id}/entities` | `entity.read` |
+| `POST /cases/{case_id}/entities` | `entity.write` |
+| `POST /cases/{case_id}/relationships` | `entity.write` |
+| `GET /cases/{case_id}/evidence` | `evidence.read` |
+| `POST /cases/{case_id}/evidence` | `evidence.write` |
+| `POST /cases/{case_id}/evidence/import` | `evidence.import` |
+| `PATCH /evidence/{evidence_id}` | `evidence.metadata.write` |
+| `GET /cases/{case_id}/reports` | `report.read` |
+| `POST /reports/{report_id}/sections` | `report.section.write` |
+| `POST /notifications` | `ui.notification` |
+| `POST /status` | `module.status.publish` |
+
+`ui.navigation.register` is enforced by the module UI file route rather than
+here, because it gates whether a surface may be served at all.
+
+Evidence reads omit managed filesystem paths. Three refusals are deliberate
+and each has a test: a module may enrich a case description but not rewrite
+its `legal_basis`, `scope_statement` or `status`; may annotate an exhibit but
+not the `sha256` or `size_bytes` the custody seal covers; and may append to a
+draft report but not to an approved one. No capability grants deletion —
+removing an exhibit is an operator action. Every module write is audited as
+`module:<module-id>`, which cannot be confused with a username.
 
 There is no raw SQLite, arbitrary filesystem, shell, secret, Tauri-state, or cross-module API.
 
@@ -85,12 +116,12 @@ Core routes remain a closed TypeScript union. Dynamic routes use the validated n
 
 Verified module package files are served through the single host route `GET /system-link/modules/{module_id}/ui/{path}` with path-containment validation, an allow-listed MIME set, a strict CSP (`default-src 'none'`, `script-src 'self'`, `connect-src 'none'`, `frame-ancestors 'self'`), `nosniff`, `no-referrer`, and `same-origin` resource policy. The frontend renders that surface inside a sandboxed iframe without `allow-same-origin` (opaque origin — the module can never read Basic cookies, tokens or storage). The only communication channel is a versioned `postMessage` bridge (`frontend/src/system-link/moduleSurface.ts`) gated by a per-surface nonce and an operation allow-list:
 
-- `case.read`, `evidence.read` are the only data operations currently exposed;
-- every operation is capability-checked again on the host backend;
+- six read operations are exposed: `case.read`, `case.list`, `evidence.read`, `entity.read`, `source.read` and `report.read`. The bridge is read-only by design — a module's writes go through the signed module API above, where they are attributed to the module rather than laundered into the operator's identity;
+- the surface checks the grants held by *that module* before dispatching. This is not redundant with the server: a bridge operation is served by calling Basic's own API with the **operator's** session, so the backend sees an authorised human and enforces what that human may read, never what the module was approved for. Without the check here, a module approved for navigation alone could read every case and every exhibit in the installation;
 - messages are validated at runtime, bounded, and reject unknown operations/namespaces;
 - the module is always identified by its namespace, and the bridge closes on any validation failure.
 
-The OIHK System Link control plane displays the Evidence Lab product card even when it is not installed or is linked-off. It exposes pairing, grant approval, Power On, Power Off, Restart, disable/enable, revoke, diagnostics, and bounded cancellation according to current state.
+The OIHK System Link control plane displays every module it knows about, including catalog entries that are not installed and modules that are linked-off. It previously rendered a single hard-coded card, so any other module paired successfully and was then invisible in the only screen that can start, stop or revoke it. It exposes pairing, grant approval, Power On, Power Off, Restart, disable/enable, revoke, diagnostics, and bounded cancellation according to current state.
 
 ## End-to-end verification
 
