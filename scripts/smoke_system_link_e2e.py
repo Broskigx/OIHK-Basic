@@ -582,6 +582,39 @@ def _bootstrap_smoke_venv(root: Path, evidence_lab: Path) -> Path:
     return python
 
 
+def _relaunch_argv(script: Path, smoke_python: Path, evidence_lab: Path, args: argparse.Namespace) -> list[str]:
+    """Rebuild this invocation for the smoke venv's interpreter.
+
+    Every flag the parser accepts has to be forwarded, or it silently does
+    nothing: ``--port`` used to be dropped here, so a run pinned to a port ran
+    on a random free one instead and said nothing about it.
+    """
+    argv = [str(smoke_python), str(script), "--evidence-lab", str(evidence_lab)]
+    if args.port:
+        # 0 means "pick a free port", which the child does for itself.
+        argv += ["--port", str(args.port)]
+    if args.keep:
+        argv.append("--keep")
+    return argv
+
+
+def _relaunch_in_smoke_venv(
+    script: Path, smoke_python: Path, evidence_lab: Path, args: argparse.Namespace
+) -> int:
+    """Run the smoke under the venv holding both products; return its status.
+
+    Deliberately not ``os.execv``. On POSIX exec replaces this process and the
+    caller waits on the right thing, but Windows implements exec by spawning a
+    new process and terminating this one — so the caller's wait returns
+    immediately with 0 while the smoke is still building, and a CI job reads
+    that as eighteen passing steps before a single one has run. Running the
+    child and passing its status up behaves identically on every platform.
+    """
+    argv = _relaunch_argv(script, smoke_python, evidence_lab, args)
+    _log(f"Re-running in smoke venv: {' '.join(argv)}")
+    return subprocess.run(argv, check=False).returncode
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="OIHK Basic <-> Evidence Lab System Link v1 E2E smoke")
     parser.add_argument("--evidence-lab", required=True, help="Path to the OiHK-evidence-lab repository clone")
@@ -596,14 +629,11 @@ def main() -> None:
     smoke_root = REPO_ROOT / ".smoke" / "e2e-venv"
     smoke_python = _bootstrap_smoke_venv(smoke_root, evidence_lab)
     if Path(sys.executable).resolve() != smoke_python.resolve():
-        # The smoke logic needs BOTH packages importable (Basic + Evidence Lab).
-        # Re-exec within the smoke venv that installed them, then continue.
-        argv = [str(smoke_python), str(Path(__file__).resolve())]
-        argv += ["--evidence-lab", str(evidence_lab)]
-        if args.keep:
-            argv.append("--keep")
-        _log(f"Re-executing in smoke venv: {' '.join(argv)}")
-        os.execv(str(smoke_python), argv)
+        # The smoke logic needs BOTH packages importable (Basic + Evidence Lab),
+        # so it has to run under the venv that installed them.
+        raise SystemExit(
+            _relaunch_in_smoke_venv(Path(__file__).resolve(), smoke_python, evidence_lab, args)
+        )
     port = args.port or _free_port()
     _log(f"Basic port: {port}")
     asyncio.run(_run_e2e(evidence_lab=evidence_lab, port=port, keep=args.keep, smoke_python=smoke_python))
