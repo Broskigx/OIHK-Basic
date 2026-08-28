@@ -133,6 +133,92 @@ jobs:
       - name: Audit dependencies
         run: npm audit --audit-level=high
 
+  system-link-e2e:
+    name: System Link E2E - Basic <-> Evidence Lab
+    # Windows because that is where this smoke is verified and where the
+    # product ships. The script itself is platform-neutral apart from a
+    # PowerShell-guarded cleanup path, but "compiles on Linux" is not the same
+    # as "passes on Linux", and this job exists to prove the pair actually
+    # works rather than to assert it.
+    runs-on: windows-2022
+    # A cold run builds the Evidence Lab runtime with PyInstaller and its UI
+    # with npm before the eighteen lifecycle steps begin. Warm, the whole thing
+    # is ~90s; the ceiling is for the cold case plus headroom.
+    timeout-minutes: 30
+    env:
+      # OiHK-evidence-lab is a private repository, so the automatic
+      # GITHUB_TOKEN cannot read it — that token is scoped to this repository
+      # alone. A PAT with read access to the module repo has to be supplied as
+      # a secret. Without it the job reports why and stops, rather than failing
+      # and looking like a broken contract when it is a missing credential.
+      EVIDENCE_LAB_TOKEN: ${{ secrets.EVIDENCE_LAB_TOKEN }}
+      EVIDENCE_LAB_REF: main
+
+    steps:
+      - name: Check whether the module repository is reachable
+        id: preflight
+        run: |
+          if ([string]::IsNullOrEmpty($env:EVIDENCE_LAB_TOKEN)) {
+            Write-Output "::notice::EVIDENCE_LAB_TOKEN is not set, so the System Link E2E is skipped."
+            Write-Output "::notice::Create a fine-grained PAT with Contents:read on Broskigx/OiHK-evidence-lab"
+            Write-Output "::notice::and add it as the repository secret EVIDENCE_LAB_TOKEN to enable this job."
+            "enabled=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          } else {
+            "enabled=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          }
+
+      - name: Check out OIHK Basic
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # actions/checkout refuses any path outside the workspace, so the module
+      # clone lands inside it. Nothing here collects it by accident: every
+      # other job names its paths explicitly (ruff and pytest take path
+      # arguments, the frontend job sets working-directory) and this checkout
+      # only exists in this job's runner.
+      - name: Check out OIHK Evidence Lab
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: Broskigx/OiHK-evidence-lab
+          ref: ${{ env.EVIDENCE_LAB_REF }}
+          token: ${{ env.EVIDENCE_LAB_TOKEN }}
+          path: evidence-lab
+
+      - name: Set up Python
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+          # The smoke builds its own virtualenv and installs both products into
+          # it, so nothing is cached by the venv itself — but pip's download
+          # cache is, and PyInstaller plus the two dependency trees are the
+          # slow part of a cold run.
+          cache: pip
+          cache-dependency-path: |
+            backend/pyproject.toml
+            evidence-lab/pyproject.toml
+
+      - name: Set up Node.js
+        if: steps.preflight.outputs.enabled == 'true'
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: evidence-lab/ui/package-lock.json
+
+      # Run under PowerShell, not bash: Git Bash reports the workspace as
+      # /d/a/repo/repo, which Python on Windows cannot resolve, so the module
+      # path has to be passed in its native form.
+      #
+      # The script exits non-zero when any of the eighteen steps fails, which
+      # is what makes this job meaningful. Before the relaunch was fixed it
+      # returned 0 immediately while still building, and would have reported
+      # success here without having run a single step.
+      - name: Run the System Link v1 E2E smoke
+        if: steps.preflight.outputs.enabled == 'true'
+        run: python scripts/smoke_system_link_e2e.py --evidence-lab "$env:GITHUB_WORKSPACE\evidence-lab"
+
   desktop:
     name: Desktop - Windows Rust/Tauri
     runs-on: windows-2022
