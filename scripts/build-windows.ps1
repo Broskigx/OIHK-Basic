@@ -100,9 +100,18 @@ if ($LASTEXITCODE -ne 0) { throw "Python lint failed." }
 Write-Host "  Lint passed" -ForegroundColor Green
 
 # 5. Run backend tests
+#
+# The test paths are named explicitly, exactly as CI names them, and that is
+# not cosmetic. pytest derives its rootdir from the arguments it is given:
+# with `backend/tests` among them it finds `backend/pyproject.toml` and applies
+# `asyncio_mode = "auto"`; invoked bare from the project root it finds no
+# config at all, falls back to strict mode, and every sync test that uses an
+# async fixture errors at setup. That is what happened — CI was green on
+# `pytest backend/tests tests` while this build failed 132 tests on `pytest`,
+# so a green CI said nothing about whether a release would build.
 Write-Host "`n[5/8] Running backend tests..." -ForegroundColor Yellow
 Set-Location $ProjectRoot
-& $venvPython -m pytest --quiet --tb=short --no-header 2>&1
+& $venvPython -m pytest (Join-Path $BackendDir "tests") (Join-Path $ProjectRoot "tests") --quiet --tb=short --no-header 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Host "  [error] Tests failed" -ForegroundColor Red
     exit 1
