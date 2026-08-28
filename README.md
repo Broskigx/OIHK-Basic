@@ -300,7 +300,7 @@ Consulta [Security Policy](SECURITY.md), [Privacy](PRIVACY.md), [Threat Model](T
 Escuchar solo en loopback protege frente a un atacante *de red*, no frente a una página web que abra la persona usuaria. El navegador puede hacer peticiones a `127.0.0.1`, así que dos controles se aplican en toda petición sin importar el modo de autenticación:
 
 - **Validación de `Host`.** Se comprueba en todos los métodos, incluidas las lecturas. Un bind loopback acepta únicamente autoridades loopback, que es lo que rechaza una respuesta de DNS rebinding apuntando un dominio del atacante al puerto local.
-- **Validación de `Origin`.** Los métodos que modifican estado se contrastan con la lista de orígenes permitidos antes del enrutado y antes de leer el cuerpo. CORS nunca impidió una *escritura* cross-origin: las rutas de ingesta aceptan `multipart/form-data`, un content-type de la CORS safelist que no dispara preflight, así que una página hostil podría plantar un archivo en un caso y limitarse a no leer la respuesta.
+- **Validación de `Origin`.** Los métodos que modifican estado se contrastan con la lista de orígenes permitidos antes del enrutado y antes de leer el cuerpo. CORS nunca impidió una *escritura* cross-origin: las rutas que aceptan `multipart/form-data` —crear un perfil de target con su fotografía, por ejemplo— usan un content-type de la CORS safelist que no dispara preflight, así que una página hostil podría plantar un archivo en un caso y limitarse a no leer la respuesta.
 
 Las peticiones sin `Origin` son clientes que no son navegadores —el core de Tauri, el runner de smoke de System Link— y pasan con normalidad.
 
@@ -324,11 +324,19 @@ System Link enlaza productos OIHK instalados por separado mediante identidades E
 
 OIHK Evidence Lab no está embebido en Basic: conserva instalación, proceso, UI, dominio y datos propios. Basic actúa únicamente como host/control plane y continúa funcionando sin módulos vinculados.
 
+**Conceder una capacidad y permitirla son lo mismo.** Las quince capacidades del protocolo tienen un endpoint que las exige —casos, fuentes, entidades y relaciones, escritura, importación y anotación de evidencia, secciones de reporte, notificaciones y estado del runtime—, y un test lee la lista desde el código fuente y falla si alguna vez se declara una sin ruta detrás. Toda escritura de un módulo queda auditada como `module:<id>`, nunca confundible con una persona.
+
+Tres límites son deliberados y tienen su test: un módulo puede enriquecer la descripción de un caso pero no reescribir su base legal, su alcance ni su estado; puede anotar una pieza de evidencia pero no tocar el digest que cubre el sello; y puede añadir hallazgos a un borrador de reporte pero no a uno aprobado.
+
+El bridge de la UI del módulo comprueba los grants concedidos a *ese* módulo antes de servir una operación. La superficie se sirve con la sesión del operador, así que el servidor ve a una persona autorizada y no al módulo: sin esa comprobación, un módulo aprobado solo para navegación podría leer todos los casos y toda la evidencia de la instalación. El bridge es de solo lectura; las escrituras van por el API firmado.
+
+El emparejamiento no comprueba nombres. La confianza viene de la firma del editor verificada contra anclas Ed25519 embebidas, no de una lista cableada de módulos permitidos, así que cualquier módulo correctamente firmado puede vincularse.
+
 System Link no acepta comandos shell ni scripts arbitrarios. Solo puede ejecutar el binario relativo registrado bajo un root de instalación después de verificar su SHA-256. El contrato, las identidades Ed25519, el bridge UI y los límites de capabilities están documentados en [System Link v1](docs/SYSTEM_LINK_V1.md).
 
 ## Diferencia frente a OIHK normal
 
-OIHK Basic conserva un flujo local de investigación, evidencia, grafo, modelos y módulos first-party, pero no incluye colaboración multiusuario, organizations, enterprise SSO, sincronización cloud, administración de conectores privados, billing, licensing, Redis, queues, GraphQL ni infraestructura distribuida. OIHK normal y OIHK Basic son productos separados.
+OIHK Basic conserva un flujo local de investigación, custodia de evidencia, grafo, modelos y módulos vinculados, pero no incluye colaboración multiusuario, organizations, enterprise SSO, sincronización cloud, administración de conectores privados, billing, licensing, Redis, queues, GraphQL ni infraestructura distribuida. OIHK normal y OIHK Basic son productos separados.
 
 ## Builds y releases
 
