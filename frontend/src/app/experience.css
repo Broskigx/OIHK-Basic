@@ -1011,6 +1011,45 @@ input:focus, select:focus, textarea:focus {
   .forensic-capability-strip { grid-template-columns: 1fr; }
 }
 
+/* ── Top bar: what yields first when space runs out ───────────────────── */
+
+/* The bar sizes itself against the shell, not the window: opening the Copilot
+   dock takes roughly a third of the width without the viewport changing at
+   all. A media query would therefore measure the wrong thing, so the bar
+   declares itself a container and the rules below respond to its own width. */
+.platform-topbar { container-type: inline-size; container-name: topbar; }
+
+/* Priority order under pressure. The right-hand chips are all `flex: 0 0 auto`
+   and take 664px of a 772px bar with the dock open, which left the case
+   context at exactly zero width — clipped out of existence while its content
+   still measured 109px. Knowing which investigation you are in outranks
+   knowing that SQLite is ready, so the ambient chips retire first. */
+.platform-case-context { flex: 0 1 auto; min-width: 120px; }
+
+@container topbar (max-width: 1000px) {
+  .platform-runtime-status { display: none; }
+}
+@container topbar (max-width: 820px) {
+  .platform-model-status { display: none; }
+  .platform-search { min-width: 150px; }
+}
+@container topbar (max-width: 640px) {
+  .platform-topbar-badge { display: none; }
+  .platform-search { min-width: 110px; }
+}
+
+/* The case select carries a max-width but no floor, and every flex ancestor
+   sets min-width: 0, so it collapsed to 75px and clipped "Operación Vitrina"
+   down to "Opera" -- on a 1192px bar with room to spare. It gets a floor only
+   while the bar is wide enough to afford one; under pressure it still yields,
+   which is the behaviour the rules above depend on. */
+@container topbar (min-width: 900px) {
+  .platform-case-select select { min-width: 180px; }
+}
+
+/* Nothing in the bar should be able to push the row wider than the shell. */
+.platform-topbar-right { min-width: 0; }
+
 /* ── Custody register ──────────────────────────────────────────────────── */
 
 /* The chain banner reuses the System Link identity strip, whose green
@@ -1045,6 +1084,20 @@ input:focus, select:focus, textarea:focus {
 .platform-view .platform-danger:hover:not(:disabled) {
   background: rgba(255, 119, 119, .14);
   border-color: rgba(255, 119, 119, .42);
+}
+
+/* With the Copilot dock open the register has ~770px and the table wants 808,
+   so the actions column -- the only interactive part of the row -- was the
+   thing that fell off the right edge. The panel measures itself rather than
+   the window, because the dock changes the available width without the
+   viewport changing at all. Below the threshold the two labels retire and
+   their icons carry the action; both buttons keep a title, so the meaning
+   survives the loss of the word. */
+.platform-table-panel { container-type: inline-size; container-name: register; }
+
+@container register (max-width: 840px) {
+  .platform-row-actions .platform-btn-label { display: none; }
+  .platform-row-actions button { padding-inline: 8px; }
 }
 
 /* A digest is what an analyst compares across two screens, so the cell is
