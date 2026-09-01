@@ -251,15 +251,18 @@ export function CustodyRegisterView({
                                 : "This exhibit is held by a linked module; verify it there"
                             }
                           >
-                            <FileCheck2 size={14} /> Verify
+                            <FileCheck2 size={14} />
+                            <span className="platform-btn-label">Verify</span>
                           </button>
                           <button
                             type="button"
                             className="platform-danger"
                             onClick={() => void removeExhibit(item)}
                             disabled={busy === item.id}
+                            title={`Remove ${item.original_name} from this investigation`}
                           >
-                            <Trash2 size={14} /> Remove
+                            <Trash2 size={14} />
+                            <span className="platform-btn-label">Remove</span>
                           </button>
                         </div>
                       </td>
